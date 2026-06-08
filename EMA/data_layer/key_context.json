@@ -1,0 +1,238 @@
+{
+    "Administrators": {
+        "UserName": "The email address or username of the user, used for identification and login purposes.",
+        "FirstName": "The given first name of the user.",
+        "LastName": "The family or last name of the user.",
+        "Email": "The user's primary email address for communication and notifications.",
+        "LocationGroup": "The name of the organization or group the user belongs to.",
+        "LocationGroupId": "The unique numeric identifier for the user's location group.",
+        "OrganizationGroupUuid": "The universally unique identifier (UUID) for the user's organization group.",
+        "TimeZone": "The user's time zone, used for scheduling and time-related functions.",
+        "Locale": "The user's language and regional preference (e.g., en-US).",
+        "InitialLandingPage": "The default page the user lands on after logging in.",
+        "LastLoginTimeStamp": "The date and time when the user last logged into the system.",
+        "Roles": [
+            {
+                "Id": "The unique identifier of the role assigned to the administrator.",
+                "Uuid": "The universally unique identifier (UUID) for the role.",
+                "Name": "The name of the role, describing its permissions or job function.",
+                "LocationGroup": "The location group associated with this role.",
+                "LocationGroupId": "The unique numeric identifier for the location group associated with this role.",
+                "OrganizationGroupUuid": "The UUID of the organization group linked to this role.",
+                "IsActive": "Indicates whether this role is currently active.",
+                "UserLinkId": "A system-generated link identifier for this role."
+            }
+        ],
+        "IsActiveDirectoryUser": "Indicates whether the user is an Active Directory user.",
+        "RequiresPasswordChange": "Indicates whether the user must change their password upon the next login.",
+        "MessageTemplateId": "The identifier for the message template associated with the user.",
+        "Id_Value": "A unique identifier for the user.",
+        "Uuid": "A universally unique identifier (UUID) assigned to the user."
+    },
+    "Applications": {
+        "ApplicationName": "The name of the application being managed or installed.",
+        "BundleId": "The unique identifier for the application bundle (e.g., com.example.app).",
+        "AppVersion": "The version number of the application currently in use.",
+        "ActualFileVersion": "The specific file version of the application binary.",
+        "AppType": "The type of application (e.g., Internal, Public, Managed).",
+        "Status": "The current operational status of the application (e.g., Active, Inactive).",
+        "Platform": "The platform type the application is associated with (e.g., Android, iOS).",
+        "SupportedModels": [
+            {
+                "ApplicationId": "The unique identifier for the supported model of the application.",
+                "ModelId": "The unique identifier for the device model supported by the application.",
+                "ModelName": "The name of the device model supported by the application."
+            }
+        ],
+        "AssignmentStatus": "The status of the application's assignment to devices or groups (e.g., Assigned, Unassigned).",
+        "ApplicationSize": "The total size of the application file (e.g., 11.30 MB).",
+        "SmartGroups": [
+            {
+                "Id": "The unique identifier for the smart group associated with the application.",
+                "Name": "The name of the smart group associated with the application."
+            }
+        ],
+        "IsReimbursable": "Indicates whether the application is eligible for reimbursement.",
+        "ApplicationSource": "The source type of the application (e.g., 0 for internal, 1 for public).",
+        "LocationGroupId": "The unique identifier of the location group associated with the application.",
+        "RootLocationGroupName": "The name of the root location group where the application is managed.",
+        "OrganizationGroupUuid": "The universally unique identifier (UUID) for the organization group managing the application.",
+        "LargeIconUri": "The URI pointing to the large icon asset of the application.",
+        "MediumIconUri": "The URI pointing to the medium icon asset of the application.",
+        "SmallIconUri": "The URI pointing to the small icon asset of the application.",
+        "PushMode": "The push mode used for deploying the application (e.g., 0 for manual, 1 for automatic).",
+        "AppRank": "The rank or priority assigned to the application.",
+        "AssignedDeviceCount": "The total number of devices the application is currently assigned to.",
+        "InstalledDeviceCount": "The total number of devices the application is installed on.",
+        "NotInstalledDeviceCount": "The total number of devices where the application is not installed.",
+        "AutoUpdateVersion": "Indicates whether the application is set to auto-update to newer versions.",
+        "EnableProvisioning": "Indicates whether provisioning is enabled for the application.",
+        "IsDependencyFile": "Indicates whether the application file is a dependency file.",
+        "ContentGatewayId": "The unique identifier for the content gateway associated with the application.",
+        "IconFileName": "The filename of the icon asset for the application.",
+        "ApplicationFileName": "The filename of the application file.",
+        "MetadataFileName": "The filename of the metadata file associated with the application.",
+        "Id_Value": "A unique identifier for the application entry.",
+        "Uuid": "The universally unique identifier (UUID) for the application."
+    },
+    "Devices": {
+        "DeviceId": "A unique identifier for the device managed by the system.",
+        "DeviceUuid": "A universally unique identifier (UUID) assigned to the device.",
+        "Udid": "The unique device identifier (UDID) assigned to the device.",
+        "SerialNumber": "The serial number of the device, used for hardware identification.",
+        "DeviceFriendlyName": "A human-readable name assigned to the device.",
+        "OrganizationGroupId": "The unique identifier of the organization group managing the device.",
+        "OrganizationGroupUuid": "The UUID of the organization group managing the device.",
+        "UserName": "The username of the user associated with the device.",
+        "LastSeen": "The last time the device was online and communicated with the system.",
+        "EnrollmentDate": "The date when the device was enrolled into the management system.",
+        "Compliant": "Indicates whether the device complies with all configured policies.",
+        "AssetNumber": "An identifier assigned to the device for asset management purposes.",
+        "EnrollmentStatus": "The current enrollment status of the device (e.g., Enrolled, Unenrolled).",
+        "UnEnrolledDate": "The date and time when the device was last unenrolled from the system.",
+        "DeviceNetworkInfo": [
+            {
+                "ConnectionType": "The type of network connection the device is using (e.g., Wifi, Cellular).",
+                "IPAddress": "The IP address of the device.",
+                "MACAddress": "The MAC address of the device."
+            }
+        ],
+        "Products": [
+            {
+                "ProductId": "The unique identifier of the product installed or managed on the device.",
+                "Name": "The name of the product installed or managed on the device.",
+                "Status": "The compliance status of the product installed on the device."
+            }
+        ],
+        "SmartGroups": [
+            {
+                "SmartGroupId": "The unique identifier of the smart group associated with the device.",
+                "SmartGroupUuid": "The UUID of the smart group associated with the device.",
+                "Name": "The name of the smart group associated with the device."
+            }
+        ],
+        "CustomAttributes": [
+            {
+                "Name": "The name of the custom attribute.",
+                "Value": "The value of the custom attribute.",
+                "ApplicationGroup": "The application group associated with the custom attribute."
+            }
+        ]
+    }, 
+    "OrganizationGroup": {
+        "Name": "The name of the organization group, representing its primary label or identifier.",
+        "GroupId": "A unique identifier for the organization group used for internal reference.",
+        "LocationGroupType": "The type of location group (e.g., Container, Department).",
+        "Country": "The country associated with the organization group.",
+        "Locale": "The locale or regional settings for the organization group (e.g., en-US).",
+        "ParentLocationGroup_Id_Value": "The unique identifier of the parent location group that this group belongs to.",
+        "ParentLocationGroup_Uuid": "The UUID of the parent location group that this group belongs to.",
+        "CreatedOn": "The date and time when the organization group was created.",
+        "LgLevel": "The level of the location group within the organizational hierarchy.",
+        "Users": "The number of users associated with this organization group.",
+        "Admins": "The number of administrators associated with this organization group.",
+        "Devices": "The number of devices associated with this organization group.",
+        "Id_Value": "A unique identifier for the organization group.",
+        "Uuid": "The universally unique identifier (UUID) for the organization group."
+    }, 
+    "Products": {
+        "ID_Value": "The unique identifier for the product managed within the system.",
+        "PlatformID": "The identifier of the platform the product is associated with (e.g., 5 for Android).",
+        "Name": "The name of the product, describing its primary purpose or version.",
+        "ManagedByOrganizationGroupID": "The ID of the organization group responsible for managing this product.",
+        "Description": "A brief description of the product's purpose or functionality.",
+        "ManagedByOrganizationGroupName": "The name of the organization group managing this product.",
+        "Active": "Indicates whether the product is currently active or inactive.",
+        "Platform": "The platform this product is designed for (e.g., Android, iOS).",
+        "SmartGroups": [
+            {
+                "SmartGroupId": "The unique identifier of a smart group associated with the product.",
+                "Name": "The name of the smart group associated with the product."
+            }
+        ],
+        "TotalAssigned": "The total number of devices assigned to this product.",
+        "Compliant": "The number of devices compliant with this product's policies.",
+        "InProgress": "The number of devices currently processing this product's policies.",
+        "Failed": "The number of devices that failed to comply with this product's policies.",
+        "PauseResume": "Indicates whether the product deployment can be paused or resumed.",
+        "DevicePolicyTypeID": "The identifier for the type of policy associated with the product.",
+        "DevicePolicyType": "The type of policy associated with the product (e.g., Required).",
+        "ActivationOrDeactivationType": "Specifies how the product is activated or deactivated (e.g., Manual).",
+        "DevicePolicyUuid": "The universally unique identifier (UUID) of the policy associated with the product.",
+        "Version": "The version number of the product.",
+        "ProductETag": "A unique ETag for tracking changes to the product."
+    }, 
+    "Profiles": {
+        "ProfileName": "The name of the profile, used to identify its purpose or configuration.",
+        "OrganizationGroupId": "The unique identifier of the organization group associated with this profile.",
+        "ProfileStatus": "Indicates the current status of the profile (e.g., Active, Inactive).",
+        "Platform": "The platform for which the profile is designed (e.g., Android, iOS).",
+        "ProfileScope": "The scope of the profile, defining its reach (e.g., Production, Development).",
+        "OperatingSystem": "The operating system for which the profile is configured (if applicable).",
+        "Model": "The device model that this profile targets (if specified).",
+        "Ownership": "The ownership type associated with this profile (e.g., Corporate, BYOD).",
+        "ManagedBy": "The name of the organization or department managing this profile.",
+        "Type": "The type of profile, describing its configuration (e.g., Auto, Manual).",
+        "Id_Value": "A unique identifier assigned to this profile."
+    },
+    "SmartGroups": {
+        "Name": "The name of the smart group, also known as an assignment group, used to identify its purpose or scope.",
+        "SmartGroupID": "A unique identifier assigned to the smart group.",
+        "SmartGroupUuid": "The universally unique identifier (UUID) for the smart group.",
+        "ManagedByOrganizationGroupId": "The ID of the organization group managing this smart group.",
+        "ManagedByOrganizationGroupUuid": "The UUID of the organization group managing this smart group.",
+        "ManagedByOrganizationGroupName": "The name of the organization group managing this smart group.",
+        "Devices": "The number of devices associated with this smart group.",
+        "Assignments": "The number of assignments within this smart group.",
+        "Exclusions": "The number of exclusions defined for this smart group."
+    },
+    "Tags": {
+        "TagName": "The name of the tag, used to categorize or label items.",
+        "DateTagged": "The date and time when the tag was applied.",
+        "TagAvatar": "An optional avatar or image associated with the tag.",
+        "Id_Value": "A unique identifier assigned to the tag.",
+        "Uuid": "The universally unique identifier (UUID) for the tag."
+    },
+    "UserGroups": {
+        "groupName": "The name of the user group, used to identify its purpose or members.",
+        "type": "The type of user group, such as Custom or System-defined.",
+        "lastSyncOn": "The date and time when the user group was last synchronized.",
+        "rootLocationGroupName": "The name of the root location group to which the user group belongs.",
+        "syncStatus": "The synchronization status of the user group.",
+        "mergeStatus": "The merge status of the user group, indicating if any changes were merged.",
+        "users": "The number of users associated with the user group.",
+        "id": "A unique identifier assigned to the user group."
+    },
+    "Users": {
+        "UserName": "The username of the enrollment user, typically used for identification and used to enroll a device.",
+        "FirstName": "The first name of the enrollment user.",
+        "LastName": "The last name of the enrollment user.",
+        "Status": "Indicates whether the enrollment user is active or inactive.",
+        "Email": "The primary email address associated with the enrollment user.",
+        "SecurityType": "The type of security applied to the enrollment user (e.g., 2 for Two-Factor Authentication).",
+        "ContactNumber": "The contact number of the enrollment user, if available.",
+        "DisplayName": "The display name of the enrollment user, combining first and last name.",
+        "MobileNumber": "The mobile number of the enrollment user, if provided.",
+        "MessageType": "The type of messaging preferences associated with the enrollment user.",
+        "EmailUserName": "The email username portion of the user's email address.",
+        "Group": "The group or organization the enrollment user belongs to.",
+        "LocationGroupId": "The unique identifier of the location group the user is associated with.",
+        "OrganizationGroupUuid": "The UUID of the organization group the user is associated with.",
+        "Role": "The role assigned to the enrollment user, defining their permissions.",
+        "EnrolledDevicesCount": "The number of devices enrolled by this user.",
+        "CustomAttributes": [
+            {
+                "Name": "The name of the custom attribute.",
+                "Value": "The value assigned to the custom attribute.",
+                "ApplicationGroup": "The application group associated with the custom attribute."
+            }
+        ],
+        "ExternalId": "An external identifier associated with the user, if applicable.",
+        "StagingMode": "Indicates whether the user is in a staging mode for device enrollment.",
+        "DeviceStagingEnabled": "Indicates whether device staging is enabled for the user.",
+        "Id_Value": "A unique identifier for the enrollment user.",
+        "Uuid": "The universally unique identifier (UUID) for the enrollment user."
+    }
+}
+
+

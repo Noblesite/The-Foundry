@@ -1,0 +1,24 @@
+collections:
+- cn885_tags
+- cn885_admins
+- cn885_products
+- documentation_articles
+- mam_api_v1
+- mdm_api_v2
+- cn885_profiles
+- cn885_custom_attribute
+- mem_api
+- system_api_v1
+- cn885_smart_groups
+- mdm_api_v1
+- mcm_api
+- cn885_devices
+- mam_api_v2
+- knowledge_base_articles
+- cn885_users
+- cn885_organization_groups
+- cn885_applications
+- mdm_api_v4
+- mdm_api_v3
+- cn885_user_groups
+- system_api_v2

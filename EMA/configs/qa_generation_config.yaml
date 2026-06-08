@@ -1,0 +1,25 @@
+qa_generation:
+  model:
+    name: google/flan-t5-large  # Pre-trained model to use for QA generation
+    tokenizer: google/flan-t5-large  # Tokenizer for the model
+    max_length: 512  # Maximum sequence length for input/output
+    batch_size: 8  # Number of examples to process per batch
+    embedding_model: all-MiniLM-L6-v2  # Model to use for embedding generation
+    nlp_model: all-MiniLM-L6-v2  # Model to use for NLP tasks
+  templates:
+    fact_based: "What is the purpose of the {api_name} API?"
+    why_how: "Why is the {key} parameter important in this API request?"
+    multiple_choice: "Which of the following best describes the function of {api_name}?"
+    fill_in_the_blank: "{api_name} is used for ______."
+    true_false: "True or False: The {api_name} API requires the {method} method."
+  multiple_choice:
+    options:  # Default options for multiple-choice questions
+      - "A) Correct Answer"
+      - "B) Incorrect Option 1"
+      - "C) Incorrect Option 2"
+      - "D) Incorrect Option 3"
+
+validation:
+  enable_cleaning: true  # Enable cleaning pipeline after generation
+
+

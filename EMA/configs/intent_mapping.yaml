@@ -1,0 +1,45 @@
+Environment Management:
+  Device Management:
+    Lookup Device Details: retrieve_device_details
+    Fetch Device Status: retrieve_device_status
+    Check Compliance: retrieve_device_compliance
+    Get All Device Records: get_device_records
+  Admin Management:
+    Check Admin Status: retrieve_admin_status
+    Retrieve Admin Details: retrieve_user_details
+  User Management:
+    Retrieve User Details: retrieve_user_details
+    Check User Permissions: retrieve_user_permissions
+
+Check Database:
+  Device Management:
+    Lookup Device Details: retrieve_device_details
+    Fetch Device Status: retrieve_device_status
+    Check Compliance: retrieve_device_compliance
+    Get All Device Records: get_device_records
+  API Records:
+    Look Up API: retrieve_api_record
+
+Make API Call:
+  Device Management:
+    Get Device Record: get_device_record
+    Fetch Device Config: fetch_device_config
+  System Management:
+    Fetch System Info: get_system
+    Check System Health: check_system_health
+  User Management:
+    Get User Record: get_user_record
+    Retrieve User Activity: retrieve_user_activity
+  Admin Management:
+    Get Admin Record: get_admin_record
+    Fetch Admin Access Logs: fetch_admin_access_logs
+  
+Search Files:
+  API Document:
+    Get API Information: search_api_documents
+    Get API Workflows: get_api_workflows
+  
+Generate Code:
+  Get Code Base:
+    Fetch WSO Workflows: get_api_workflows
+    Retrieve Script Details: get_script_details

@@ -1,0 +1,62 @@
+EMA/runtime/
+EMA/data_layer/chroma_db/*
+EMA/data_layer/omnissa_dev_data/*
+EMA/qa_generation/qa_pairs_cleaned/*
+EMA/qa_generation/gen_qa_pairs_jsonl/*
+EMA/logs/*
+EMA/model_layer/models/*
+EMA/data_cleaning/dirty_jsonl_data/*
+EMA/data_cleaning/cleaned_jsonl_data/*
+EMA/data_cleaning/back_jsonl_data/*
+EMA/data_cleaning/wso_train_dataset/*
+EMA/data_cleaning/wso_val_dataset/*
+EMA/data_cleaning/temp_data/*
+
+
+# Byte-compiled Python files
+__pycache__/
+*.py[cod]
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+.env/
+*.env
+*.env.local
+EMA/backend/fastapi-env/
+venv_ray/
+..python-version*
+
+# Distribution files
+dist/
+build/
+**/.vite/
+
+# Local font source downloads
+Space_Grotesk/
+
+# Egg info
+*.egg-info/
+
+# Logs
+logs/
+*.log
+
+# System-specific files
+.DS_Store
+Thumbs.db
+
+.python-version
+EMA/.DS_Store
+EMA/.DS_Store
+**.DS_Store*
+
+#Large Datasets
+*one_jsonl_to_rule_them_all.jsonl
+*wso_dirty_full_dataset.jsonl
+**wso_full_cleaned_next.jsonl*
+**/tmp_split_dataset_dirty/*
+**/tmp_split_dataset_clean/*
+**wso_full_cleaned_dataset.jsonl*
+**/distributed_data_layer/distributed_datasets*

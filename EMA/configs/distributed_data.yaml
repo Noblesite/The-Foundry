@@ -1,0 +1,10 @@
+distributed:
+  tmp_distro_dir: /tmp_split_dataset_dirty/
+  filter_distro_dir: /tmp_filtered_dataset_dirty/
+  
+filtering:
+  min_confidence: 0.20
+  borderline_threshold: 0.03  # Logs cases within 5% of min_confidence
+  required_labels: ["relevant", "technical"]
+  zero_shot_model: MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli 
+    # used for Zero shot filitiering 

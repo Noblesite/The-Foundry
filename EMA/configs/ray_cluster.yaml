@@ -1,0 +1,17 @@
+nodes:
+  head_node: noblesite-head-node-one.local #host name to reslove to get IP
+  head_node_hn: noblesite-head-node-one #host name without domain
+  worker_nodes:
+    - noblesite-node-one.local
+    - noblesite-node-two.local
+    - noblesite-node-three.local
+    - noblesite-head-node.local
+
+worker_node_resources: # worker node memory allocation to ray object_Mem
+  ray_obj_mem_perc: 30
+  ray_obj_mem_cap: 16
+
+head_node_resources: # head node memory allocation to ray object_Mem
+  ray_obj_mem_perc: 50
+  ray_obj_mem_cap: 16
+

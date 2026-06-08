@@ -1,0 +1,2 @@
+# Keep source and small fixtures as normal text. Large generated datasets should
+# live under ignored runtime directories instead of Git LFS.

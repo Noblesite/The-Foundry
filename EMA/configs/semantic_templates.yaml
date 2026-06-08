@@ -1,0 +1,245 @@
+# Updated semantic templates with comprehensive metadata filters
+semantic_templates:
+  Device_Application_Status:
+    name: "Device Application Status"
+    keywords:
+      - "environment applications installed"
+      - "environment installed applications"
+      - "environment chrome installed"
+      - "environment application versions"
+      - "environment device application status"
+    description: "Retrieve details about applications installed on devices and their versions."
+    collection: "mdm_states"
+    template: |
+      Retrieve information about applications installed on devices, including {{ fields }} and filter by {{ filters }}.
+    fields:
+      - "DeviceId"
+      - "ApplicationName"
+      - "Version"
+      - "InstalledDeviceCount"
+      - "DeviceFriendlyName"
+      - "context"
+    filters:
+      include:
+        - "ApplicationName"
+        - "Version"
+        - "InstalledDeviceCount"
+        - "LastUpdated"
+        - "InstalledBy"
+      exclude: ["DeviceStatus"]
+
+  Device_Enrollment_Status:
+    name: "Device Enrollment Status"
+    keywords:
+      - "environment enrolled devices"
+      - "environment devices enrolled"
+      - "environment organization group enrollment"
+      - "environment retail directory services"
+    description: "Retrieve details about device enrollment and the organization group they belong to."
+    collection: "mdm_states"
+    template: |
+      Fetch enrollment details for devices, including {{ fields }} and filter by {{ filters }}.
+    fields:
+      - "DeviceId"
+      - "DeviceFriendlyName"
+      - "EnrollmentStatus"
+      - "OrganizationGroup"
+      - "ParentOrganizationGroup"
+      - "context"
+    filters:
+      include:
+        - "EnrollmentStatus"
+        - "OrganizationGroup"
+        - "DeviceType"
+        - "LastSyncDate"
+      exclude: ["InactiveDevices"]
+
+  Device_Products_Status:
+    name: "Device Products Status"
+    keywords:
+      - "environment products installed"
+      - "environment installed products"
+      - "environment device products"
+      - "environment product installation status"
+      - "environment serial number 123456"
+    description: "Retrieve details about the products installed on specific devices."
+    collection: "mdm_states"
+    template: |
+      Fetch product details for devices, including {{ fields }} and filter by {{ filters }}.
+    fields:
+      - "DeviceId"
+      - "SerialNumber"
+      - "ProductId"
+      - "ProductName"
+      - "InstallationStatus"
+      - "context"
+    filters:
+      include:
+        - "SerialNumber"
+        - "ProductId"
+        - "ProductName"
+        - "Manufacturer"
+        - "InstallationStatus"
+      exclude: ["DeprecatedProducts"]
+
+  Device_Profile_Status:
+    name: "Device Profile Status"
+    keywords:
+      - "environment profiles installed"
+      - "environment Wi-Fi profiles"
+      - "environment profile status"
+      - "environment device profile status"
+    description: "Retrieve details about the profiles installed on devices and their statuses."
+    collection: "mdm_states"
+    template: |
+      Fetch profile details for devices, including {{ fields }} and filter by {{ filters }}.
+    fields:
+      - "DeviceId"
+      - "ProfileName"
+      - "ProfileStatus"
+      - "InstalledDate"
+      - "LastUpdated"
+      - "context"
+    filters:
+      include:
+        - "ProfileName"
+        - "ProfileStatus"
+        - "InstalledBy"
+        - "ProfileCategory"
+      exclude: ["ExpiredProfiles"]
+
+  Device_Tag_Status:
+    name: "Device Tag Status"
+    keywords:
+      - "environment tags assigned to devices"
+      - "environment device tags"
+      - "environment tag status"
+      - "environment tag name update"
+    description: "Retrieve details about the tags assigned to devices and their statuses."
+    collection: "mdm_states"
+    template: |
+      Fetch tag details for devices, including {{ fields }} and filter by {{ filters }}.
+    fields:
+      - "DeviceId"
+      - "TagName"
+      - "TagStatus"
+      - "TagCreationDate"
+      - "context"
+    filters:
+      include:
+        - "TagName"
+        - "TagStatus"
+        - "TagType"
+        - "CreatedBy"
+      exclude: ["TemporaryTags"]
+
+  Organization_Group_Details:
+    name: "Organization Group Details"
+    keywords:
+      - "environment organization group details"
+      - "environment group devices"
+      - "environment retail directory services og"
+    description: "Retrieve detailed information about organization groups and their devices."
+    collection: "mdm_states"
+    template: |
+      Fetch organization group details, including {{ fields }} and filter by {{ filters }}.
+    fields:
+      - "OrganizationGroupId"
+      - "OrganizationGroupName"
+      - "Devices"
+      - "Admins"
+      - "ParentOrganizationGroup"
+      - "context"
+    filters:
+      include:
+        - "OrganizationGroupId"
+        - "OrganizationGroupName"
+        - "NumberOfUsers"
+        - "LastUpdated"
+      exclude: ["InactiveGroups"]
+
+  Device_Performance_Metrics:
+    name: "Device Performance Metrics"
+    keywords:
+      - "environment device performance"
+      - "environment battery level"
+      - "environment storage available"
+      - "environment device metrics"
+    description: "Retrieve performance metrics for devices, focusing on resource usage."
+    collection: "mdm_states"
+    template: |
+      Fetch performance metrics for devices, including {{ fields }} and filter by {{ filters }}.
+    fields:
+      - "DeviceId"
+      - "BatteryLevel"
+      - "StorageAvailable"
+      - "MemoryUsage"
+      - "NetworkType"
+      - "context"
+    filters:
+      include:
+        - "BatteryLevel"
+        - "StorageAvailable"
+        - "MemoryUsage"
+        - "CPUUsage"
+      exclude: ["DisconnectedDevices"]
+
+  QA_Pair_Generation:
+    name: "QA Pair Generation"
+    keywords:
+      - "generate QA pairs"
+      - "QA generation"
+      - "create question-answer pairs"
+    description: "Generate QA pairs dynamically using RAG pipeline results."
+    collection: "api_reference"
+    template: |
+      Generate QA pairs for {{ context }} using templates:
+      Fact-Based: "What is the purpose of the {{ api_name }}?"
+      Why-How: "Why is {{ parameter }} important in {{ api_name }}?"
+      True/False: "True or False: {{ api_name }} supports the {{ method }} method."
+      Provide detailed answers and ensure all questions are aligned with extracted contexts.
+    fields:
+      - "question"
+      - "answer"
+      - "context"
+      - "type"
+      - "metadata"
+    filters:
+      include:
+        - "api_name"
+        - "method"
+        - "context"
+        - "expected_answer"
+        - "parameter"
+      exclude: []
+
+  API_Information:
+    name: "API Information"
+    keywords:
+      - "API details"
+      - "What APIs"
+      - "What APIs are available"
+      - "API endpoints"
+      - "API information"
+      - "API usage"
+      - "API endpoints"
+    description: "Retrieve detailed information about API endpoints and their usage."
+    collection: "api_reference"
+    template: |
+      Fetch API details, including {{ fields }} and filter by {{ filters }}.
+    fields:
+      - "api_name"
+      - "endpoint"
+      - "method"
+      - "parameters"
+      - "response_format"
+      - "context"
+    filters:
+      include:
+        - "api_name"
+        - "endpoint"
+        - "method"
+        - "parameters"
+        - "response_format"
+      exclude: ["DeprecatedAPIs"]
+   

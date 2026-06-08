@@ -1,0 +1,5 @@
+# Public baseline dependencies for local development.
+# GPU-specific packages such as bitsandbytes, DeepSpeed, CUDA torch wheels, and
+# optional scraping tools should be installed only when those workflows are used.
+
+-r EMA/requirements.txt

@@ -1,0 +1,9 @@
+# Global throttling settings for large system processes
+system:
+  memory: 0.55   # Max Memory Threshold
+  cpu: 0.99  # Max CPU Threshold
+  gpu: 0.55 # Max GPU Threshold
+  stroage: 0.98
+
+
+

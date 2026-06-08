@@ -1,0 +1,33 @@
+#ema_config.yaml
+app:
+  name: EMA Application
+  version: 1.0.0
+
+logging:
+  level: DEBUG  # Options: DEBUG, INFO, WARNING, ERROR
+  file: /logs/application.log
+  max_log_size_mb: 15   # Set log file max size to 15MB
+  log_backup_count: 7   # Keep the last 7 log files
+
+api:
+  base_url: https://api.ema.local/v1
+  timeout: 30  # Seconds
+  retries: 3
+
+security:
+  jwt_secret_key: your_jwt_secret_key
+  token_expiry_minutes: 60
+
+converstation_history:
+  max_history: 10
+
+models:
+  logic_model_name: deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B  # Pre-trained model to use for QA generation
+  logic_model_tokenizer: deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B  # Tokenizer for the model
+  coordination_model_name: meta-llama/Llama-3.2-3B-Instruct
+  coordination_model_tokenizer: meta-llama/Llama-3.2-3B-Instruct
+  embedding_model: BAAI/bge-m3 # Model to use for embedding generation
+  nlp_model: BAAI/bge-m3  # Model to use for nlp generation
+  zero_shot_model: MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli
+  ner_model_name: dslim/bert-base-NER
+  dense_retrieval_model: BAAI/bge-m3

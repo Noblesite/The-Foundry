@@ -1,0 +1,679 @@
+import {
+  ApiEnvelope,
+  ArtifactDto,
+  AssemblyLineRunDto,
+  ConfigureConstructRuntimeRequest,
+  ConstructDto,
+  ConstructChatRequest,
+  ConstructChatResponseDto,
+  CreateWorkshopRequest,
+  ExportQAPairsDto,
+  ExportQAPairsRequest,
+  ForgeRunDto,
+  foundryApiRoutes,
+  IngestMaterialRequest,
+  LoadArtifactIntoConstructRequest,
+  LoadConstructRuntimeRequest,
+  MaterialChunkDto,
+  QAPairDto,
+  StartAssemblyLineRequest,
+  StartForgeRequest,
+} from "../contracts/foundryApi";
+import {
+  Artifact,
+  AssemblyLineRun,
+  Construct,
+  ConstructChatResponse,
+  ConstructChatStreamEvent,
+  ConstructRuntime,
+  DashboardSummary,
+  FoundryNavigationItem,
+  ForgeRun,
+  MaterialChunk,
+  MaterialSource,
+  NavigationSection,
+  QAPair,
+  SectionSummary,
+  Workshop,
+} from "../domain/foundry";
+import apiClient from "../managers/axiosConfig";
+import {
+  foundryNavigationItems,
+  foundrySectionSummaries,
+  mockDashboardSummary,
+} from "../mocks/foundryMockData";
+
+type SectionSummaryMap = Record<
+  Exclude<NavigationSection, "workshop" | "settings" | "construct">,
+  SectionSummary
+>;
+
+export interface UiCatalogItem {
+  id: string;
+  component: string;
+  station: NavigationSection;
+  purpose: string;
+  cacheKey: string;
+  lastUpdated: string;
+}
+
+export interface FoundryBootstrap {
+  dashboard: DashboardSummary;
+  navigationItems: FoundryNavigationItem[];
+  sectionSummaries: SectionSummaryMap;
+  uiCatalog: UiCatalogItem[];
+}
+
+export interface FoundryRepository {
+  createWorkshop: (request: CreateWorkshopRequest) => Promise<Workshop>;
+  getDashboard: () => Promise<DashboardSummary>;
+  getNavigationItems: () => Promise<FoundryNavigationItem[]>;
+  getSectionSummaries: () => Promise<SectionSummaryMap>;
+  getUiCatalog: () => Promise<UiCatalogItem[]>;
+  listWorkshops: () => Promise<Workshop[]>;
+  listMaterials: (workshopId: string) => Promise<MaterialSource[]>;
+  loadBootstrap: () => Promise<FoundryBootstrap>;
+  registerMaterial: (
+    workshopId: string,
+    request: IngestMaterialRequest
+  ) => Promise<MaterialSource>;
+  listAssemblyLineRuns: (workshopId: string) => Promise<AssemblyLineRun[]>;
+  startAssemblyLine: (
+    workshopId: string,
+    request: StartAssemblyLineRequest
+  ) => Promise<AssemblyLineRun>;
+  listMaterialChunks: (workshopId: string, runId?: string) => Promise<MaterialChunk[]>;
+  listQAPairs: (workshopId: string, runId?: string) => Promise<QAPair[]>;
+  exportQAPairs: (
+    workshopId: string,
+    request: ExportQAPairsRequest
+  ) => Promise<ExportQAPairsDto>;
+  listForgeRuns: (workshopId: string) => Promise<ForgeRun[]>;
+  startForge: (workshopId: string, request: StartForgeRequest) => Promise<ForgeRun>;
+  advanceForgeSimulation: (forgeRunId: string) => Promise<ForgeRun>;
+  listArtifacts: (workshopId: string) => Promise<Artifact[]>;
+  loadArtifactIntoConstruct: (
+    workshopId: string,
+    request: LoadArtifactIntoConstructRequest
+  ) => Promise<Construct>;
+  listConstructs: (workshopId: string) => Promise<Construct[]>;
+  chatWithConstruct: (
+    constructId: string,
+    request: ConstructChatRequest
+  ) => Promise<ConstructChatResponse>;
+  streamConstructChat: (
+    constructId: string,
+    request: ConstructChatRequest,
+    onEvent: (event: ConstructChatStreamEvent) => void
+  ) => Promise<void>;
+  getConstructRuntime: () => Promise<ConstructRuntime>;
+  configureConstructRuntime: (
+    request: ConfigureConstructRuntimeRequest
+  ) => Promise<ConstructRuntime>;
+  loadConstructRuntime: (request: LoadConstructRuntimeRequest) => Promise<ConstructRuntime>;
+  unloadConstructRuntime: () => Promise<ConstructRuntime>;
+}
+
+const mockMaterialSources: MaterialSource[] = [
+  {
+    id: "src-episode-transcripts",
+    name: "Episode transcripts",
+    kind: "transcript",
+    status: "qa-ready",
+    sourceUri: "runtime/materials/sources/transcripts",
+    chunkCount: 524,
+    qaPairCount: 288,
+  },
+  {
+    id: "src-wiki-pages",
+    name: "Character wiki pages",
+    kind: "website",
+    status: "chunked",
+    sourceUri: "https://example.local/paw-patrol/wiki",
+    chunkCount: 391,
+    qaPairCount: 174,
+  },
+  {
+    id: "src-safety-guide",
+    name: "Rescue safety guide",
+    kind: "pdf",
+    status: "needs-review",
+    sourceUri: "runtime/materials/sources/safety-guide.pdf",
+    chunkCount: 333,
+    qaPairCount: 180,
+  },
+];
+
+const mockUiCatalog: UiCatalogItem[] = [
+  {
+    id: "ui-dashboard-progress-ring",
+    component: "ProgressRing",
+    station: "workshop",
+    purpose: "Shows Workshop completion without requiring a backend render pass.",
+    cacheKey: "foundry:ui:progress-ring:v1",
+    lastUpdated: "2026-06-07T00:00:00Z",
+  },
+  {
+    id: "ui-construct-chat",
+    component: "ConstructWorkbench",
+    station: "construct",
+    purpose: "Hosts local model interaction and token streaming controls.",
+    cacheKey: "foundry:ui:construct-workbench:v1",
+    lastUpdated: "2026-06-07T00:00:00Z",
+  },
+  {
+    id: "ui-academy-tooltip",
+    component: "ConceptTooltip",
+    station: "academy",
+    purpose: "Keeps STEM explanations close to the action the user is taking.",
+    cacheKey: "foundry:ui:concept-tooltip:v1",
+    lastUpdated: "2026-06-07T00:00:00Z",
+  },
+];
+
+const mockAssemblyLineRuns: AssemblyLineRun[] = [];
+const mockMaterialChunks: MaterialChunk[] = [];
+const mockQAPairs: QAPair[] = [];
+const mockForgeRuns: ForgeRun[] = [...mockDashboardSummary.forgeQueue];
+const mockArtifacts: Artifact[] = [mockDashboardSummary.currentArtifact];
+let mockConstruct: Construct = mockDashboardSummary.construct;
+let mockConstructRuntime: ConstructRuntime = {
+  mode: "simulated",
+  status: "fallback",
+  detail: "Mock repository uses deterministic simulated token streaming.",
+  modelId: "active Artifact base model",
+  device: "none",
+  loaded: true,
+};
+
+const unwrap = <T>(response: { data: ApiEnvelope<T> }): T => response.data.data;
+
+export const mockFoundryRepository: FoundryRepository = {
+  createWorkshop: async (request) => ({
+    id: `wrk-${request.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    name: request.name,
+    subject: request.subject,
+    voiceTarget: request.voiceTarget || "Assistant",
+    status: "planning",
+    progress: 0,
+    materialRefinement: 0,
+    activeArtifactId: "art-draft",
+    activeConstructId: "con-draft",
+  }),
+  getDashboard: async () => mockDashboardSummary,
+  getNavigationItems: async () => foundryNavigationItems,
+  getSectionSummaries: async () => foundrySectionSummaries,
+  getUiCatalog: async () => mockUiCatalog,
+  listWorkshops: async () => [mockDashboardSummary.workshop],
+  listMaterials: async () => mockMaterialSources,
+  loadBootstrap: async () => ({
+    dashboard: mockDashboardSummary,
+    navigationItems: foundryNavigationItems,
+    sectionSummaries: foundrySectionSummaries,
+    uiCatalog: mockUiCatalog,
+  }),
+  registerMaterial: async (_workshopId, request) => {
+    const material: MaterialSource = {
+      id: `mat-${request.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      name: request.name,
+      kind: request.kind,
+      status: "staged",
+      sourceUri: request.sourceUri,
+      chunkCount: 0,
+      qaPairCount: 0,
+    };
+    mockMaterialSources.unshift(material);
+    return material;
+  },
+  listAssemblyLineRuns: async () => mockAssemblyLineRuns,
+  startAssemblyLine: async (_workshopId, request) => {
+    const selectedMaterials = mockMaterialSources.filter((material) =>
+      request.materialSourceIds.includes(material.id)
+    );
+    const chunkCount = selectedMaterials.reduce(
+      (total, material) => total + Math.max(1, material.chunkCount || 24),
+      0
+    );
+    const qaPairCount = selectedMaterials.length * request.qaPairsPerSource;
+    const run: AssemblyLineRun = {
+      id: `asm-${Date.now()}`,
+      workshopId: _workshopId,
+      materialSourceIds: request.materialSourceIds,
+      status: "completed",
+      progress: 100,
+      chunkSizeTokens: request.chunkSizeTokens,
+      chunkOverlapTokens: request.chunkOverlapTokens,
+      qaPairsPerSource: request.qaPairsPerSource,
+      chunkCount,
+      qaPairCount,
+    };
+    mockMaterialSources.forEach((material) => {
+      if (request.materialSourceIds.includes(material.id)) {
+        material.status = "qa-ready";
+        material.chunkCount =
+          material.chunkCount || Math.max(1, Math.round(chunkCount / Math.max(1, selectedMaterials.length)));
+        material.qaPairCount = material.qaPairCount || request.qaPairsPerSource;
+      }
+    });
+    selectedMaterials.forEach((material, materialIndex) => {
+      const chunk: MaterialChunk = {
+        id: `chk-${run.id}-${materialIndex}`,
+        workshopId: _workshopId,
+        materialId: material.id,
+        assemblyLineRunId: run.id,
+        chunkIndex: 0,
+        text: `Mock chunk generated from ${material.name}. This preview shows how source text will be prepared before QA generation.`,
+        tokenCount: Math.min(request.chunkSizeTokens, 24),
+      };
+      const qaPair: QAPair = {
+        id: `qa-${run.id}-${materialIndex}`,
+        workshopId: _workshopId,
+        materialId: material.id,
+        chunkId: chunk.id,
+        assemblyLineRunId: run.id,
+        question: `What does ${material.name} cover?`,
+        answer: chunk.text,
+      };
+      mockMaterialChunks.unshift(chunk);
+      mockQAPairs.unshift(qaPair);
+    });
+    mockAssemblyLineRuns.unshift(run);
+    return run;
+  },
+  listMaterialChunks: async (_workshopId, runId) =>
+    mockMaterialChunks.filter(
+      (chunk) => chunk.workshopId === _workshopId && (!runId || chunk.assemblyLineRunId === runId)
+    ),
+  listQAPairs: async (_workshopId, runId) =>
+    mockQAPairs.filter(
+      (qaPair) => qaPair.workshopId === _workshopId && (!runId || qaPair.assemblyLineRunId === runId)
+    ),
+  exportQAPairs: async (_workshopId, request) => {
+    const qaPairs = mockQAPairs.filter(
+      (qaPair) =>
+        qaPair.workshopId === _workshopId &&
+        qaPair.assemblyLineRunId === request.assemblyLineRunId
+    );
+    if (qaPairs.length === 0) {
+      throw new Error("This Assembly Line run has no QA pairs to export.");
+    }
+    const material: MaterialSource = {
+      id: `mat-export-${Date.now()}`,
+      name: request.name || "Training QA Dataset",
+      kind: "jsonl",
+      status: "qa-ready",
+      sourceUri: `runtime/materials/exports/${_workshopId}/${request.assemblyLineRunId}.jsonl`,
+      chunkCount: qaPairs.length,
+      qaPairCount: qaPairs.length,
+    };
+    mockMaterialSources.unshift(material);
+    return {
+      material,
+      exportUri: material.sourceUri,
+      format: "jsonl",
+      qaPairCount: qaPairs.length,
+      assemblyLineRunId: request.assemblyLineRunId,
+    };
+  },
+  listForgeRuns: async (_workshopId) =>
+    mockForgeRuns.filter((forgeRun) => forgeRun.workshopId === _workshopId),
+  startForge: async (_workshopId, request) => {
+    const material = mockMaterialSources.find(
+      (source) => source.id === request.materialSetId && source.kind === "jsonl"
+    );
+    if (!material) {
+      throw new Error("Select an exported JSONL Material before starting the Forge.");
+    }
+    const forgeRun: ForgeRun = {
+      id: `frg-${Date.now()}`,
+      workshopId: _workshopId,
+      materialSetId: request.materialSetId,
+      baseModel: request.baseModel,
+      label: `${request.method} Training`,
+      method: request.method,
+      status: "queued",
+      progress: 0,
+      learningRate: request.learningRate,
+      loadIn4Bit: request.loadIn4Bit,
+      epoch: {
+        current: 0,
+        total: request.epochs,
+      },
+    };
+    mockForgeRuns.unshift(forgeRun);
+    return forgeRun;
+  },
+  advanceForgeSimulation: async (forgeRunId) => {
+    const forgeRun = mockForgeRuns.find((run) => run.id === forgeRunId);
+    if (!forgeRun) {
+      throw new Error("Forge job was not found.");
+    }
+    if (forgeRun.status === "completed" || forgeRun.status === "failed") {
+      return forgeRun;
+    }
+
+    const epochTotal = forgeRun.epoch?.total ?? 1;
+    const nextProgress =
+      forgeRun.status === "queued"
+        ? Math.max(12, forgeRun.progress)
+        : Math.min(100, forgeRun.progress + Math.max(10, Math.round(100 / Math.max(3, epochTotal * 2))));
+    forgeRun.status = nextProgress >= 100 ? "completed" : "running";
+    forgeRun.progress = nextProgress;
+    forgeRun.epoch = {
+      current: nextProgress >= 100 ? epochTotal : Math.floor((nextProgress / 100) * epochTotal),
+      total: epochTotal,
+    };
+    if (forgeRun.status === "completed" && !forgeRun.artifactId) {
+      forgeRun.artifactId = `art-${forgeRun.id.replace(/^frg-/, "")}`;
+      const artifact: Artifact = {
+        id: forgeRun.artifactId,
+        workshopId: forgeRun.workshopId,
+        forgeRunId: forgeRun.id,
+        name: `${forgeRun.method} Artifact`,
+        version: `v0.${mockArtifacts.length + 1}.0`,
+        baseModel: forgeRun.baseModel || "unknown",
+        adapterPath: `runtime/artifacts/${forgeRun.artifactId}/adapter`,
+        status: "ready",
+        trainingMethod: forgeRun.method === "LoRA" ? "LoRA" : "QLoRA",
+        trialScore: 0,
+      };
+      mockArtifacts.unshift(artifact);
+      mockDashboardSummary.currentArtifact = artifact;
+      mockDashboardSummary.workshop.activeArtifactId = artifact.id;
+      mockDashboardSummary.workshop.status = "ready";
+    }
+    return forgeRun;
+  },
+  listArtifacts: async (_workshopId) =>
+    mockArtifacts.filter((artifact) => artifact.workshopId === _workshopId),
+  loadArtifactIntoConstruct: async (_workshopId, request) => {
+    const artifact = mockArtifacts.find(
+      (item) => item.id === request.artifactId && item.workshopId === _workshopId
+    );
+    if (!artifact) {
+      throw new Error("Artifact was not found for this Workshop.");
+    }
+    mockConstruct = {
+      ...mockConstruct,
+      artifactId: artifact.id,
+      name: `${artifact.name} Construct`,
+      status: "warming",
+    };
+    mockDashboardSummary.construct = mockConstruct;
+    mockDashboardSummary.currentArtifact = artifact;
+    mockDashboardSummary.workshop.activeArtifactId = artifact.id;
+    mockDashboardSummary.workshop.activeConstructId = mockConstruct.id;
+    return mockConstruct;
+  },
+  listConstructs: async (_workshopId) =>
+    mockConstruct.workshopId === _workshopId ? [mockConstruct] : [],
+  chatWithConstruct: async (constructId, request) => {
+    if (constructId !== mockConstruct.id) {
+      throw new Error("Construct was not found.");
+    }
+    const artifact = mockDashboardSummary.currentArtifact;
+    return {
+      conversationId: request.conversationId,
+      construct: {
+        ...mockConstruct,
+        status: "streaming",
+      },
+      artifact,
+      message: {
+        id: `msg-${Date.now()}`,
+        sender: "assistant",
+        text: `Simulated response from ${mockConstruct.name} using ${artifact.name} ${artifact.version}. You asked: "${request.message}". Generation settings are max_new_tokens=${request.maxNewTokens ?? mockConstruct.maxNewTokens}, temperature=${request.temperature ?? mockConstruct.temperature}, context_window=${mockConstruct.contextWindow}.`,
+        tokenCount: 32,
+      },
+      generation: {
+        contextWindow: mockConstruct.contextWindow,
+        maxNewTokens: request.maxNewTokens ?? mockConstruct.maxNewTokens,
+        temperature: request.temperature ?? mockConstruct.temperature,
+        includeLibraryContext: request.includeLibraryContext,
+      },
+    };
+  },
+  streamConstructChat: async (constructId, request, onEvent) => {
+    const response = await mockFoundryRepository.chatWithConstruct(constructId, request);
+    const tokens = response.message.text.split(" ");
+    tokens.forEach((token, index) => {
+      onEvent({
+        type: "token",
+        token: token + (index < tokens.length - 1 ? " " : ""),
+        index,
+      });
+    });
+    onEvent({
+      type: "done",
+      messageId: response.message.id,
+      totalTokens: response.message.tokenCount || tokens.length,
+      construct: response.construct,
+      artifact: response.artifact,
+      generation: response.generation,
+      runtime: {
+        mode: mockConstructRuntime.mode,
+        status: mockConstructRuntime.status,
+        detail: mockConstructRuntime.detail,
+        modelId: mockConstructRuntime.modelId,
+        device: mockConstructRuntime.device,
+        loaded: mockConstructRuntime.loaded,
+      },
+    });
+  },
+  getConstructRuntime: async () => mockConstructRuntime,
+  configureConstructRuntime: async (request) => {
+    mockConstructRuntime = {
+      mode: request.mode,
+      status: request.mode === "simulated" ? "fallback" : "configured",
+      detail:
+        request.mode === "simulated"
+          ? "Mock repository uses deterministic simulated token streaming."
+          : "Mock Transformers runtime is configured.",
+      modelId: request.modelId || "active Artifact base model",
+      device: request.mode === "simulated" ? "none" : request.device,
+      loaded: request.mode === "simulated",
+    };
+    return mockConstructRuntime;
+  },
+  loadConstructRuntime: async (request) => {
+    mockConstructRuntime = {
+      ...mockConstructRuntime,
+      modelId: request.modelId || mockConstructRuntime.modelId,
+      status: "loaded",
+      loaded: true,
+    };
+    return mockConstructRuntime;
+  },
+  unloadConstructRuntime: async () => {
+    mockConstructRuntime = {
+      ...mockConstructRuntime,
+      status: mockConstructRuntime.mode === "simulated" ? "fallback" : "configured",
+      loaded: mockConstructRuntime.mode === "simulated",
+    };
+    return mockConstructRuntime;
+  },
+};
+
+export const apiFoundryRepository: FoundryRepository = {
+  createWorkshop: async (request) =>
+    unwrap(await apiClient.post<ApiEnvelope<Workshop>>(foundryApiRoutes.workshops, request)),
+  getDashboard: async () =>
+    unwrap(await apiClient.get<ApiEnvelope<DashboardSummary>>(foundryApiRoutes.dashboard)),
+  getNavigationItems: async () =>
+    unwrap(await apiClient.get<ApiEnvelope<FoundryNavigationItem[]>>(foundryApiRoutes.navigation)),
+  getSectionSummaries: async () =>
+    unwrap(await apiClient.get<ApiEnvelope<SectionSummaryMap>>(foundryApiRoutes.sectionSummaries)),
+  getUiCatalog: async () =>
+    unwrap(await apiClient.get<ApiEnvelope<UiCatalogItem[]>>(foundryApiRoutes.uiCatalog)),
+  listWorkshops: async () =>
+    unwrap(await apiClient.get<ApiEnvelope<Workshop[]>>(foundryApiRoutes.workshops)),
+  listMaterials: async (workshopId) =>
+    unwrap(await apiClient.get<ApiEnvelope<MaterialSource[]>>(foundryApiRoutes.materials(workshopId))),
+  loadBootstrap: async () =>
+    unwrap(await apiClient.get<ApiEnvelope<FoundryBootstrap>>(foundryApiRoutes.bootstrap)),
+  registerMaterial: async (workshopId, request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<MaterialSource>>(
+        foundryApiRoutes.materials(workshopId),
+        request
+      )
+    ),
+  listAssemblyLineRuns: async (workshopId) =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<AssemblyLineRunDto[]>>(
+        foundryApiRoutes.assemblyLines(workshopId)
+      )
+    ),
+  startAssemblyLine: async (workshopId, request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<AssemblyLineRunDto>>(
+        foundryApiRoutes.assemblyLines(workshopId),
+        request
+      )
+    ),
+  listMaterialChunks: async (workshopId, runId) =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<MaterialChunkDto[]>>(foundryApiRoutes.chunks(workshopId), {
+        params: runId ? { runId } : undefined,
+      })
+    ),
+  listQAPairs: async (workshopId, runId) =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<QAPairDto[]>>(foundryApiRoutes.qaPairs(workshopId), {
+        params: runId ? { runId } : undefined,
+      })
+    ),
+  exportQAPairs: async (workshopId, request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ExportQAPairsDto>>(
+        foundryApiRoutes.exportQAPairs(workshopId),
+        request
+      )
+    ),
+  listForgeRuns: async (workshopId) =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<ForgeRunDto[]>>(foundryApiRoutes.forgeRuns(workshopId))
+    ),
+  startForge: async (workshopId, request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ForgeRunDto>>(
+        foundryApiRoutes.forgeRuns(workshopId),
+        request
+      )
+    ),
+  advanceForgeSimulation: async (forgeRunId) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ForgeRunDto>>(
+        foundryApiRoutes.simulateForgeRun(forgeRunId)
+      )
+    ),
+  listArtifacts: async (workshopId) =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<ArtifactDto[]>>(foundryApiRoutes.artifacts(workshopId))
+    ),
+  loadArtifactIntoConstruct: async (workshopId, request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ConstructDto>>(
+        foundryApiRoutes.loadArtifactIntoConstruct(workshopId),
+        request
+      )
+    ),
+  listConstructs: async (workshopId) =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<ConstructDto[]>>(foundryApiRoutes.constructs(workshopId))
+    ),
+  chatWithConstruct: async (constructId, request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ConstructChatResponseDto>>(
+        foundryApiRoutes.constructChat(constructId),
+        request
+      )
+    ),
+  streamConstructChat: async (constructId, request, onEvent) => {
+    const baseUrl = apiClient.defaults.baseURL || "";
+    const response = await fetch(`${baseUrl}${foundryApiRoutes.constructStream(constructId)}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+    });
+    if (!response.ok || !response.body) {
+      throw new Error(`Construct stream failed with status ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop() || "";
+
+      events.forEach((eventBlock) => {
+        const dataLine = eventBlock
+          .split("\n")
+          .find((line) => line.startsWith("data: "));
+        if (!dataLine) {
+          return;
+        }
+        onEvent(JSON.parse(dataLine.slice(6)) as ConstructChatStreamEvent);
+      });
+    }
+  },
+  getConstructRuntime: async () =>
+    unwrap(await apiClient.get<ApiEnvelope<ConstructRuntime>>(foundryApiRoutes.constructRuntime)),
+  configureConstructRuntime: async (request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ConstructRuntime>>(
+        foundryApiRoutes.configureConstructRuntime,
+        request
+      )
+    ),
+  loadConstructRuntime: async (request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ConstructRuntime>>(
+        foundryApiRoutes.loadConstructRuntime,
+        request
+      )
+    ),
+  unloadConstructRuntime: async () =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ConstructRuntime>>(
+        foundryApiRoutes.unloadConstructRuntime
+      )
+    ),
+};
+
+export const getFoundryRepository = (): FoundryRepository => {
+  return import.meta.env.VITE_FOUNDRY_DATA_SOURCE === "api"
+    ? apiFoundryRepository
+    : mockFoundryRepository;
+};
+
+export const loadFoundryBootstrap = async (
+  repository: FoundryRepository = getFoundryRepository()
+): Promise<FoundryBootstrap> => {
+  if (repository === apiFoundryRepository) {
+    return repository.loadBootstrap();
+  }
+
+  const [dashboard, navigationItems, sectionSummaries, uiCatalog] = await Promise.all([
+    repository.getDashboard(),
+    repository.getNavigationItems(),
+    repository.getSectionSummaries(),
+    repository.getUiCatalog(),
+  ]);
+
+  return {
+    dashboard,
+    navigationItems,
+    sectionSummaries,
+    uiCatalog,
+  };
+};

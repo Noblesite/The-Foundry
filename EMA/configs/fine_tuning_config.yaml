@@ -1,0 +1,46 @@
+model_name: "cerebras/btlm-3b-8k-base"  # Replace with "meta-llama/Llama-2-7b-chat-hf" if switching models
+save_name: "btlm-3b-8k-base-EMA"
+learning_rate: 5e-5
+epochs: 5
+batch_size: 4
+context_window: 2048
+warm_up: 0.01 # Warm up for the % of the dataset
+pipeline_parallel_size: 2
+max_grad_norm: 1.0
+gradient_accumulation_steps: 4
+logging_steps: 10
+fp16: true
+bf16: false
+
+lora:
+  r: 8  # Rank of the low-rank adaptation
+  alpha: 32  # LoRA scaling factor
+  dropout: 0.1  # Dropout for LoRA layers
+  bias: "none"  # Bias type (options: "none", "all", "lora_only")
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]  # 🔥 Now configurable example ["q_proj", "k_proj", "v_proj", "o_proj"] 
+  
+quantization:
+  enable: true  # Enable quantization
+  bits: 4  # Quantization precision (options: 4, 8, 16)
+  compute_dtype: "float16"  # Computation dtype (options: "float16", "bfloat16")
+  device_map: "auto"  # Automatic device placement
+  use_flash_attention: false  # Enable Flash Attention for speedup (if supported)
+
+wandb:
+  enable: false
+  project_name: "ema_fine_tuning"
+  run_name: "qlora_fine_tuning_run"
+  entity: "noblesite-noblesite-org"
+
+metadata_filter:
+  enable: false  # Use metadata filters in dataset preparation
+  keys: ["source", "tags"]  # Keys to consider for filtering
+
+checkpointing:
+  enable: true
+  save_steps: 1000  # Frequency (in steps) to save checkpoints
+  resume_from_checkpoint: true  # Whether to resume training from the latest checkpoint
+
+validation:
+  enable_validation: false
+  validation_split: 0.1  # Proportion of the dataset for validation

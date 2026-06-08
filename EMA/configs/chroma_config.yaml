@@ -1,0 +1,10 @@
+chroma_db:
+  embeddings_path: /data/chroma_embeddings
+  query_top_k: 10  # Number of top results to retrieve in RAG
+  persistent_storage: true
+  host: localhost
+  port: 8000
+
+retrieval:
+  use_faiss: true
+  embedding_model: all-MiniLM-L6-v2  # Model for generating embeddings
