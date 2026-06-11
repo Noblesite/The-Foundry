@@ -1098,6 +1098,20 @@ input[type="checkbox"] {
   cursor: default;
 }
 
+.forge-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.worker-sync-stamp {
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
 .forge-event-log {
   grid-column: 1 / -1;
   display: grid;

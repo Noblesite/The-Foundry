@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { StartForgeRequest } from "../contracts/foundryApi";
 import {
   ForgeRun,
@@ -13,6 +13,8 @@ import {
 import { FoundryRepository } from "../services/foundryRepository";
 import { WorkspaceSettings } from "./SettingsOverlay";
 import { ConceptTooltip, LearningCard, TrainingMetricExplainer } from "./LearningComponents";
+
+const FORGE_WORKER_POLL_MS = 3000;
 
 interface ForgeWorkbenchProps {
   repository: FoundryRepository;
@@ -42,11 +44,67 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   });
   const [isStarting, setIsStarting] = useState(false);
   const [advancingRunId, setAdvancingRunId] = useState<string | null>(null);
+  const [isRefreshingWorkers, setIsRefreshingWorkers] = useState(false);
   const [isConfiguringRuntime, setIsConfiguringRuntime] = useState(false);
   const [forgeRuntime, setForgeRuntime] = useState<ForgeRuntime | null>(null);
   const [runtimeModeDraft, setRuntimeModeDraft] = useState<ForgeRuntimeMode>("simulated");
+  const [lastWorkerSync, setLastWorkerSync] = useState<string | null>(null);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const refreshForgeQueue = useCallback(
+    async ({ silent = true }: { silent?: boolean } = {}) => {
+      if (!silent) {
+        setIsRefreshingWorkers(true);
+        setError(null);
+      }
+
+      try {
+        const runs = await repository.listForgeRuns(workshop.id);
+        const workerStateEntries = await Promise.all(
+          runs.map(async (run) => {
+            try {
+              const state = await repository.getForgeWorkerState(run.id);
+              return [run.id, state] as const;
+            } catch {
+              return run.workerState ? ([run.id, run.workerState] as const) : null;
+            }
+          })
+        );
+
+        setForgeRuns(runs);
+        setWorkerStates((current) => {
+          const next = { ...current };
+          workerStateEntries.forEach((entry) => {
+            if (entry) {
+              next[entry[0]] = entry[1];
+            }
+          });
+          return next;
+        });
+        setLastWorkerSync(
+          new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          })
+        );
+      } catch (refreshError: unknown) {
+        if (!silent) {
+          setError(
+            refreshError instanceof Error
+              ? refreshError.message
+              : "Could not refresh Forge worker events."
+          );
+        }
+      } finally {
+        if (!silent) {
+          setIsRefreshingWorkers(false);
+        }
+      }
+    },
+    [repository, workshop.id]
+  );
 
   useEffect(() => {
     let isCurrent = true;
@@ -119,10 +177,27 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     [materials]
   );
 
+  const hasActiveForgeRuns = useMemo(
+    () => forgeRuns.some((run) => run.status === "queued" || run.status === "running"),
+    [forgeRuns]
+  );
+
   const selectedMaterial = useMemo(
     () => jsonlMaterials.find((source) => source.id === draft.materialSetId),
     [draft.materialSetId, jsonlMaterials]
   );
+
+  useEffect(() => {
+    if (!hasActiveForgeRuns) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshForgeQueue();
+    }, FORGE_WORKER_POLL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [hasActiveForgeRuns, refreshForgeQueue]);
 
   const updateDraft = <K extends keyof StartForgeRequest>(
     key: K,
@@ -162,6 +237,13 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
       if (forgeRun.workerState) {
         setWorkerStates((current) => ({ ...current, [forgeRun.id]: forgeRun.workerState! }));
       }
+      setLastWorkerSync(
+        new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      );
       setStatusText(`${forgeRun.label} queued with ${selectedMaterial?.qaPairCount ?? 0} QA pairs.`);
     } catch (startError: unknown) {
       setError(startError instanceof Error ? startError.message : "Could not start Forge.");
@@ -183,6 +265,13 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
       if (forgeRun.workerState) {
         setWorkerStates((current) => ({ ...current, [forgeRun.id]: forgeRun.workerState! }));
       }
+      setLastWorkerSync(
+        new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      );
       setStatusText(
         forgeRun.artifactId
           ? `${forgeRun.label} completed. Artifact ${forgeRun.artifactId} is ready.`
@@ -395,65 +484,90 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
             <p className="panel-kicker">Forge Queue</p>
             <h2>Training Jobs</h2>
           </div>
-          <span className="status-badge">{forgeRuns.length} jobs</span>
+          <div className="forge-queue-actions">
+            <span className={`status-badge ${hasActiveForgeRuns ? "is-forging" : ""}`}>
+              {hasActiveForgeRuns ? "live monitor" : "idle"}
+            </span>
+            {lastWorkerSync && <span className="worker-sync-stamp">synced {lastWorkerSync}</span>}
+            <span className="status-badge">{forgeRuns.length} jobs</span>
+            <button
+              className="button-secondary button-compact"
+              type="button"
+              onClick={() => void refreshForgeQueue({ silent: false })}
+              disabled={isRefreshingWorkers}
+            >
+              <i className="fas fa-rotate" aria-hidden="true" />
+              {isRefreshingWorkers ? "Syncing" : "Refresh"}
+            </button>
+          </div>
         </div>
         <div className="assembly-run-list">
           {forgeRuns.length === 0 ? (
             <p className="empty-state">No Forge jobs queued yet.</p>
           ) : (
-            forgeRuns.map((run) => (
-              <article className="assembly-run-row forge-run-row" key={run.id}>
-                <div>
-                  <strong>{run.label}</strong>
-                  <span>{run.status} / {run.progress}%</span>
-                  <div
-                    className="forge-progress-track"
-                    aria-label={`${run.label} progress`}
-                    aria-valuemax={100}
-                    aria-valuemin={0}
-                    aria-valuenow={run.progress}
-                    role="progressbar"
-                  >
-                    <span style={{ width: `${run.progress}%` }} />
-                  </div>
-                </div>
-                <div className="material-meta">
-                  <span>{run.method}</span>
-                  {run.epoch && <span>Epoch {run.epoch.current} / {run.epoch.total}</span>}
-                  {run.materialSetId && <span>{run.materialSetId}</span>}
-                  {run.artifactId && <span>Artifact {run.artifactId}</span>}
-                  {run.trainingContract && (
-                    <span title={run.trainingContract.outputDir}>
-                      {run.trainingContract.contractVersion}
-                    </span>
-                  )}
-                  <button
-                    className="button-secondary button-compact"
-                    type="button"
-                    disabled={
-                      advancingRunId === run.id ||
-                      run.status === "completed" ||
-                      run.status === "failed"
-                    }
-                    onClick={() => advanceSimulation(run.id)}
-                  >
-                    <i className="fas fa-forward-step" aria-hidden="true" />
-                    {advancingRunId === run.id ? "Advancing" : "Run Step"}
-                  </button>
-                </div>
-                <div className="forge-event-log" aria-label={`${run.label} worker events`}>
-                  {(workerStates[run.id]?.events || []).slice(-4).map((event) => (
-                    <div className="forge-event-row" key={event.id}>
-                      <span>{event.type.split("_").join(" ")}</span>
-                      <p>{event.message}</p>
+            forgeRuns.map((run) => {
+              const workerState = workerStates[run.id];
+              const metrics = workerState?.metrics;
+              return (
+                <article className="assembly-run-row forge-run-row" key={run.id}>
+                  <div>
+                    <strong>{run.label}</strong>
+                    <span>{run.status} / {run.progress}%</span>
+                    <div
+                      className="forge-progress-track"
+                      aria-label={`${run.label} progress`}
+                      aria-valuemax={100}
+                      aria-valuemin={0}
+                      aria-valuenow={run.progress}
+                      role="progressbar"
+                    >
+                      <span style={{ width: `${run.progress}%` }} />
                     </div>
-                  ))}
-                  {!workerStates[run.id]?.events?.length && (
-                    <p className="empty-state">Worker events will appear after this Forge writes a contract.</p>
-                  )}
-                </div>
-              </article>
-            ))
+                  </div>
+                  <div className="material-meta">
+                    <span>{run.method}</span>
+                    {run.epoch && <span>Epoch {run.epoch.current} / {run.epoch.total}</span>}
+                    {metrics && <span>{metrics.datasetRows.toLocaleString()} rows</span>}
+                    {metrics?.lastEvent && (
+                      <span>{metrics.lastEvent.split("_").join(" ")}</span>
+                    )}
+                    {run.materialSetId && <span>{run.materialSetId}</span>}
+                    {run.artifactId && <span>Artifact {run.artifactId}</span>}
+                    {run.trainingContract && (
+                      <span title={run.trainingContract.outputDir}>
+                        {run.trainingContract.contractVersion}
+                      </span>
+                    )}
+                    <button
+                      className="button-secondary button-compact"
+                      type="button"
+                      disabled={
+                        advancingRunId === run.id ||
+                        run.status === "completed" ||
+                        run.status === "failed"
+                      }
+                      onClick={() => advanceSimulation(run.id)}
+                    >
+                      <i className="fas fa-forward-step" aria-hidden="true" />
+                      {advancingRunId === run.id ? "Advancing" : "Run Step"}
+                    </button>
+                  </div>
+                  <div className="forge-event-log" aria-label={`${run.label} worker events`}>
+                    {(workerState?.events || []).slice(-4).map((event) => (
+                      <div className="forge-event-row" key={event.id}>
+                        <span>{event.type.split("_").join(" ")}</span>
+                        <p>{event.message}</p>
+                      </div>
+                    ))}
+                    {!workerState?.events?.length && (
+                      <p className="empty-state">
+                        Worker events will appear after this Forge writes a contract.
+                      </p>
+                    )}
+                  </div>
+                </article>
+              );
+            })
           )}
         </div>
       </section>

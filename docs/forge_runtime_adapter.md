@@ -42,6 +42,10 @@ These files are intentionally ignored by git. They make the simulator behave
 like a real worker: a Forge has an executable contract, durable events, and
 metrics that the UI can poll.
 
+The Forge queue polls worker state while jobs are queued or running. Manual
+refresh remains available for older Forge rows that predate worker files or for
+operators who want to inspect the latest contract state on demand.
+
 Simulator event types:
 
 - `queued`
