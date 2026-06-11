@@ -116,6 +116,39 @@ def run_api_transport_boundary_check() -> int:
     return 0
 
 
+def run_forge_adapter_boundary_check() -> int:
+    api_server = PACKAGE_ROOT / "backend" / "api_server.py"
+    forge_service = PACKAGE_ROOT / "backend" / "services" / "forge_training_service.py"
+    api_source = api_server.read_text(encoding="utf-8")
+    service_source = forge_service.read_text(encoding="utf-8")
+
+    required_api_patterns = (
+        "ForgeTrainingService",
+        "/api/v1/forges/runtime",
+        "build_training_contract",
+    )
+    missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
+    if missing_api:
+        return fail("Forge runtime API boundary is missing: " + ", ".join(missing_api))
+
+    required_service_patterns = (
+        "foundry.forge.training.v1",
+        "FOUNDRY_FORGE_RUNTIME_MODE",
+        "supportsMethods",
+    )
+    missing_service = [
+        pattern for pattern in required_service_patterns if pattern not in service_source
+    ]
+    if missing_service:
+        return fail(
+            "ForgeTrainingService contract markers are missing: "
+            + ", ".join(missing_service)
+        )
+
+    print("OK: Forge runtime adapter contract is present.")
+    return 0
+
+
 def run_chat_service_fake_engine_check() -> int:
     if str(PACKAGE_ROOT) not in sys.path:
         sys.path.insert(0, str(PACKAGE_ROOT))
@@ -172,6 +205,7 @@ def main() -> int:
         run_git_artifact_check,
         run_path_config_check,
         run_api_transport_boundary_check,
+        run_forge_adapter_boundary_check,
         run_chat_service_fake_engine_check,
     )
     failures = sum(check() for check in checks)

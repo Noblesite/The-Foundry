@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from fastapi.responses import JSONResponse, StreamingResponse
 from backend.services.chat_orchestration_service import ChatOrchestrationService
 from backend.services.construct_inference_service import ConstructInferenceService
+from backend.services.forge_training_service import ForgeTrainingService
 from backend.services.foundry_catalog_service import FoundryCatalogService
 
 
@@ -68,6 +69,10 @@ class StartForgeInput(BaseModel):
     learningRate: str
     loadIn4Bit: bool
 
+class ForgeRuntimeInput(BaseModel):
+    mode: Literal["simulated", "local"]
+    worker: str | None = None
+
 class LoadArtifactInput(BaseModel):
     artifactId: str
 
@@ -92,6 +97,7 @@ logger = get_logger(__name__)
 
 chat_service = ChatOrchestrationService()
 construct_inference_service = ConstructInferenceService()
+forge_training_service = ForgeTrainingService()
 foundry_catalog_service = FoundryCatalogService()
 
 active_connections: Set[WebSocket] = set()
@@ -108,6 +114,23 @@ def sse_event(event_type: str, payload: dict[str, Any]) -> str:
 @app.get("/api/v1/constructs/runtime")
 async def foundry_construct_runtime_endpoint():
     return api_envelope(construct_inference_service.runtime_payload())
+
+
+@app.get("/api/v1/forges/runtime")
+async def foundry_forge_runtime_endpoint():
+    return api_envelope(forge_training_service.runtime_payload())
+
+
+@app.post("/api/v1/forges/runtime/configure")
+async def configure_foundry_forge_runtime_endpoint(data: ForgeRuntimeInput):
+    try:
+        runtime = await forge_training_service.configure(
+            mode=data.mode,
+            worker=data.worker,
+        )
+        return api_envelope(runtime)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.post("/api/v1/constructs/runtime/configure")
@@ -329,6 +352,11 @@ async def start_foundry_forge_endpoint(workshop_id: str, data: StartForgeInput):
             epochs=data.epochs,
             learning_rate=learning_rate,
             load_in_4bit=data.loadIn4Bit,
+        )
+        material = await foundry_catalog_service.get_material(workshop_id, material_id)
+        forge["trainingContract"] = forge_training_service.build_training_contract(
+            forge_run=forge,
+            material=material,
         )
         return api_envelope(forge)
     except ValueError as error:

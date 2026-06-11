@@ -7,6 +7,7 @@ import {
   ConstructChatDoneEvent,
   ConstructChatErrorEvent,
   ConstructChatStreamEvent,
+  ForgeRuntime,
   ForgeRunStatus,
   MaterialSource,
   MaterialKind,
@@ -37,6 +38,8 @@ export const foundryApiRoutes = {
   forgeRun: (forgeRunId: string) => `${FOUNDRY_API_VERSION}/forges/${forgeRunId}`,
   simulateForgeRun: (forgeRunId: string) =>
     `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/simulate`,
+  forgeRuntime: `${FOUNDRY_API_VERSION}/forges/runtime`,
+  configureForgeRuntime: `${FOUNDRY_API_VERSION}/forges/runtime/configure`,
   artifacts: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/artifacts`,
   artifact: (artifactId: string) => `${FOUNDRY_API_VERSION}/artifacts/${artifactId}`,
   constructs: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/constructs`,
@@ -154,6 +157,20 @@ export interface ForgeRunDto {
   epochTotal?: number;
   createdAt: string;
   updatedAt: string;
+  trainingContract?: {
+    contractVersion: "foundry.forge.training.v1";
+    forgeRunId: string;
+    workshopId: string;
+    materialId: string;
+    datasetUri: string;
+    baseModel: string;
+    method: TrainingMethod;
+    epochs: number;
+    learningRate: string;
+    loadIn4Bit: boolean;
+    outputDir: string;
+    runtime: ForgeRuntime;
+  };
 }
 
 export interface ArtifactDto {
@@ -233,6 +250,11 @@ export interface StartForgeRequest {
   epochs: number;
   learningRate: string;
   loadIn4Bit: boolean;
+}
+
+export interface ConfigureForgeRuntimeRequest {
+  mode: "simulated" | "local";
+  worker?: string;
 }
 
 export interface CreateConstructRequest {

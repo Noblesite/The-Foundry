@@ -1,6 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { StartForgeRequest } from "../contracts/foundryApi";
-import { ForgeRun, MaterialSource, SectionSummary, TrainingMethod, Workshop } from "../domain/foundry";
+import {
+  ForgeRun,
+  ForgeRuntime,
+  ForgeRuntimeMode,
+  MaterialSource,
+  SectionSummary,
+  TrainingMethod,
+  Workshop,
+} from "../domain/foundry";
 import { FoundryRepository } from "../services/foundryRepository";
 import { WorkspaceSettings } from "./SettingsOverlay";
 import { ConceptTooltip, LearningCard, TrainingMetricExplainer } from "./LearningComponents";
@@ -32,6 +40,9 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   });
   const [isStarting, setIsStarting] = useState(false);
   const [advancingRunId, setAdvancingRunId] = useState<string | null>(null);
+  const [isConfiguringRuntime, setIsConfiguringRuntime] = useState(false);
+  const [forgeRuntime, setForgeRuntime] = useState<ForgeRuntime | null>(null);
+  const [runtimeModeDraft, setRuntimeModeDraft] = useState<ForgeRuntimeMode>("simulated");
   const [statusText, setStatusText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,8 +52,9 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     Promise.all([
       repository.listMaterials(workshop.id),
       repository.listForgeRuns(workshop.id),
+      repository.getForgeRuntime(),
     ])
-      .then(([sources, runs]) => {
+      .then(([sources, runs, runtime]) => {
         if (!isCurrent) {
           return;
         }
@@ -50,6 +62,8 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
         const jsonlMaterials = sources.filter((source) => source.kind === "jsonl");
         setMaterials(sources);
         setForgeRuns(runs);
+        setForgeRuntime(runtime);
+        setRuntimeModeDraft(runtime.mode);
         setDraft((current) => ({
           ...current,
           baseModel: settings.modelName,
@@ -94,6 +108,25 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     value: StartForgeRequest[K]
   ) => {
     setDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const configureRuntime = async () => {
+    setIsConfiguringRuntime(true);
+    setError(null);
+    setStatusText(null);
+
+    try {
+      const runtime = await repository.configureForgeRuntime({
+        mode: runtimeModeDraft,
+        worker: runtimeModeDraft === "local" ? "local-process" : undefined,
+      });
+      setForgeRuntime(runtime);
+      setStatusText(`Forge runtime set to ${runtime.mode}: ${runtime.status}.`);
+    } catch (runtimeError: unknown) {
+      setError(runtimeError instanceof Error ? runtimeError.message : "Could not configure Forge runtime.");
+    } finally {
+      setIsConfiguringRuntime(false);
+    }
   };
 
   const startForge = async (event: React.FormEvent) => {
@@ -256,6 +289,52 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
         <div className="forge-panel panel-glass">
           <div className="panel-heading">
             <div>
+              <p className="panel-kicker">Forge Runtime</p>
+              <h2>Trainer Adapter</h2>
+            </div>
+          </div>
+
+          <div className="construct-runtime-card">
+            <strong>{forgeRuntime?.mode || "simulated"}</strong>
+            <span title={forgeRuntime?.detail}>
+              {forgeRuntime?.detail || "Loading Forge runtime status..."}
+            </span>
+            <div className="runtime-control-grid">
+              <span className="status-badge">{forgeRuntime?.status || "checking"}</span>
+              <span className="status-badge">{forgeRuntime?.ready ? "ready" : "not ready"}</span>
+              <span className="status-badge">{forgeRuntime?.worker || "worker pending"}</span>
+            </div>
+            <div className="runtime-action-row">
+              <select
+                aria-label="Forge runtime mode"
+                value={runtimeModeDraft}
+                onChange={(event) => setRuntimeModeDraft(event.target.value as ForgeRuntimeMode)}
+              >
+                <option value="simulated">Simulator</option>
+                <option value="local">Local trainer</option>
+              </select>
+              <button
+                className="button-secondary"
+                type="button"
+                onClick={configureRuntime}
+                disabled={isConfiguringRuntime}
+              >
+                <i className="fas fa-sliders" aria-hidden="true" />
+                {isConfiguringRuntime ? "Configuring" : "Configure"}
+              </button>
+            </div>
+          </div>
+
+          <ConceptTooltip label="Why an adapter boundary?" title="Forge Runtime">
+            The Forge screen creates a training contract first. The simulator can
+            advance it today, while the local trainer adapter will later execute
+            the same contract with LoRA or QLoRA workers.
+          </ConceptTooltip>
+        </div>
+
+        <div className="forge-panel panel-glass">
+          <div className="panel-heading">
+            <div>
               <p className="panel-kicker">Selected Material</p>
               <h2>Dataset Readiness</h2>
             </div>
@@ -316,6 +395,11 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                   {run.epoch && <span>Epoch {run.epoch.current} / {run.epoch.total}</span>}
                   {run.materialSetId && <span>{run.materialSetId}</span>}
                   {run.artifactId && <span>Artifact {run.artifactId}</span>}
+                  {run.trainingContract && (
+                    <span title={run.trainingContract.outputDir}>
+                      {run.trainingContract.contractVersion}
+                    </span>
+                  )}
                   <button
                     className="button-secondary button-compact"
                     type="button"

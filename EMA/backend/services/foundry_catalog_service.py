@@ -729,6 +729,22 @@ class FoundryCatalogService:
 
         return await self._run_query(query)
 
+    async def get_material(self, workshop_id: str, material_id: str) -> Dict[str, Any]:
+        def query():
+            with self._connect() as connection:
+                row = connection.execute(
+                    """
+                    SELECT * FROM materials
+                    WHERE id = ? AND workshop_id = ?
+                    """,
+                    (material_id, workshop_id),
+                ).fetchone()
+                if row is None:
+                    raise ValueError("Material was not found for this Workshop.")
+                return self._material_from_row(row)
+
+        return await self._run_query(query)
+
     async def list_artifacts(self, workshop_id: str) -> List[Dict[str, Any]]:
         def query():
             with self._connect() as connection:

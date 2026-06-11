@@ -3,6 +3,7 @@ import {
   ArtifactDto,
   AssemblyLineRunDto,
   ConfigureConstructRuntimeRequest,
+  ConfigureForgeRuntimeRequest,
   ConstructDto,
   ConstructChatRequest,
   ConstructChatResponseDto,
@@ -28,6 +29,7 @@ import {
   ConstructRuntime,
   DashboardSummary,
   FoundryNavigationItem,
+  ForgeRuntime,
   ForgeRun,
   MaterialChunk,
   MaterialSource,
@@ -91,6 +93,8 @@ export interface FoundryRepository {
   listForgeRuns: (workshopId: string) => Promise<ForgeRun[]>;
   startForge: (workshopId: string, request: StartForgeRequest) => Promise<ForgeRun>;
   advanceForgeSimulation: (forgeRunId: string) => Promise<ForgeRun>;
+  getForgeRuntime: () => Promise<ForgeRuntime>;
+  configureForgeRuntime: (request: ConfigureForgeRuntimeRequest) => Promise<ForgeRuntime>;
   listArtifacts: (workshopId: string) => Promise<Artifact[]>;
   loadArtifactIntoConstruct: (
     workshopId: string,
@@ -184,6 +188,14 @@ let mockConstructRuntime: ConstructRuntime = {
   modelId: "active Artifact base model",
   device: "none",
   loaded: true,
+};
+let mockForgeRuntime: ForgeRuntime = {
+  mode: "simulated",
+  status: "ready",
+  detail: "Mock Forge runtime uses deterministic progress simulation.",
+  worker: "in-process-simulator",
+  ready: true,
+  supportsMethods: ["LoRA", "QLoRA"],
 };
 
 const unwrap = <T>(response: { data: ApiEnvelope<T> }): T => response.data.data;
@@ -339,7 +351,23 @@ export const mockFoundryRepository: FoundryRepository = {
         current: 0,
         total: request.epochs,
       },
+      trainingContract: {
+        contractVersion: "foundry.forge.training.v1",
+        forgeRunId: `pending-${Date.now()}`,
+        workshopId: _workshopId,
+        materialId: request.materialSetId,
+        datasetUri: material.sourceUri,
+        baseModel: request.baseModel,
+        method: request.method,
+        epochs: request.epochs,
+        learningRate: request.learningRate,
+        loadIn4Bit: request.loadIn4Bit,
+        outputDir: "runtime/artifacts/pending/mock",
+        runtime: mockForgeRuntime,
+      },
     };
+    forgeRun.trainingContract!.forgeRunId = forgeRun.id;
+    forgeRun.trainingContract!.outputDir = `runtime/artifacts/pending/${forgeRun.id}`;
     mockForgeRuns.unshift(forgeRun);
     return forgeRun;
   },
@@ -383,6 +411,21 @@ export const mockFoundryRepository: FoundryRepository = {
       mockDashboardSummary.workshop.status = "ready";
     }
     return forgeRun;
+  },
+  getForgeRuntime: async () => mockForgeRuntime,
+  configureForgeRuntime: async (request) => {
+    mockForgeRuntime = {
+      mode: request.mode,
+      status: request.mode === "simulated" ? "ready" : "blocked",
+      detail:
+        request.mode === "simulated"
+          ? "Mock Forge runtime uses deterministic progress simulation."
+          : "Mock local trainer adapter is configured but not executable.",
+      worker: request.worker || (request.mode === "simulated" ? "in-process-simulator" : "local-process"),
+      ready: request.mode === "simulated",
+      supportsMethods: ["LoRA", "QLoRA"],
+    };
+    return mockForgeRuntime;
   },
   listArtifacts: async (_workshopId) =>
     mockArtifacts.filter((artifact) => artifact.workshopId === _workshopId),
@@ -565,6 +608,15 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.post<ApiEnvelope<ForgeRunDto>>(
         foundryApiRoutes.simulateForgeRun(forgeRunId)
+      )
+    ),
+  getForgeRuntime: async () =>
+    unwrap(await apiClient.get<ApiEnvelope<ForgeRuntime>>(foundryApiRoutes.forgeRuntime)),
+  configureForgeRuntime: async (request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ForgeRuntime>>(
+        foundryApiRoutes.configureForgeRuntime,
+        request
       )
     ),
   listArtifacts: async (workshopId) =>

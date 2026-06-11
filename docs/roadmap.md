@@ -21,8 +21,8 @@ complexity.
 
 ## Phase 3: Real Forge Adapter
 
-- Define a trainer adapter interface.
-- Keep simulator as the default Forge runtime.
+- Define a trainer adapter interface. Done for the first contract slice.
+- Keep simulator as the default Forge runtime. Done for the first contract slice.
 - Add a local LoRA/QLoRA worker behind the adapter.
 - Emit durable job events and metrics.
 - Produce Artifact metadata from real trainer output.

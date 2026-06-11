@@ -25,6 +25,7 @@ export type ArtifactStatus = "draft" | "trial" | "ready" | "archived";
 export type ConstructStatus = "offline" | "warming" | "streaming" | "paused";
 export type ConstructRuntimeMode = "simulated" | "transformers";
 export type ConstructRuntimeDevice = "auto" | "cpu" | "cuda" | "mps";
+export type ForgeRuntimeMode = "simulated" | "local";
 export type TrialStatus = "not-started" | "running" | "passed" | "failed";
 export type LearningDifficulty = "starter" | "builder" | "advanced";
 
@@ -148,6 +149,31 @@ export interface ForgeRun {
     current: number;
     total: number;
   };
+  trainingContract?: ForgeTrainingContract;
+}
+
+export interface ForgeRuntime {
+  mode: ForgeRuntimeMode;
+  status: string;
+  detail: string;
+  worker: string;
+  ready: boolean;
+  supportsMethods: TrainingMethod[];
+}
+
+export interface ForgeTrainingContract {
+  contractVersion: "foundry.forge.training.v1";
+  forgeRunId: string;
+  workshopId: string;
+  materialId: string;
+  datasetUri: string;
+  baseModel: string;
+  method: TrainingMethod;
+  epochs: number;
+  learningRate: string;
+  loadIn4Bit: boolean;
+  outputDir: string;
+  runtime: ForgeRuntime;
 }
 
 export interface Artifact {
