@@ -29,6 +29,8 @@ import {
   ConstructRuntime,
   DashboardSummary,
   FoundryNavigationItem,
+  ForgeTrainingContract,
+  ForgeWorkerState,
   ForgeRuntime,
   ForgeRun,
   MaterialChunk,
@@ -93,6 +95,8 @@ export interface FoundryRepository {
   listForgeRuns: (workshopId: string) => Promise<ForgeRun[]>;
   startForge: (workshopId: string, request: StartForgeRequest) => Promise<ForgeRun>;
   advanceForgeSimulation: (forgeRunId: string) => Promise<ForgeRun>;
+  getForgeContract: (forgeRunId: string) => Promise<ForgeTrainingContract>;
+  getForgeWorkerState: (forgeRunId: string) => Promise<ForgeWorkerState>;
   getForgeRuntime: () => Promise<ForgeRuntime>;
   configureForgeRuntime: (request: ConfigureForgeRuntimeRequest) => Promise<ForgeRuntime>;
   listArtifacts: (workshopId: string) => Promise<Artifact[]>;
@@ -180,6 +184,7 @@ const mockMaterialChunks: MaterialChunk[] = [];
 const mockQAPairs: QAPair[] = [];
 const mockForgeRuns: ForgeRun[] = [...mockDashboardSummary.forgeQueue];
 const mockArtifacts: Artifact[] = [mockDashboardSummary.currentArtifact];
+const mockForgeWorkerStates: Record<string, ForgeWorkerState> = {};
 let mockConstruct: Construct = mockDashboardSummary.construct;
 let mockConstructRuntime: ConstructRuntime = {
   mode: "simulated",
@@ -368,6 +373,35 @@ export const mockFoundryRepository: FoundryRepository = {
     };
     forgeRun.trainingContract!.forgeRunId = forgeRun.id;
     forgeRun.trainingContract!.outputDir = `runtime/artifacts/pending/${forgeRun.id}`;
+    mockForgeWorkerStates[forgeRun.id] = {
+      events: [
+        {
+          id: `evt-${Date.now()}`,
+          forgeRunId: forgeRun.id,
+          type: "queued",
+          message: "Forge contract accepted and written to mock runtime storage.",
+          timestamp: new Date().toISOString(),
+          progress: 0,
+        },
+        {
+          id: `evt-${Date.now()}-validated`,
+          forgeRunId: forgeRun.id,
+          type: "dataset_validated",
+          message: `Dataset validated with ${material.qaPairCount} training rows.`,
+          timestamp: new Date().toISOString(),
+          progress: 6,
+          data: { rowCount: material.qaPairCount },
+        },
+      ],
+      metrics: {
+        forgeRunId: forgeRun.id,
+        status: "queued",
+        progress: 0,
+        datasetRows: material.qaPairCount,
+        lastEvent: "dataset_validated",
+      },
+    };
+    forgeRun.workerState = mockForgeWorkerStates[forgeRun.id];
     mockForgeRuns.unshift(forgeRun);
     return forgeRun;
   },
@@ -391,6 +425,49 @@ export const mockFoundryRepository: FoundryRepository = {
       current: nextProgress >= 100 ? epochTotal : Math.floor((nextProgress / 100) * epochTotal),
       total: epochTotal,
     };
+    const workerState = mockForgeWorkerStates[forgeRun.id] || {
+      events: [],
+      metrics: {
+        forgeRunId: forgeRun.id,
+        status: forgeRun.status,
+        progress: forgeRun.progress,
+        datasetRows: 0,
+        lastEvent: null,
+      },
+    };
+    if (forgeRun.status === "completed") {
+      workerState.events.push({
+        id: `evt-${Date.now()}-${workerState.events.length}`,
+        forgeRunId: forgeRun.id,
+        type: "artifact_planned",
+        message: "Simulator planned the Artifact output directory.",
+        timestamp: new Date().toISOString(),
+        progress: 98,
+        epoch: forgeRun.epoch,
+        data: { outputDir: forgeRun.trainingContract?.outputDir },
+      });
+    }
+    workerState.events.push({
+      id: `evt-${Date.now()}-${workerState.events.length}`,
+      forgeRunId: forgeRun.id,
+      type: forgeRun.status === "completed" ? "completed" : "step_completed",
+      message:
+        forgeRun.status === "completed"
+          ? "Forge simulation completed and Artifact metadata is ready."
+          : `Simulator advanced Forge progress to ${forgeRun.progress}%.`,
+      timestamp: new Date().toISOString(),
+      progress: forgeRun.progress,
+      epoch: forgeRun.epoch,
+    });
+    workerState.metrics = {
+      ...workerState.metrics,
+      status: forgeRun.status,
+      progress: forgeRun.progress,
+      epoch: forgeRun.epoch,
+      lastEvent: workerState.events[workerState.events.length - 1].type,
+    };
+    mockForgeWorkerStates[forgeRun.id] = workerState;
+    forgeRun.workerState = workerState;
     if (forgeRun.status === "completed" && !forgeRun.artifactId) {
       forgeRun.artifactId = `art-${forgeRun.id.replace(/^frg-/, "")}`;
       const artifact: Artifact = {
@@ -412,6 +489,24 @@ export const mockFoundryRepository: FoundryRepository = {
     }
     return forgeRun;
   },
+  getForgeContract: async (forgeRunId) => {
+    const forgeRun = mockForgeRuns.find((run) => run.id === forgeRunId);
+    if (!forgeRun?.trainingContract) {
+      throw new Error("Forge contract has not been written yet.");
+    }
+    return forgeRun.trainingContract;
+  },
+  getForgeWorkerState: async (forgeRunId) =>
+    mockForgeWorkerStates[forgeRunId] || {
+      events: [],
+      metrics: {
+        forgeRunId,
+        status: "unknown",
+        progress: 0,
+        datasetRows: 0,
+        lastEvent: null,
+      },
+    },
   getForgeRuntime: async () => mockForgeRuntime,
   configureForgeRuntime: async (request) => {
     mockForgeRuntime = {
@@ -608,6 +703,18 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.post<ApiEnvelope<ForgeRunDto>>(
         foundryApiRoutes.simulateForgeRun(forgeRunId)
+      )
+    ),
+  getForgeContract: async (forgeRunId) =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<ForgeTrainingContract>>(
+        foundryApiRoutes.forgeContract(forgeRunId)
+      )
+    ),
+  getForgeWorkerState: async (forgeRunId) =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<ForgeWorkerState>>(
+        foundryApiRoutes.forgeEvents(forgeRunId)
       )
     ),
   getForgeRuntime: async () =>

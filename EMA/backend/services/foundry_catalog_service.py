@@ -1391,6 +1391,19 @@ class FoundryCatalogService:
 
         return await self._run_query(query)
 
+    async def get_forge_run(self, forge_run_id: str) -> Dict[str, Any]:
+        def query():
+            with self._connect() as connection:
+                row = connection.execute(
+                    "SELECT * FROM forge_runs WHERE id = ?",
+                    (forge_run_id,),
+                ).fetchone()
+                if row is None:
+                    raise ValueError(f"Forge {forge_run_id} was not found.")
+                return self._forge_run_from_row(row)
+
+        return await self._run_query(query)
+
     async def start_forge(
         self,
         workshop_id: str,

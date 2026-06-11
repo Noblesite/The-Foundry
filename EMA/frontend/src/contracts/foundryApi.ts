@@ -7,7 +7,8 @@ import {
   ConstructChatDoneEvent,
   ConstructChatErrorEvent,
   ConstructChatStreamEvent,
-  ForgeRuntime,
+  ForgeTrainingContract,
+  ForgeWorkerState,
   ForgeRunStatus,
   MaterialSource,
   MaterialKind,
@@ -36,6 +37,9 @@ export const foundryApiRoutes = {
     `${FOUNDRY_API_VERSION}/workshops/${workshopId}/qa-pairs/export`,
   forgeRuns: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/forges`,
   forgeRun: (forgeRunId: string) => `${FOUNDRY_API_VERSION}/forges/${forgeRunId}`,
+  forgeContract: (forgeRunId: string) =>
+    `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/contract`,
+  forgeEvents: (forgeRunId: string) => `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/events`,
   simulateForgeRun: (forgeRunId: string) =>
     `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/simulate`,
   forgeRuntime: `${FOUNDRY_API_VERSION}/forges/runtime`,
@@ -157,20 +161,8 @@ export interface ForgeRunDto {
   epochTotal?: number;
   createdAt: string;
   updatedAt: string;
-  trainingContract?: {
-    contractVersion: "foundry.forge.training.v1";
-    forgeRunId: string;
-    workshopId: string;
-    materialId: string;
-    datasetUri: string;
-    baseModel: string;
-    method: TrainingMethod;
-    epochs: number;
-    learningRate: string;
-    loadIn4Bit: boolean;
-    outputDir: string;
-    runtime: ForgeRuntime;
-  };
+  trainingContract?: ForgeTrainingContract;
+  workerState?: ForgeWorkerState;
 }
 
 export interface ArtifactDto {

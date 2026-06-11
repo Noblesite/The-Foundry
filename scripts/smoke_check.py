@@ -135,6 +135,9 @@ def run_forge_adapter_boundary_check() -> int:
         "foundry.forge.training.v1",
         "FOUNDRY_FORGE_RUNTIME_MODE",
         "supportsMethods",
+        "events.jsonl",
+        "contract.json",
+        "metrics.json",
     )
     missing_service = [
         pattern for pattern in required_service_patterns if pattern not in service_source

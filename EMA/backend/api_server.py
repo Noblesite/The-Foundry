@@ -354,19 +354,55 @@ async def start_foundry_forge_endpoint(workshop_id: str, data: StartForgeInput):
             load_in_4bit=data.loadIn4Bit,
         )
         material = await foundry_catalog_service.get_material(workshop_id, material_id)
-        forge["trainingContract"] = forge_training_service.build_training_contract(
+        training_contract = forge_training_service.build_training_contract(
             forge_run=forge,
             material=material,
         )
+        worker_state = forge_training_service.initialize_contract(training_contract)
+        forge["trainingContract"] = training_contract
+        forge["workerState"] = worker_state
         return api_envelope(forge)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error))
+
+
+@app.get("/api/v1/forges/{forge_run_id}/contract")
+async def foundry_forge_contract_endpoint(forge_run_id: str):
+    try:
+        await foundry_catalog_service.get_forge_run(forge_run_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+    contract = forge_training_service.get_contract(forge_run_id)
+    if contract is None:
+        raise HTTPException(status_code=404, detail="Forge contract has not been written yet.")
+    return api_envelope(contract)
+
+
+@app.get("/api/v1/forges/{forge_run_id}/events")
+async def foundry_forge_events_endpoint(forge_run_id: str):
+    try:
+        await foundry_catalog_service.get_forge_run(forge_run_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+    return api_envelope(
+        {
+            "events": forge_training_service.list_events(forge_run_id),
+            "metrics": forge_training_service.get_metrics(forge_run_id),
+        }
+    )
 
 
 @app.post("/api/v1/forges/{forge_run_id}/simulate")
 async def simulate_foundry_forge_endpoint(forge_run_id: str):
     try:
         forge = await foundry_catalog_service.advance_forge_simulation(forge_run_id)
+        metrics = forge_training_service.record_simulation_step(forge)
+        forge["workerState"] = {
+            "events": forge_training_service.list_events(forge_run_id),
+            "metrics": metrics,
+        }
         return api_envelope(forge)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error))

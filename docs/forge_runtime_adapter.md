@@ -28,6 +28,30 @@ The contract contains:
 - Output directory for the future Artifact.
 - Runtime metadata.
 
+## Worker Files
+
+Every queued Forge may write a local worker folder:
+
+```text
+EMA/runtime/forges/{forgeRunId}/contract.json
+EMA/runtime/forges/{forgeRunId}/events.jsonl
+EMA/runtime/forges/{forgeRunId}/metrics.json
+```
+
+These files are intentionally ignored by git. They make the simulator behave
+like a real worker: a Forge has an executable contract, durable events, and
+metrics that the UI can poll.
+
+Simulator event types:
+
+- `queued`
+- `dataset_validated`
+- `dataset_validation_failed`
+- `epoch_started`
+- `step_completed`
+- `artifact_planned`
+- `completed`
+
 ## Runtime Modes
 
 `simulated`
@@ -46,6 +70,8 @@ worker that will execute the same contract with real LoRA/QLoRA code.
 ```text
 GET  /api/v1/forges/runtime
 POST /api/v1/forges/runtime/configure
+GET  /api/v1/forges/{forge_run_id}/contract
+GET  /api/v1/forges/{forge_run_id}/events
 POST /api/v1/workshops/{workshop_id}/forges
 POST /api/v1/forges/{forge_run_id}/simulate
 ```

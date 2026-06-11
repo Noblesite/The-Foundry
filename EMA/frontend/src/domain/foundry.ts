@@ -150,6 +150,7 @@ export interface ForgeRun {
     total: number;
   };
   trainingContract?: ForgeTrainingContract;
+  workerState?: ForgeWorkerState;
 }
 
 export interface ForgeRuntime {
@@ -174,6 +175,45 @@ export interface ForgeTrainingContract {
   loadIn4Bit: boolean;
   outputDir: string;
   runtime: ForgeRuntime;
+}
+
+export interface ForgeEvent {
+  id: string;
+  forgeRunId: string;
+  type:
+    | "queued"
+    | "dataset_validated"
+    | "dataset_validation_failed"
+    | "contract_missing"
+    | "epoch_started"
+    | "step_completed"
+    | "artifact_planned"
+    | "completed";
+  message: string;
+  timestamp: string;
+  progress?: number;
+  epoch?: {
+    current: number;
+    total: number;
+  };
+  data?: Record<string, unknown>;
+}
+
+export interface ForgeMetrics {
+  forgeRunId: string;
+  status: string;
+  progress: number;
+  datasetRows: number;
+  lastEvent: string | null;
+  epoch?: {
+    current: number;
+    total: number;
+  };
+}
+
+export interface ForgeWorkerState {
+  events: ForgeEvent[];
+  metrics: ForgeMetrics;
 }
 
 export interface Artifact {

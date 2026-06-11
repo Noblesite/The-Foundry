@@ -23,6 +23,8 @@ complexity.
 
 - Define a trainer adapter interface. Done for the first contract slice.
 - Keep simulator as the default Forge runtime. Done for the first contract slice.
+- Write Forge contracts and event logs under ignored runtime storage. Done for
+  the first worker skeleton slice.
 - Add a local LoRA/QLoRA worker behind the adapter.
 - Emit durable job events and metrics.
 - Produce Artifact metadata from real trainer output.

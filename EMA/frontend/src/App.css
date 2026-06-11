@@ -1098,6 +1098,39 @@ input[type="checkbox"] {
   cursor: default;
 }
 
+.forge-event-log {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.48rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.72rem;
+}
+
+.forge-event-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.28fr) minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+  border: 1px solid rgba(0, 212, 255, 0.12);
+  border-radius: 8px;
+  padding: 0.58rem 0.68rem;
+  background: rgba(13, 17, 23, 0.42);
+}
+
+.forge-event-row span {
+  color: var(--arc-blue);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.forge-event-row p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 .artifacts-catalog {
   overflow: hidden;
 }

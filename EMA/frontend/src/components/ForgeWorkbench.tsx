@@ -4,6 +4,7 @@ import {
   ForgeRun,
   ForgeRuntime,
   ForgeRuntimeMode,
+  ForgeWorkerState,
   MaterialSource,
   SectionSummary,
   TrainingMethod,
@@ -30,6 +31,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
 }) => {
   const [materials, setMaterials] = useState<MaterialSource[]>([]);
   const [forgeRuns, setForgeRuns] = useState<ForgeRun[]>([]);
+  const [workerStates, setWorkerStates] = useState<Record<string, ForgeWorkerState>>({});
   const [draft, setDraft] = useState<StartForgeRequest>({
     materialSetId: "",
     baseModel: settings.modelName,
@@ -62,6 +64,13 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
         const jsonlMaterials = sources.filter((source) => source.kind === "jsonl");
         setMaterials(sources);
         setForgeRuns(runs);
+        const seededStates = runs.reduce<Record<string, ForgeWorkerState>>((states, run) => {
+          if (run.workerState) {
+            states[run.id] = run.workerState;
+          }
+          return states;
+        }, {});
+        setWorkerStates(seededStates);
         setForgeRuntime(runtime);
         setRuntimeModeDraft(runtime.mode);
         setDraft((current) => ({
@@ -73,6 +82,18 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
           epochs: settings.epochs,
           materialSetId: current.materialSetId || jsonlMaterials[0]?.id || "",
         }));
+        runs.forEach((run) => {
+          repository
+            .getForgeWorkerState(run.id)
+            .then((state) => {
+              if (isCurrent) {
+                setWorkerStates((current) => ({ ...current, [run.id]: state }));
+              }
+            })
+            .catch(() => {
+              // Older Forge rows may not have worker files yet.
+            });
+        });
       })
       .catch((loadError: unknown) => {
         if (isCurrent) {
@@ -138,6 +159,9 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     try {
       const forgeRun = await repository.startForge(workshop.id, draft);
       setForgeRuns((current) => [forgeRun, ...current.filter((run) => run.id !== forgeRun.id)]);
+      if (forgeRun.workerState) {
+        setWorkerStates((current) => ({ ...current, [forgeRun.id]: forgeRun.workerState! }));
+      }
       setStatusText(`${forgeRun.label} queued with ${selectedMaterial?.qaPairCount ?? 0} QA pairs.`);
     } catch (startError: unknown) {
       setError(startError instanceof Error ? startError.message : "Could not start Forge.");
@@ -156,6 +180,9 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
       setForgeRuns((current) =>
         current.map((run) => (run.id === forgeRun.id ? forgeRun : run))
       );
+      if (forgeRun.workerState) {
+        setWorkerStates((current) => ({ ...current, [forgeRun.id]: forgeRun.workerState! }));
+      }
       setStatusText(
         forgeRun.artifactId
           ? `${forgeRun.label} completed. Artifact ${forgeRun.artifactId} is ready.`
@@ -413,6 +440,17 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                     <i className="fas fa-forward-step" aria-hidden="true" />
                     {advancingRunId === run.id ? "Advancing" : "Run Step"}
                   </button>
+                </div>
+                <div className="forge-event-log" aria-label={`${run.label} worker events`}>
+                  {(workerStates[run.id]?.events || []).slice(-4).map((event) => (
+                    <div className="forge-event-row" key={event.id}>
+                      <span>{event.type.split("_").join(" ")}</span>
+                      <p>{event.message}</p>
+                    </div>
+                  ))}
+                  {!workerStates[run.id]?.events?.length && (
+                    <p className="empty-state">Worker events will appear after this Forge writes a contract.</p>
+                  )}
                 </div>
               </article>
             ))
