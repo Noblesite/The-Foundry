@@ -50,6 +50,11 @@ The queue also exposes a Forge detail drawer. It lets operators inspect the
 event timeline, the durable training contract, and the latest worker metrics
 without leaving the Forge station.
 
+For older rows or interrupted local development runs, the drawer can reconcile
+worker state. Reconciliation rebuilds the training contract from catalog data,
+validates the JSONL Material, and restores worker metrics/events without
+changing the catalog row.
+
 Simulator event types:
 
 - `queued`
@@ -80,6 +85,7 @@ GET  /api/v1/forges/runtime
 POST /api/v1/forges/runtime/configure
 GET  /api/v1/forges/{forge_run_id}/contract
 GET  /api/v1/forges/{forge_run_id}/events
+POST /api/v1/forges/{forge_run_id}/worker/reconcile
 POST /api/v1/workshops/{workshop_id}/forges
 POST /api/v1/forges/{forge_run_id}/simulate
 ```

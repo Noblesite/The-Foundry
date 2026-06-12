@@ -11,6 +11,7 @@ import {
   ExportQAPairsDto,
   ExportQAPairsRequest,
   ForgeRunDto,
+  ForgeWorkerReconcileDto,
   foundryApiRoutes,
   IngestMaterialRequest,
   LoadArtifactIntoConstructRequest,
@@ -30,6 +31,7 @@ import {
   DashboardSummary,
   FoundryNavigationItem,
   ForgeTrainingContract,
+  ForgeWorkerReconcileResult,
   ForgeWorkerState,
   ForgeRuntime,
   ForgeRun,
@@ -97,6 +99,7 @@ export interface FoundryRepository {
   advanceForgeSimulation: (forgeRunId: string) => Promise<ForgeRun>;
   getForgeContract: (forgeRunId: string) => Promise<ForgeTrainingContract>;
   getForgeWorkerState: (forgeRunId: string) => Promise<ForgeWorkerState>;
+  reconcileForgeWorkerState: (forgeRunId: string) => Promise<ForgeWorkerReconcileResult>;
   getForgeRuntime: () => Promise<ForgeRuntime>;
   configureForgeRuntime: (request: ConfigureForgeRuntimeRequest) => Promise<ForgeRuntime>;
   listArtifacts: (workshopId: string) => Promise<Artifact[]>;
@@ -507,6 +510,60 @@ export const mockFoundryRepository: FoundryRepository = {
         lastEvent: null,
       },
     },
+  reconcileForgeWorkerState: async (forgeRunId) => {
+    const forgeRun = mockForgeRuns.find((run) => run.id === forgeRunId);
+    if (!forgeRun) {
+      throw new Error("Forge job was not found.");
+    }
+    if (!forgeRun.trainingContract) {
+      const material = mockMaterialSources.find((source) => source.id === forgeRun.materialSetId);
+      if (!material) {
+        throw new Error("Forge has no training Material to reconcile.");
+      }
+      forgeRun.trainingContract = {
+        contractVersion: "foundry.forge.training.v1",
+        forgeRunId: forgeRun.id,
+        workshopId: forgeRun.workshopId,
+        materialId: material.id,
+        datasetUri: material.sourceUri,
+        baseModel: forgeRun.baseModel || "unknown",
+        method: forgeRun.method === "LoRA" ? "LoRA" : "QLoRA",
+        epochs: forgeRun.epoch?.total || 1,
+        learningRate: forgeRun.learningRate || "0.0002",
+        loadIn4Bit: Boolean(forgeRun.loadIn4Bit),
+        outputDir: `runtime/artifacts/pending/${forgeRun.id}`,
+        runtime: mockForgeRuntime,
+      };
+    }
+    const workerState = mockForgeWorkerStates[forgeRun.id] || {
+      events: [
+        {
+          id: `evt-${Date.now()}`,
+          forgeRunId: forgeRun.id,
+          type: "queued",
+          message: "Forge contract reconciled into mock runtime storage.",
+          timestamp: new Date().toISOString(),
+          progress: 0,
+        },
+      ],
+      metrics: {
+        forgeRunId: forgeRun.id,
+        status: forgeRun.status,
+        progress: forgeRun.progress,
+        datasetRows: 0,
+        lastEvent: "queued",
+        epoch: forgeRun.epoch,
+      },
+    };
+    mockForgeWorkerStates[forgeRun.id] = workerState;
+    forgeRun.workerState = workerState;
+    return {
+      contract: forgeRun.trainingContract,
+      events: workerState.events,
+      metrics: workerState.metrics,
+      validation: { valid: true, message: "Mock worker state reconciled." },
+    };
+  },
   getForgeRuntime: async () => mockForgeRuntime,
   configureForgeRuntime: async (request) => {
     mockForgeRuntime = {
@@ -715,6 +772,12 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.get<ApiEnvelope<ForgeWorkerState>>(
         foundryApiRoutes.forgeEvents(forgeRunId)
+      )
+    ),
+  reconcileForgeWorkerState: async (forgeRunId) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ForgeWorkerReconcileDto>>(
+        foundryApiRoutes.reconcileForgeWorker(forgeRunId)
       )
     ),
   getForgeRuntime: async () =>

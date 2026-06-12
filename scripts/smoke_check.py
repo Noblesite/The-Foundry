@@ -126,6 +126,7 @@ def run_forge_adapter_boundary_check() -> int:
         "ForgeTrainingService",
         "/api/v1/forges/runtime",
         "build_training_contract",
+        "worker/reconcile",
     )
     missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
     if missing_api:
@@ -138,6 +139,7 @@ def run_forge_adapter_boundary_check() -> int:
         "events.jsonl",
         "contract.json",
         "metrics.json",
+        "reconcile_worker_state",
     )
     missing_service = [
         pattern for pattern in required_service_patterns if pattern not in service_source

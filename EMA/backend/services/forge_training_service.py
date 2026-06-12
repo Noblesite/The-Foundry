@@ -147,13 +147,14 @@ class ForgeTrainingService:
                     data=validation,
                 )
         else:
-            self._append_event(
-                forge_run_id,
-                "dataset_validation_failed",
-                validation["message"],
-                progress=0,
-                data=validation,
-            )
+            if not self._has_event(forge_run_id, "dataset_validation_failed"):
+                self._append_event(
+                    forge_run_id,
+                    "dataset_validation_failed",
+                    validation["message"],
+                    progress=0,
+                    data=validation,
+                )
 
         self._write_metrics(
             forge_run_id,
@@ -173,6 +174,23 @@ class ForgeTrainingService:
             "events": self.list_events(forge_run_id),
             "metrics": self.get_metrics(forge_run_id),
         }
+
+    def reconcile_worker_state(
+        self,
+        *,
+        forge_run: Dict[str, Any],
+        material: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        contract = self.get_contract(forge_run["id"]) or self.build_training_contract(
+            forge_run=forge_run,
+            material=material,
+        )
+        state = self.initialize_contract(contract)
+        if state["validation"]["valid"] and forge_run["status"] in {"running", "completed"}:
+            metrics = self.record_simulation_step(forge_run)
+            state["events"] = self.list_events(forge_run["id"])
+            state["metrics"] = metrics
+        return state
 
     def record_simulation_step(self, forge_run: Dict[str, Any]) -> Dict[str, Any]:
         forge_run_id = forge_run["id"]

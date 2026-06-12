@@ -54,6 +54,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     useState<ForgeTrainingContract | null>(null);
   const [forgeDetailTab, setForgeDetailTab] = useState<ForgeDetailTab>("events");
   const [isLoadingForgeDetail, setIsLoadingForgeDetail] = useState(false);
+  const [isReconcilingForgeDetail, setIsReconcilingForgeDetail] = useState(false);
   const [forgeDetailError, setForgeDetailError] = useState<string | null>(null);
   const [forgeRuntime, setForgeRuntime] = useState<ForgeRuntime | null>(null);
   const [runtimeModeDraft, setRuntimeModeDraft] = useState<ForgeRuntimeMode>("simulated");
@@ -284,6 +285,41 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
       return;
     }
     await loadForgeDetail(selectedForgeRun, { resetTab: false });
+  };
+
+  const reconcileForgeDetail = async () => {
+    if (!selectedForgeRun) {
+      return;
+    }
+    setForgeDetailError(null);
+    setIsReconcilingForgeDetail(true);
+
+    try {
+      const state = await repository.reconcileForgeWorkerState(selectedForgeRun.id);
+      setSelectedForgeContract(state.contract);
+      setWorkerStates((current) => ({
+        ...current,
+        [selectedForgeRun.id]: {
+          events: state.events,
+          metrics: state.metrics,
+        },
+      }));
+      setLastWorkerSync(
+        new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      );
+    } catch (reconcileError: unknown) {
+      setForgeDetailError(
+        reconcileError instanceof Error
+          ? reconcileError.message
+          : "Could not reconcile Forge worker state."
+      );
+    } finally {
+      setIsReconcilingForgeDetail(false);
+    }
   };
 
   const closeForgeDetail = () => {
@@ -675,6 +711,15 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                   {isLoadingForgeDetail ? "Syncing" : "Sync"}
                 </button>
                 <button
+                  className="button-secondary button-compact"
+                  type="button"
+                  onClick={() => void reconcileForgeDetail()}
+                  disabled={isReconcilingForgeDetail}
+                >
+                  <i className="fas fa-screwdriver-wrench" aria-hidden="true" />
+                  {isReconcilingForgeDetail ? "Reconciling" : "Reconcile"}
+                </button>
+                <button
                   className="icon-button"
                   type="button"
                   onClick={closeForgeDetail}
@@ -707,9 +752,20 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
               {forgeDetailTab === "events" && (
                 <div className="forge-timeline">
                   {(selectedForgeWorkerState?.events || []).length === 0 ? (
-                    <p className="empty-state">
-                      No worker events have been written for this Forge yet.
-                    </p>
+                    <div className="forge-detail-empty">
+                      <p className="empty-state">
+                        No worker events have been written for this Forge yet.
+                      </p>
+                      <button
+                        className="button-secondary button-compact"
+                        type="button"
+                        onClick={() => void reconcileForgeDetail()}
+                        disabled={isReconcilingForgeDetail}
+                      >
+                        <i className="fas fa-screwdriver-wrench" aria-hidden="true" />
+                        {isReconcilingForgeDetail ? "Reconciling" : "Reconcile worker files"}
+                      </button>
+                    </div>
                   ) : (
                     selectedForgeWorkerState?.events.map((event) => (
                       <article className="forge-timeline-event" key={event.id}>

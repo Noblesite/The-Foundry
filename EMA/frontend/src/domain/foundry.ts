@@ -216,6 +216,11 @@ export interface ForgeWorkerState {
   metrics: ForgeMetrics;
 }
 
+export interface ForgeWorkerReconcileResult extends ForgeWorkerState {
+  contract: ForgeTrainingContract;
+  validation?: Record<string, unknown>;
+}
+
 export interface Artifact {
   id: string;
   workshopId: string;

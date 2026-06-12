@@ -8,6 +8,7 @@ import {
   ConstructChatErrorEvent,
   ConstructChatStreamEvent,
   ForgeTrainingContract,
+  ForgeWorkerReconcileResult,
   ForgeWorkerState,
   ForgeRunStatus,
   MaterialSource,
@@ -40,6 +41,8 @@ export const foundryApiRoutes = {
   forgeContract: (forgeRunId: string) =>
     `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/contract`,
   forgeEvents: (forgeRunId: string) => `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/events`,
+  reconcileForgeWorker: (forgeRunId: string) =>
+    `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/worker/reconcile`,
   simulateForgeRun: (forgeRunId: string) =>
     `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/simulate`,
   forgeRuntime: `${FOUNDRY_API_VERSION}/forges/runtime`,
@@ -164,6 +167,8 @@ export interface ForgeRunDto {
   trainingContract?: ForgeTrainingContract;
   workerState?: ForgeWorkerState;
 }
+
+export type ForgeWorkerReconcileDto = ForgeWorkerReconcileResult;
 
 export interface ArtifactDto {
   id: string;

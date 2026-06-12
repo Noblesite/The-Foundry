@@ -394,6 +394,23 @@ async def foundry_forge_events_endpoint(forge_run_id: str):
     )
 
 
+@app.post("/api/v1/forges/{forge_run_id}/worker/reconcile")
+async def reconcile_foundry_forge_worker_endpoint(forge_run_id: str):
+    try:
+        forge = await foundry_catalog_service.get_forge_run(forge_run_id)
+        material_id = forge.get("materialSetId")
+        if not material_id:
+            raise ValueError("Forge has no training Material to reconcile.")
+        material = await foundry_catalog_service.get_material(forge["workshopId"], material_id)
+        state = forge_training_service.reconcile_worker_state(
+            forge_run=forge,
+            material=material,
+        )
+        return api_envelope(state)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+
 @app.post("/api/v1/forges/{forge_run_id}/simulate")
 async def simulate_foundry_forge_endpoint(forge_run_id: str):
     try:
