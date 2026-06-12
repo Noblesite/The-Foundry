@@ -6,6 +6,23 @@ import { FoundryRepository } from "../services/foundryRepository";
 import { LearningCard, TrainingMetricExplainer } from "./LearningComponents";
 import { WorkspaceSettings } from "./SettingsOverlay";
 
+type TrialVerdict = "pass" | "needs-work" | "fail";
+
+interface ResponseInspection {
+  messageId: string;
+  totalTokens: number;
+  runtimeMode: string;
+  runtimeStatus: string;
+  modelId: string;
+  device: string;
+  contextWindow: number;
+  maxNewTokens: number;
+  temperature: number;
+  includeLibraryContext: boolean;
+  artifactId: string;
+  constructId: string;
+}
+
 interface ConstructWorkbenchProps {
   artifact: Artifact;
   construct: Construct;
@@ -36,6 +53,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [runtime, setRuntime] = useState<ConstructRuntime | null>(null);
   const [isRuntimeBusy, setIsRuntimeBusy] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [lastInspection, setLastInspection] = useState<ResponseInspection | null>(null);
+  const [trialVerdict, setTrialVerdict] = useState<TrialVerdict | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -48,6 +67,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         text: `Artifact ${artifact.name} is loaded. Ask a question to test the Construct runtime contract.`,
       },
     ]);
+    setLastInspection(null);
+    setTrialVerdict(null);
     setRuntimeMode("simulated");
     setRuntimeDetail("Using deterministic simulated token streaming.");
   }, [artifact, construct]);
@@ -128,8 +149,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     }
   };
 
-  const sendMessage = async () => {
-    const messageText = input.trim();
+  const sendMessage = async (presetText?: string) => {
+    const messageText = (presetText ?? input).trim();
     if (!messageText) {
       return;
     }
@@ -143,6 +164,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
 
     setMessages((current) => [...current, userMessage]);
     setInput("");
+    setTrialVerdict(null);
     setIsSending(true);
     setError(null);
 
@@ -176,6 +198,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         if (event.type === "done") {
           setActiveConstruct(event.construct);
           setActiveArtifact(event.artifact);
+          const eventRuntime = event.runtime;
           if (event.runtime) {
             setRuntimeMode(event.runtime.mode);
             setRuntimeDetail(event.runtime.detail);
@@ -195,6 +218,20 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 : message
             )
           );
+          setLastInspection({
+            messageId: event.messageId,
+            totalTokens: event.totalTokens,
+            runtimeMode: eventRuntime?.mode || runtimeMode,
+            runtimeStatus: eventRuntime?.status || runtime?.status || "fallback",
+            modelId: eventRuntime?.modelId || runtime?.modelId || activeArtifact.baseModel,
+            device: eventRuntime?.device || runtime?.device || settings.constructDevice,
+            contextWindow: event.generation.contextWindow,
+            maxNewTokens: event.generation.maxNewTokens,
+            temperature: event.generation.temperature,
+            includeLibraryContext: event.generation.includeLibraryContext,
+            artifactId: event.artifact.id,
+            constructId: event.construct.id,
+          });
           return;
         }
         setError(event.message);
@@ -205,6 +242,13 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       setIsSending(false);
     }
   };
+
+  const promptPresets = [
+    "Introduce yourself in the target voice and name what you were trained to understand.",
+    "Answer as the target persona. What should I ask you to test the Artifact?",
+    "Explain one thing you learned from the training Material, and be honest if the source data is missing.",
+    "Give a short refusal if the question is outside your source Material.",
+  ];
 
   return (
     <section className="construct-workbench" aria-label="Local model construct">
@@ -310,6 +354,21 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
               </label>
             </div>
 
+            <div className="prompt-presets" aria-label="Construct test prompts">
+              {promptPresets.map((preset) => (
+                <button
+                  className="button-secondary button-compact"
+                  disabled={isSending}
+                  key={preset}
+                  onClick={() => void sendMessage(preset)}
+                  type="button"
+                >
+                  <i className="fas fa-vial" aria-hidden="true" />
+                  {preset}
+                </button>
+              ))}
+            </div>
+
             <div className="message-stream">
               {messages.map((message) => (
                 <div
@@ -331,7 +390,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
               <input
                 className="composer-input"
                 onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => event.key === "Enter" && sendMessage()}
+                onKeyDown={(event) => event.key === "Enter" && void sendMessage()}
                 placeholder={`Test ${activeArtifact.name}...`}
                 type="text"
                 value={input}
@@ -340,7 +399,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 aria-label="Send message"
                 className="send-button"
                 disabled={isSending}
-                onClick={sendMessage}
+                onClick={() => void sendMessage()}
                 title="Send message"
               >
                 <i className="fas fa-paper-plane" aria-hidden="true" />
@@ -350,6 +409,69 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           </div>
         </div>
         <aside className="construct-learning">
+          <article className="construct-inspector-card panel-glass">
+            <p className="panel-kicker">Session Contract</p>
+            <h2>Loaded Artifact</h2>
+            <div className="construct-inspector-grid">
+              <span>Artifact</span>
+              <strong>{activeArtifact.name}</strong>
+              <span>Forge</span>
+              <strong>{activeArtifact.forgeRunId || "manual"}</strong>
+              <span>Adapter</span>
+              <strong>{activeArtifact.adapterPath || "not registered"}</strong>
+              <span>Runtime</span>
+              <strong>{runtimeMode}</strong>
+              <span>Library</span>
+              <strong>{includeLibraryContext ? "included" : "off"}</strong>
+            </div>
+          </article>
+
+          <article className="construct-inspector-card panel-glass">
+            <p className="panel-kicker">Response Inspection</p>
+            <h2>Last Reply</h2>
+            {lastInspection ? (
+              <>
+                <div className="construct-inspector-grid">
+                  <span>Tokens</span>
+                  <strong>{lastInspection.totalTokens}</strong>
+                  <span>Runtime</span>
+                  <strong>{lastInspection.runtimeMode}</strong>
+                  <span>Status</span>
+                  <strong>{lastInspection.runtimeStatus}</strong>
+                  <span>Device</span>
+                  <strong>{lastInspection.device}</strong>
+                  <span>Context</span>
+                  <strong>{lastInspection.contextWindow.toLocaleString()}</strong>
+                  <span>Max output</span>
+                  <strong>{lastInspection.maxNewTokens}</strong>
+                  <span>Temperature</span>
+                  <strong>{lastInspection.temperature}</strong>
+                </div>
+                <div className="trial-actions" aria-label="Trial verdict">
+                  {(["pass", "needs-work", "fail"] as TrialVerdict[]).map((verdict) => (
+                    <button
+                      className={`button-secondary button-compact ${
+                        trialVerdict === verdict ? "is-active" : ""
+                      }`}
+                      key={verdict}
+                      onClick={() => setTrialVerdict(verdict)}
+                      type="button"
+                    >
+                      {verdict}
+                    </button>
+                  ))}
+                </div>
+                {trialVerdict && (
+                  <p className="save-state success-state">
+                    Trial marked {trialVerdict}. Persistence comes with the Trials service.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="empty-state">Send a prompt to inspect generation settings.</p>
+            )}
+          </article>
+
           <LearningCard
             title="What is inference?"
             body="Inference is the moment the trained model turns your prompt, system instructions, retrieved context, and generation settings into new tokens."

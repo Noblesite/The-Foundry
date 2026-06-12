@@ -40,6 +40,8 @@ complexity.
 
 - Expand the runtime adapter for local model loading.
 - Support streaming token output from loaded local models.
+- Add prompt presets, response inspection, and local Trial marking. Done for
+  the first Construct testing bench slice.
 - Add runtime health, memory pressure, and unload behavior.
 - Teach users what context windows, sampling, and quantization settings do.
 
