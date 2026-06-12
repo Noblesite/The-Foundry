@@ -50,6 +50,9 @@ The queue also exposes a Forge detail drawer. It lets operators inspect the
 event timeline, the durable training contract, and the latest worker metrics
 without leaving the Forge station.
 
+Simulator controls can advance one step at a time or run a Forge to completion
+so local demos can exercise the full Material -> Forge -> Artifact loop.
+
 For older rows or interrupted local development runs, the drawer can reconcile
 worker state. Reconciliation rebuilds the training contract from catalog data,
 validates the JSONL Material, and restores worker metrics/events without

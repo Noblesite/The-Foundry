@@ -47,6 +47,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   });
   const [isStarting, setIsStarting] = useState(false);
   const [advancingRunId, setAdvancingRunId] = useState<string | null>(null);
+  const [autoCompletingRunId, setAutoCompletingRunId] = useState<string | null>(null);
   const [isRefreshingWorkers, setIsRefreshingWorkers] = useState(false);
   const [isConfiguringRuntime, setIsConfiguringRuntime] = useState(false);
   const [selectedForgeDetailId, setSelectedForgeDetailId] = useState<string | null>(null);
@@ -389,6 +390,54 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     }
   };
 
+  const runSimulationToCompletion = async (forgeRunId: string) => {
+    setAutoCompletingRunId(forgeRunId);
+    setError(null);
+    setStatusText(null);
+
+    try {
+      let latestRun = forgeRuns.find((run) => run.id === forgeRunId) || null;
+      for (let step = 0; step < 12; step += 1) {
+        if (latestRun?.status === "completed" || latestRun?.status === "failed") {
+          break;
+        }
+
+        latestRun = await repository.advanceForgeSimulation(forgeRunId);
+        setForgeRuns((current) =>
+          current.map((run) => (run.id === latestRun?.id ? latestRun : run))
+        );
+        if (latestRun.workerState) {
+          setWorkerStates((current) => ({ ...current, [latestRun!.id]: latestRun!.workerState! }));
+        }
+      }
+
+      if (!latestRun) {
+        throw new Error("Forge job was not found.");
+      }
+
+      setLastWorkerSync(
+        new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      );
+      setStatusText(
+        latestRun.artifactId
+          ? `${latestRun.label} completed. Artifact ${latestRun.artifactId} is ready.`
+          : `${latestRun.label} stopped at ${latestRun.progress}%.`
+      );
+    } catch (completeError: unknown) {
+      setError(
+        completeError instanceof Error
+          ? completeError.message
+          : "Could not run Forge simulation to completion."
+      );
+    } finally {
+      setAutoCompletingRunId(null);
+    }
+  };
+
   return (
     <section className="forge-workbench" aria-label="Forge workbench">
       <div className="workbench-hero panel-glass">
@@ -654,6 +703,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                       type="button"
                       disabled={
                         advancingRunId === run.id ||
+                        autoCompletingRunId === run.id ||
                         run.status === "completed" ||
                         run.status === "failed"
                       }
@@ -661,6 +711,20 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                     >
                       <i className="fas fa-forward-step" aria-hidden="true" />
                       {advancingRunId === run.id ? "Advancing" : "Run Step"}
+                    </button>
+                    <button
+                      className="button-secondary button-compact"
+                      type="button"
+                      disabled={
+                        advancingRunId === run.id ||
+                        autoCompletingRunId === run.id ||
+                        run.status === "completed" ||
+                        run.status === "failed"
+                      }
+                      onClick={() => void runSimulationToCompletion(run.id)}
+                    >
+                      <i className="fas fa-gauge-high" aria-hidden="true" />
+                      {autoCompletingRunId === run.id ? "Running" : "Run to Complete"}
                     </button>
                   </div>
                   <div className="forge-event-log" aria-label={`${run.label} worker events`}>
