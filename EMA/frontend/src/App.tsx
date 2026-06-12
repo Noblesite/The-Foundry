@@ -269,6 +269,7 @@ const App: React.FC = () => {
           settings={settings}
           summary={foundryData.sectionSummaries.forge}
           workshop={dashboardSummary.workshop}
+          onConstructLoaded={handleConstructLoaded}
           onOpenAcademy={() => setActiveSection("academy")}
         />
       );

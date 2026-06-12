@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { StartForgeRequest } from "../contracts/foundryApi";
 import {
+  Artifact,
+  Construct,
   ForgeRun,
   ForgeRuntime,
   ForgeRuntimeMode,
@@ -24,6 +26,7 @@ interface ForgeWorkbenchProps {
   settings: WorkspaceSettings;
   summary: SectionSummary;
   workshop: Workshop;
+  onConstructLoaded: (construct: Construct, artifact: Artifact) => void;
   onOpenAcademy: () => void;
 }
 
@@ -32,6 +35,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   settings,
   summary,
   workshop,
+  onConstructLoaded,
   onOpenAcademy,
 }) => {
   const [materials, setMaterials] = useState<MaterialSource[]>([]);
@@ -48,6 +52,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   const [isStarting, setIsStarting] = useState(false);
   const [advancingRunId, setAdvancingRunId] = useState<string | null>(null);
   const [autoCompletingRunId, setAutoCompletingRunId] = useState<string | null>(null);
+  const [loadingConstructRunId, setLoadingConstructRunId] = useState<string | null>(null);
   const [isRefreshingWorkers, setIsRefreshingWorkers] = useState(false);
   const [isConfiguringRuntime, setIsConfiguringRuntime] = useState(false);
   const [selectedForgeDetailId, setSelectedForgeDetailId] = useState<string | null>(null);
@@ -305,6 +310,11 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
           metrics: state.metrics,
         },
       }));
+      if (state.forgeRun) {
+        setForgeRuns((current) =>
+          current.map((run) => (run.id === state.forgeRun?.id ? state.forgeRun : run))
+        );
+      }
       setLastWorkerSync(
         new Date().toLocaleTimeString([], {
           hour: "2-digit",
@@ -435,6 +445,58 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
       );
     } finally {
       setAutoCompletingRunId(null);
+    }
+  };
+
+  const loadForgeArtifactIntoConstruct = async (forgeRun: ForgeRun) => {
+    let handoffRun = forgeRun;
+    if (!handoffRun.artifactId && handoffRun.status === "completed") {
+      try {
+        const state = await repository.reconcileForgeWorkerState(handoffRun.id);
+        if (state.forgeRun) {
+          handoffRun = state.forgeRun;
+          setForgeRuns((current) =>
+            current.map((run) => (run.id === handoffRun.id ? handoffRun : run))
+          );
+          setSelectedForgeContract(state.contract);
+          setWorkerStates((current) => ({
+            ...current,
+            [handoffRun.id]: {
+              events: state.events,
+              metrics: state.metrics,
+            },
+          }));
+        }
+      } catch {
+        // The explicit error below gives the operator a clearer next action.
+      }
+    }
+
+    if (!handoffRun.artifactId) {
+      setError("Complete this Forge before loading a Construct.");
+      return;
+    }
+
+    setLoadingConstructRunId(handoffRun.id);
+    setError(null);
+    setStatusText(null);
+
+    try {
+      const artifacts = await repository.listArtifacts(workshop.id);
+      const artifact = artifacts.find((item) => item.id === handoffRun.artifactId);
+      if (!artifact) {
+        throw new Error("Artifact metadata was not found for this Forge.");
+      }
+
+      const construct = await repository.loadArtifactIntoConstruct(workshop.id, {
+        artifactId: artifact.id,
+      });
+      setStatusText(`${artifact.name} loaded into ${construct.name}.`);
+      onConstructLoaded(construct, artifact);
+    } catch (loadError: unknown) {
+      setError(loadError instanceof Error ? loadError.message : "Could not load Construct.");
+    } finally {
+      setLoadingConstructRunId(null);
     }
   };
 
@@ -726,6 +788,21 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                       <i className="fas fa-gauge-high" aria-hidden="true" />
                       {autoCompletingRunId === run.id ? "Running" : "Run to Complete"}
                     </button>
+                    {run.status === "completed" && (
+                      <button
+                        className="button-primary button-compact"
+                        type="button"
+                        disabled={loadingConstructRunId === run.id}
+                        onClick={() => void loadForgeArtifactIntoConstruct(run)}
+                      >
+                        <i className="fas fa-play" aria-hidden="true" />
+                        {loadingConstructRunId === run.id
+                          ? "Loading"
+                          : run.artifactId
+                            ? "Load Construct"
+                            : "Prepare Construct"}
+                      </button>
+                    )}
                   </div>
                   <div className="forge-event-log" aria-label={`${run.label} worker events`}>
                     {(workerState?.events || []).slice(-4).map((event) => (

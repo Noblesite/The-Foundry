@@ -406,6 +406,9 @@ async def reconcile_foundry_forge_worker_endpoint(forge_run_id: str):
             forge_run=forge,
             material=material,
         )
+        if forge["status"] == "completed":
+            forge = await foundry_catalog_service.ensure_artifact_for_completed_forge(forge_run_id)
+            state["forgeRun"] = forge
         return api_envelope(state)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error))

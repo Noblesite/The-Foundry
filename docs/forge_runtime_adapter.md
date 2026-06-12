@@ -52,6 +52,8 @@ without leaving the Forge station.
 
 Simulator controls can advance one step at a time or run a Forge to completion
 so local demos can exercise the full Material -> Forge -> Artifact loop.
+Completed Forges can hand their Artifact directly to Construct; older completed
+rows without Artifact metadata are repaired before the Construct load.
 
 For older rows or interrupted local development runs, the drawer can reconcile
 worker state. Reconciliation rebuilds the training contract from catalog data,

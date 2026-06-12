@@ -1516,7 +1516,10 @@ class FoundryCatalogService:
             ).fetchone()
             if row is None:
                 raise ValueError(f"Forge {forge_run_id} was not found.")
-            if row["status"] in {"completed", "failed"}:
+            if row["status"] == "completed":
+                artifact = self._ensure_artifact_for_forge(connection, row)
+                return self._forge_run_from_row(row, artifact_id=artifact["id"])
+            if row["status"] == "failed":
                 return self._forge_run_from_row(row)
 
             epoch_total = max(1, row["epoch_total"] or 1)
@@ -1571,6 +1574,30 @@ class FoundryCatalogService:
                 updated,
                 artifact_id=artifact["id"] if artifact else None,
             )
+
+    async def ensure_artifact_for_completed_forge(self, forge_run_id: str) -> Dict[str, Any]:
+        async with self._write_lock:
+            return await self._run_query(
+                lambda: self._ensure_artifact_for_completed_forge_sync(forge_run_id)
+            )
+
+    def _ensure_artifact_for_completed_forge_sync(self, forge_run_id: str) -> Dict[str, Any]:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM forge_runs WHERE id = ?",
+                (forge_run_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"Forge {forge_run_id} was not found.")
+            if row["status"] != "completed":
+                raise ValueError("Forge must be completed before creating an Artifact.")
+
+            artifact = self._ensure_artifact_for_forge(connection, row)
+            updated = connection.execute(
+                "SELECT * FROM forge_runs WHERE id = ?",
+                (forge_run_id,),
+            ).fetchone()
+            return self._forge_run_from_row(updated, artifact_id=artifact["id"])
 
     def _forge_progress_step(self, epoch_total: int) -> int:
         return max(10, min(28, round(100 / max(3, epoch_total * 2))))

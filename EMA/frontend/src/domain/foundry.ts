@@ -218,6 +218,7 @@ export interface ForgeWorkerState {
 
 export interface ForgeWorkerReconcileResult extends ForgeWorkerState {
   contract: ForgeTrainingContract;
+  forgeRun?: ForgeRun;
   validation?: Record<string, unknown>;
 }
 

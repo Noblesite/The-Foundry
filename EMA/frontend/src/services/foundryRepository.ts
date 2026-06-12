@@ -557,8 +557,28 @@ export const mockFoundryRepository: FoundryRepository = {
     };
     mockForgeWorkerStates[forgeRun.id] = workerState;
     forgeRun.workerState = workerState;
+    if (forgeRun.status === "completed" && !forgeRun.artifactId) {
+      forgeRun.artifactId = `art-${forgeRun.id.replace(/^frg-/, "")}`;
+      const artifact: Artifact = {
+        id: forgeRun.artifactId,
+        workshopId: forgeRun.workshopId,
+        forgeRunId: forgeRun.id,
+        name: `${forgeRun.method} Artifact`,
+        version: `v0.${mockArtifacts.length + 1}.0`,
+        baseModel: forgeRun.baseModel || "unknown",
+        adapterPath: `runtime/artifacts/${forgeRun.artifactId}/adapter`,
+        status: "ready",
+        trainingMethod: forgeRun.method === "LoRA" ? "LoRA" : "QLoRA",
+        trialScore: 0,
+      };
+      mockArtifacts.unshift(artifact);
+      mockDashboardSummary.currentArtifact = artifact;
+      mockDashboardSummary.workshop.activeArtifactId = artifact.id;
+      mockDashboardSummary.workshop.status = "ready";
+    }
     return {
       contract: forgeRun.trainingContract,
+      forgeRun,
       events: workerState.events,
       metrics: workerState.metrics,
       validation: { valid: true, message: "Mock worker state reconciled." },
