@@ -46,6 +46,10 @@ The Forge queue polls worker state while jobs are queued or running. Manual
 refresh remains available for older Forge rows that predate worker files or for
 operators who want to inspect the latest contract state on demand.
 
+The queue also exposes a Forge detail drawer. It lets operators inspect the
+event timeline, the durable training contract, and the latest worker metrics
+without leaving the Forge station.
+
 Simulator event types:
 
 - `queued`

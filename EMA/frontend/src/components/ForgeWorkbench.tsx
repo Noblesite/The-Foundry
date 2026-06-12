@@ -4,6 +4,7 @@ import {
   ForgeRun,
   ForgeRuntime,
   ForgeRuntimeMode,
+  ForgeTrainingContract,
   ForgeWorkerState,
   MaterialSource,
   SectionSummary,
@@ -15,6 +16,8 @@ import { WorkspaceSettings } from "./SettingsOverlay";
 import { ConceptTooltip, LearningCard, TrainingMetricExplainer } from "./LearningComponents";
 
 const FORGE_WORKER_POLL_MS = 3000;
+
+type ForgeDetailTab = "events" | "contract" | "metrics";
 
 interface ForgeWorkbenchProps {
   repository: FoundryRepository;
@@ -46,6 +49,12 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   const [advancingRunId, setAdvancingRunId] = useState<string | null>(null);
   const [isRefreshingWorkers, setIsRefreshingWorkers] = useState(false);
   const [isConfiguringRuntime, setIsConfiguringRuntime] = useState(false);
+  const [selectedForgeDetailId, setSelectedForgeDetailId] = useState<string | null>(null);
+  const [selectedForgeContract, setSelectedForgeContract] =
+    useState<ForgeTrainingContract | null>(null);
+  const [forgeDetailTab, setForgeDetailTab] = useState<ForgeDetailTab>("events");
+  const [isLoadingForgeDetail, setIsLoadingForgeDetail] = useState(false);
+  const [forgeDetailError, setForgeDetailError] = useState<string | null>(null);
   const [forgeRuntime, setForgeRuntime] = useState<ForgeRuntime | null>(null);
   const [runtimeModeDraft, setRuntimeModeDraft] = useState<ForgeRuntimeMode>("simulated");
   const [lastWorkerSync, setLastWorkerSync] = useState<string | null>(null);
@@ -187,6 +196,15 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     [draft.materialSetId, jsonlMaterials]
   );
 
+  const selectedForgeRun = useMemo(
+    () => forgeRuns.find((run) => run.id === selectedForgeDetailId) || null,
+    [forgeRuns, selectedForgeDetailId]
+  );
+
+  const selectedForgeWorkerState = selectedForgeDetailId
+    ? workerStates[selectedForgeDetailId]
+    : undefined;
+
   useEffect(() => {
     if (!hasActiveForgeRuns) {
       return;
@@ -223,6 +241,55 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     } finally {
       setIsConfiguringRuntime(false);
     }
+  };
+
+  const loadForgeDetail = async (
+    forgeRun: ForgeRun,
+    { resetTab = true }: { resetTab?: boolean } = {}
+  ) => {
+    setSelectedForgeDetailId(forgeRun.id);
+    if (resetTab) {
+      setForgeDetailTab("events");
+    }
+    setSelectedForgeContract(forgeRun.trainingContract || null);
+    setForgeDetailError(null);
+    setIsLoadingForgeDetail(true);
+
+    try {
+      const [contract, workerState] = await Promise.all([
+        repository.getForgeContract(forgeRun.id).catch(() => forgeRun.trainingContract || null),
+        repository.getForgeWorkerState(forgeRun.id),
+      ]);
+
+      setSelectedForgeContract(contract);
+      setWorkerStates((current) => ({ ...current, [forgeRun.id]: workerState }));
+      setLastWorkerSync(
+        new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      );
+    } catch (detailError: unknown) {
+      setForgeDetailError(
+        detailError instanceof Error ? detailError.message : "Could not load Forge detail."
+      );
+    } finally {
+      setIsLoadingForgeDetail(false);
+    }
+  };
+
+  const refreshForgeDetail = async () => {
+    if (!selectedForgeRun) {
+      return;
+    }
+    await loadForgeDetail(selectedForgeRun, { resetTab: false });
+  };
+
+  const closeForgeDetail = () => {
+    setSelectedForgeDetailId(null);
+    setSelectedForgeContract(null);
+    setForgeDetailError(null);
   };
 
   const startForge = async (event: React.FormEvent) => {
@@ -541,6 +608,14 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                     <button
                       className="button-secondary button-compact"
                       type="button"
+                      onClick={() => void loadForgeDetail(run)}
+                    >
+                      <i className="fas fa-magnifying-glass-chart" aria-hidden="true" />
+                      Inspect
+                    </button>
+                    <button
+                      className="button-secondary button-compact"
+                      type="button"
                       disabled={
                         advancingRunId === run.id ||
                         run.status === "completed" ||
@@ -571,6 +646,119 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
           )}
         </div>
       </section>
+
+      {selectedForgeRun && (
+        <div className="forge-detail-backdrop" role="presentation" onClick={closeForgeDetail}>
+          <aside
+            className="forge-detail-drawer panel-glass"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${selectedForgeRun.label} Forge detail`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="forge-detail-header">
+              <div>
+                <p className="panel-kicker">Worker Detail</p>
+                <h2>{selectedForgeRun.label}</h2>
+                <span>
+                  {selectedForgeRun.status} / {selectedForgeRun.progress}% / {selectedForgeRun.id}
+                </span>
+              </div>
+              <div className="runtime-action-row">
+                <button
+                  className="button-secondary button-compact"
+                  type="button"
+                  onClick={() => void refreshForgeDetail()}
+                  disabled={isLoadingForgeDetail}
+                >
+                  <i className="fas fa-rotate" aria-hidden="true" />
+                  {isLoadingForgeDetail ? "Syncing" : "Sync"}
+                </button>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={closeForgeDetail}
+                  aria-label="Close Forge detail"
+                  title="Close"
+                >
+                  <i className="fas fa-xmark" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+
+            <div className="forge-detail-tabs" role="tablist" aria-label="Forge detail views">
+              {(["events", "contract", "metrics"] as ForgeDetailTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  className={forgeDetailTab === tab ? "is-active" : ""}
+                  type="button"
+                  role="tab"
+                  aria-selected={forgeDetailTab === tab}
+                  onClick={() => setForgeDetailTab(tab)}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            {forgeDetailError && <p className="save-state error-state">{forgeDetailError}</p>}
+
+            <div className="forge-detail-body">
+              {forgeDetailTab === "events" && (
+                <div className="forge-timeline">
+                  {(selectedForgeWorkerState?.events || []).length === 0 ? (
+                    <p className="empty-state">
+                      No worker events have been written for this Forge yet.
+                    </p>
+                  ) : (
+                    selectedForgeWorkerState?.events.map((event) => (
+                      <article className="forge-timeline-event" key={event.id}>
+                        <div>
+                          <span>{event.type.split("_").join(" ")}</span>
+                          <time dateTime={event.timestamp}>
+                            {new Date(event.timestamp).toLocaleString()}
+                          </time>
+                        </div>
+                        <p>{event.message}</p>
+                        <div className="material-meta">
+                          {typeof event.progress === "number" && <span>{event.progress}%</span>}
+                          {event.epoch && (
+                            <span>
+                              Epoch {event.epoch.current} / {event.epoch.total}
+                            </span>
+                          )}
+                          <span>{event.id}</span>
+                        </div>
+                        {event.data && (
+                          <pre className="forge-json-block">
+                            {JSON.stringify(event.data, null, 2)}
+                          </pre>
+                        )}
+                      </article>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {forgeDetailTab === "contract" && (
+                <pre className="forge-json-block is-large">
+                  {selectedForgeContract
+                    ? JSON.stringify(selectedForgeContract, null, 2)
+                    : "Forge contract has not been written yet."}
+                </pre>
+              )}
+
+              {forgeDetailTab === "metrics" && (
+                <pre className="forge-json-block is-large">
+                  {selectedForgeWorkerState?.metrics
+                    ? JSON.stringify(selectedForgeWorkerState.metrics, null, 2)
+                    : "Forge metrics have not been written yet."}
+                </pre>
+              )}
+            </div>
+          </aside>
+        </div>
+      )}
 
       <LearningCard
         title={summary.concept.title}
