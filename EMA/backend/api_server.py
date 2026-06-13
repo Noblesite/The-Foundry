@@ -233,6 +233,11 @@ async def foundry_academy_concepts_endpoint():
     return api_envelope(await foundry_catalog_service.get_academy_concepts())
 
 
+@app.get("/api/v1/academy/actions")
+async def foundry_academy_actions_endpoint():
+    return api_envelope(await foundry_catalog_service.get_academy_actions())
+
+
 @app.get("/api/v1/workshops")
 async def foundry_workshops_endpoint():
     return api_envelope(await foundry_catalog_service.list_workshops())

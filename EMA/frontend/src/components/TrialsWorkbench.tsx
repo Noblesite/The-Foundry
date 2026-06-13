@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { StartForgeRequest } from "../contracts/foundryApi";
+import { ACADEMY_ACTION_IDS, findAcademyAction } from "../domain/academyRegistry";
 import {
+  AcademyAction,
   ForgeEvaluationReport,
   ForgeRun,
   SectionSummary,
@@ -12,10 +14,12 @@ import { FoundryRepository } from "../services/foundryRepository";
 import { LearningCard } from "./LearningComponents";
 
 interface TrialsWorkbenchProps {
+  academyActions: AcademyAction[];
   repository: FoundryRepository;
   summary: SectionSummary;
   workshop: Workshop;
   onOpenAcademy: (conceptId?: string) => void;
+  onOpenAcademyAction: (actionId: string) => void;
   onOpenForgePreset: (preset: StartForgeRequest) => void;
 }
 
@@ -127,10 +131,12 @@ const createForgePreset = (
 });
 
 const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
+  academyActions,
   repository,
   summary,
   workshop,
   onOpenAcademy,
+  onOpenAcademyAction,
   onOpenForgePreset,
 }) => {
   const [trials, setTrials] = useState<Trial[]>([]);
@@ -228,6 +234,14 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
 
   const latestReport = sortedEvaluationReports[0];
   const previousReport = sortedEvaluationReports[1];
+  const evaluationAcademyAction = findAcademyAction(
+    academyActions,
+    ACADEMY_ACTION_IDS.trialsOpenEvaluation
+  );
+  const weakSampleAcademyAction = findAcademyAction(
+    academyActions,
+    ACADEMY_ACTION_IDS.trialsReviewWeakSamples
+  );
 
   const reportComparison = useMemo(() => {
     if (!latestReport || !previousReport) {
@@ -463,8 +477,14 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
                   <button onClick={() => runEvaluationAgain(latestReport)} type="button">
                     Run evaluation again
                   </button>
-                  <button onClick={() => onOpenAcademy("evaluation")} type="button">
-                    Open Academy: Evaluation
+                  <button
+                    onClick={() =>
+                      onOpenAcademyAction(ACADEMY_ACTION_IDS.trialsOpenEvaluation)
+                    }
+                    title={evaluationAcademyAction?.tooltipBody}
+                    type="button"
+                  >
+                    {evaluationAcademyAction?.label || "Open Academy: Evaluation"}
                   </button>
                 </div>
               </article>
@@ -645,10 +665,13 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
                 <button
                   className="button-secondary button-compact"
                   type="button"
-                  onClick={() => onOpenAcademy("weak-sample-review")}
+                  onClick={() =>
+                    onOpenAcademyAction(ACADEMY_ACTION_IDS.trialsReviewWeakSamples)
+                  }
+                  title={weakSampleAcademyAction?.tooltipBody}
                 >
                   <i className="fas fa-graduation-cap" aria-hidden="true" />
-                  Learn
+                  {weakSampleAcademyAction?.label || "Learn"}
                 </button>
                 <button
                   className="icon-button"

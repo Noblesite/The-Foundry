@@ -18,6 +18,7 @@ import {
   TrainingMethod,
   Trial,
   TrialVerdict,
+  NavigationSection,
   WorkshopStatus,
 } from "../domain/foundry";
 
@@ -70,6 +71,7 @@ export const foundryApiRoutes = {
   library: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/library`,
   trials: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/trials`,
   academyConcepts: `${FOUNDRY_API_VERSION}/academy/concepts`,
+  academyActions: `${FOUNDRY_API_VERSION}/academy/actions`,
 } as const;
 
 export interface ApiEnvelope<T> {
@@ -228,6 +230,16 @@ export interface AcademyConceptDto {
   concept: string;
   shortExplanation: string;
   relatedStations: string[];
+}
+
+export interface AcademyActionDto {
+  id: string;
+  station: NavigationSection;
+  action: string;
+  label: string;
+  conceptId: string;
+  tooltipTitle: string;
+  tooltipBody: string;
 }
 
 export interface CreateWorkshopRequest {

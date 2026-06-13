@@ -1,5 +1,6 @@
 import {
   ApiEnvelope,
+  AcademyActionDto,
   AcademyConceptDto,
   ArtifactDto,
   AssemblyLineRunDto,
@@ -29,6 +30,7 @@ import {
   TrialDto,
 } from "../contracts/foundryApi";
 import {
+  AcademyAction,
   Artifact,
   AcademyConcept,
   AssemblyLineRun,
@@ -53,6 +55,7 @@ import {
   Workshop,
 } from "../domain/foundry";
 import apiClient from "../managers/axiosConfig";
+import { defaultAcademyActions, defaultAcademyConcepts } from "../domain/academyRegistry";
 import {
   foundryNavigationItems,
   foundrySectionSummaries,
@@ -75,6 +78,7 @@ export interface UiCatalogItem {
 
 export interface FoundryBootstrap {
   dashboard: DashboardSummary;
+  academyActions: AcademyAction[];
   navigationItems: FoundryNavigationItem[];
   sectionSummaries: SectionSummaryMap;
   uiCatalog: UiCatalogItem[];
@@ -86,6 +90,7 @@ export interface FoundryRepository {
   getNavigationItems: () => Promise<FoundryNavigationItem[]>;
   getSectionSummaries: () => Promise<SectionSummaryMap>;
   getUiCatalog: () => Promise<UiCatalogItem[]>;
+  listAcademyActions: () => Promise<AcademyAction[]>;
   listAcademyConcepts: () => Promise<AcademyConcept[]>;
   listWorkshops: () => Promise<Workshop[]>;
   listMaterials: (workshopId: string) => Promise<MaterialSource[]>;
@@ -200,33 +205,6 @@ const mockUiCatalog: UiCatalogItem[] = [
   },
 ];
 
-const mockAcademyConcepts: AcademyConcept[] = [
-  {
-    id: "acd-attention-layers",
-    title: "Understanding Attention Layers",
-    concept: "attention",
-    shortExplanation:
-      "Attention helps a model weigh which tokens matter most when it predicts the next token.",
-    relatedStations: ["academy", "forge", "construct"],
-  },
-  {
-    id: "acd-evaluation",
-    title: "Evaluation",
-    concept: "evaluation",
-    shortExplanation:
-      "Evaluation compares a model's replies against reviewed examples so you can decide whether an Artifact is ready.",
-    relatedStations: ["trials", "forge", "artifacts"],
-  },
-  {
-    id: "acd-weak-sample-review",
-    title: "Weak Sample Review",
-    concept: "weak-sample-review",
-    shortExplanation:
-      "Weak sample review turns failed and needs-work replies into corrected training Material for the next Forge.",
-    relatedStations: ["trials", "materials", "forge"],
-  },
-];
-
 const mockAssemblyLineRuns: AssemblyLineRun[] = [];
 const mockMaterialChunks: MaterialChunk[] = [];
 const mockQAPairs: QAPair[] = [];
@@ -334,11 +312,13 @@ export const mockFoundryRepository: FoundryRepository = {
   getNavigationItems: async () => foundryNavigationItems,
   getSectionSummaries: async () => foundrySectionSummaries,
   getUiCatalog: async () => mockUiCatalog,
-  listAcademyConcepts: async () => mockAcademyConcepts,
+  listAcademyActions: async () => defaultAcademyActions,
+  listAcademyConcepts: async () => defaultAcademyConcepts,
   listWorkshops: async () => [mockDashboardSummary.workshop],
   listMaterials: async () => mockMaterialSources,
   loadBootstrap: async () => ({
     dashboard: mockDashboardSummary,
+    academyActions: defaultAcademyActions,
     navigationItems: foundryNavigationItems,
     sectionSummaries: foundrySectionSummaries,
     uiCatalog: mockUiCatalog,
@@ -976,6 +956,8 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(await apiClient.get<ApiEnvelope<SectionSummaryMap>>(foundryApiRoutes.sectionSummaries)),
   getUiCatalog: async () =>
     unwrap(await apiClient.get<ApiEnvelope<UiCatalogItem[]>>(foundryApiRoutes.uiCatalog)),
+  listAcademyActions: async () =>
+    unwrap(await apiClient.get<ApiEnvelope<AcademyActionDto[]>>(foundryApiRoutes.academyActions)),
   listAcademyConcepts: async () =>
     unwrap(
       await apiClient.get<ApiEnvelope<AcademyConceptDto[]>>(foundryApiRoutes.academyConcepts)
@@ -1185,15 +1167,18 @@ export const loadFoundryBootstrap = async (
     return repository.loadBootstrap();
   }
 
-  const [dashboard, navigationItems, sectionSummaries, uiCatalog] = await Promise.all([
-    repository.getDashboard(),
-    repository.getNavigationItems(),
-    repository.getSectionSummaries(),
-    repository.getUiCatalog(),
-  ]);
+  const [dashboard, academyActions, navigationItems, sectionSummaries, uiCatalog] =
+    await Promise.all([
+      repository.getDashboard(),
+      repository.listAcademyActions(),
+      repository.getNavigationItems(),
+      repository.getSectionSummaries(),
+      repository.getUiCatalog(),
+    ]);
 
   return {
     dashboard,
+    academyActions,
     navigationItems,
     sectionSummaries,
     uiCatalog,

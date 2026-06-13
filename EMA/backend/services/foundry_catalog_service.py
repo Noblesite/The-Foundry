@@ -43,6 +43,7 @@ class FoundryCatalogService:
             self._seed_defaults(connection)
             self._ensure_trials_catalog_rows(connection)
             self._ensure_academy_concepts(connection)
+            self._ensure_academy_actions(connection)
 
     def _create_schema(self, connection: sqlite3.Connection) -> None:
         connection.executescript(
@@ -206,6 +207,17 @@ class FoundryCatalogService:
                 related_stations_json TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS academy_action_mappings (
+                id TEXT PRIMARY KEY,
+                station TEXT NOT NULL,
+                action TEXT NOT NULL,
+                label TEXT NOT NULL,
+                concept_id TEXT NOT NULL,
+                tooltip_title TEXT NOT NULL,
+                tooltip_body TEXT NOT NULL,
+                FOREIGN KEY(concept_id) REFERENCES academy_concepts(concept)
+            );
+
             CREATE TABLE IF NOT EXISTS ui_component_catalog (
                 id TEXT PRIMARY KEY,
                 component TEXT NOT NULL,
@@ -255,6 +267,10 @@ class FoundryCatalogService:
                 ON trials(artifact_id, verdict);
             CREATE INDEX IF NOT EXISTS idx_academy_concepts_concept
                 ON academy_concepts(concept);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_academy_concepts_concept_unique
+                ON academy_concepts(concept);
+            CREATE INDEX IF NOT EXISTS idx_academy_actions_station_action
+                ON academy_action_mappings(station, action);
             CREATE INDEX IF NOT EXISTS idx_ui_component_station_component_cache
                 ON ui_component_catalog(station, component, cache_key);
             """
@@ -553,6 +569,73 @@ class FoundryCatalogService:
             VALUES (?, ?, ?, ?, ?)
             """,
             academy_rows,
+        )
+
+    def _ensure_academy_actions(self, connection: sqlite3.Connection) -> None:
+        action_rows = [
+            (
+                "dashboard.resume-lesson",
+                "workshop",
+                "resume-lesson",
+                "Resume Lesson",
+                "attention",
+                "Why attention now?",
+                "Attention is the first layer-level concept to understand because it explains how prompts steer the next generated token.",
+            ),
+            (
+                "materials.open-assembly-line",
+                "materials",
+                "open-assembly-line",
+                "Open Academy",
+                "attention",
+                "Why Materials matter",
+                "Materials become chunks and examples. Cleaner inputs make every later training and evaluation step easier to trust.",
+            ),
+            (
+                "forge.open-training",
+                "forge",
+                "open-training-concepts",
+                "Open Academy",
+                "attention",
+                "Why training metrics need context",
+                "Forge metrics are useful only when paired with examples, validation, and layer-level understanding.",
+            ),
+            (
+                "artifacts.open-promotion",
+                "artifacts",
+                "open-promotion-concepts",
+                "Open Academy",
+                "evaluation",
+                "Why promotion needs Trials",
+                "Artifacts should move into Constructs only after evaluation gives you evidence that behavior improved.",
+            ),
+            (
+                "trials.open-evaluation",
+                "trials",
+                "open-evaluation",
+                "Open Academy: Evaluation",
+                "evaluation",
+                "What is Evaluation?",
+                "Evaluation checks model replies against reviewed prompts, expected answers, and rubric scores before promotion.",
+            ),
+            (
+                "trials.review-weak-samples",
+                "trials",
+                "review-weak-samples",
+                "Learn",
+                "weak-sample-review",
+                "What is Weak Sample Review?",
+                "Weak sample review turns failed or needs-work replies into corrected rows that can train the next Artifact.",
+            ),
+        ]
+        connection.executemany(
+            """
+            INSERT OR REPLACE INTO academy_action_mappings (
+                id, station, action, label, concept_id, tooltip_title, tooltip_body
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            action_rows,
         )
 
     def _default_section_rows(self) -> List[tuple]:
@@ -2690,9 +2773,31 @@ class FoundryCatalogService:
 
         return await self._run_query(query)
 
+    async def get_academy_actions(self) -> List[Dict[str, Any]]:
+        def query():
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT
+                        id,
+                        station,
+                        action,
+                        label,
+                        concept_id AS conceptId,
+                        tooltip_title AS tooltipTitle,
+                        tooltip_body AS tooltipBody
+                    FROM academy_action_mappings
+                    ORDER BY station ASC, action ASC
+                    """
+                ).fetchall()
+                return [dict(row) for row in rows]
+
+        return await self._run_query(query)
+
     async def get_bootstrap(self) -> Dict[str, Any]:
-        dashboard, navigation_items, section_summaries, ui_catalog = await asyncio.gather(
+        dashboard, academy_actions, navigation_items, section_summaries, ui_catalog = await asyncio.gather(
             self.get_dashboard(),
+            self.get_academy_actions(),
             self.get_navigation_items(),
             self.get_section_summaries(),
             self.get_ui_catalog(),
@@ -2700,6 +2805,7 @@ class FoundryCatalogService:
 
         return {
             "dashboard": dashboard,
+            "academyActions": academy_actions,
             "navigationItems": navigation_items,
             "sectionSummaries": section_summaries,
             "uiCatalog": ui_catalog,

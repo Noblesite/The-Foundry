@@ -383,6 +383,16 @@ export interface AcademyConcept {
   relatedStations: string[];
 }
 
+export interface AcademyAction {
+  id: string;
+  station: NavigationSection;
+  action: string;
+  label: string;
+  conceptId: string;
+  tooltipTitle: string;
+  tooltipBody: string;
+}
+
 export interface RuntimeMetric {
   id: string;
   label: string;

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { defaultAcademyConcepts } from "../domain/academyRegistry";
 import { AcademyConcept, SectionSummary } from "../domain/foundry";
 import { FoundryRepository } from "../services/foundryRepository";
 import { LearningCard, LayerVisualizer, TokenPreview } from "./LearningComponents";
@@ -8,33 +9,6 @@ interface AcademyWorkbenchProps {
   focusConceptId: string | null;
   summary: SectionSummary;
 }
-
-const fallbackConcepts: AcademyConcept[] = [
-  {
-    id: "acd-attention-layers",
-    title: "Understanding Attention Layers",
-    concept: "attention",
-    shortExplanation:
-      "Attention helps a model weigh which tokens matter most when it predicts the next token.",
-    relatedStations: ["academy", "forge", "construct"],
-  },
-  {
-    id: "acd-evaluation",
-    title: "Evaluation",
-    concept: "evaluation",
-    shortExplanation:
-      "Evaluation compares model replies against reviewed examples before you promote an Artifact.",
-    relatedStations: ["trials", "forge", "artifacts"],
-  },
-  {
-    id: "acd-weak-sample-review",
-    title: "Weak Sample Review",
-    concept: "weak-sample-review",
-    shortExplanation:
-      "Weak sample review turns failed and needs-work replies into corrected Material for the next Forge.",
-    relatedStations: ["trials", "materials", "forge"],
-  },
-];
 
 const conceptLessons: Record<
   string,
@@ -90,7 +64,7 @@ const AcademyWorkbench: React.FC<AcademyWorkbenchProps> = ({
   focusConceptId,
   summary,
 }) => {
-  const [concepts, setConcepts] = useState<AcademyConcept[]>(fallbackConcepts);
+  const [concepts, setConcepts] = useState<AcademyConcept[]>(defaultAcademyConcepts);
   const [selectedConceptId, setSelectedConceptId] = useState<string | null>(focusConceptId);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -133,7 +107,7 @@ const AcademyWorkbench: React.FC<AcademyWorkbenchProps> = ({
     const requested = concepts.find(
       (concept) => concept.id === selectedConceptId || concept.concept === selectedConceptId
     );
-    return requested || concepts[0] || fallbackConcepts[0];
+    return requested || concepts[0] || defaultAcademyConcepts[0];
   }, [concepts, selectedConceptId]);
 
   const selectedLesson =
