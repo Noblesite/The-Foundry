@@ -7,6 +7,7 @@ import {
   ConstructDto,
   ConstructChatRequest,
   ConstructChatResponseDto,
+  CreateTrialRequest,
   CreateWorkshopRequest,
   ExportQAPairsDto,
   ExportQAPairsRequest,
@@ -20,6 +21,7 @@ import {
   QAPairDto,
   StartAssemblyLineRequest,
   StartForgeRequest,
+  TrialDto,
 } from "../contracts/foundryApi";
 import {
   Artifact,
@@ -40,6 +42,7 @@ import {
   NavigationSection,
   QAPair,
   SectionSummary,
+  Trial,
   Workshop,
 } from "../domain/foundry";
 import apiClient from "../managers/axiosConfig";
@@ -103,6 +106,8 @@ export interface FoundryRepository {
   getForgeRuntime: () => Promise<ForgeRuntime>;
   configureForgeRuntime: (request: ConfigureForgeRuntimeRequest) => Promise<ForgeRuntime>;
   listArtifacts: (workshopId: string) => Promise<Artifact[]>;
+  listTrials: (workshopId: string) => Promise<Trial[]>;
+  createTrial: (workshopId: string, request: CreateTrialRequest) => Promise<Trial>;
   loadArtifactIntoConstruct: (
     workshopId: string,
     request: LoadArtifactIntoConstructRequest
@@ -187,6 +192,7 @@ const mockMaterialChunks: MaterialChunk[] = [];
 const mockQAPairs: QAPair[] = [];
 const mockForgeRuns: ForgeRun[] = [...mockDashboardSummary.forgeQueue];
 const mockArtifacts: Artifact[] = [mockDashboardSummary.currentArtifact];
+const mockTrials: Trial[] = [];
 const mockForgeWorkerStates: Record<string, ForgeWorkerState> = {};
 let mockConstruct: Construct = mockDashboardSummary.construct;
 let mockConstructRuntime: ConstructRuntime = {
@@ -601,6 +607,39 @@ export const mockFoundryRepository: FoundryRepository = {
   },
   listArtifacts: async (_workshopId) =>
     mockArtifacts.filter((artifact) => artifact.workshopId === _workshopId),
+  listTrials: async (_workshopId) =>
+    mockTrials.filter((trial) => trial.workshopId === _workshopId),
+  createTrial: async (_workshopId, request) => {
+    const trial: Trial = {
+      id: `trl-${Date.now()}`,
+      workshopId: _workshopId,
+      artifactId: request.artifactId,
+      constructId: request.constructId,
+      messageId: request.messageId,
+      prompt: request.prompt,
+      response: request.response,
+      verdict: request.verdict,
+      runtimeMode: request.runtimeMode,
+      tokenCount: request.tokenCount,
+      generationSettings: {
+        contextWindow: Number(request.generationSettings.contextWindow || mockConstruct.contextWindow),
+        maxNewTokens: Number(request.generationSettings.maxNewTokens || mockConstruct.maxNewTokens),
+        temperature: Number(request.generationSettings.temperature || mockConstruct.temperature),
+        includeLibraryContext: Boolean(request.generationSettings.includeLibraryContext),
+        ...request.generationSettings,
+      },
+      createdAt: new Date().toISOString(),
+    };
+    mockTrials.unshift(trial);
+    const artifact = mockArtifacts.find((item) => item.id === request.artifactId);
+    if (artifact) {
+      const artifactTrials = mockTrials.filter((item) => item.artifactId === artifact.id);
+      const passCount = artifactTrials.filter((item) => item.verdict === "pass").length;
+      artifact.trialScore = Math.round((passCount / Math.max(1, artifactTrials.length)) * 100);
+      mockDashboardSummary.currentArtifact = artifact;
+    }
+    return trial;
+  },
   loadArtifactIntoConstruct: async (_workshopId, request) => {
     const artifact = mockArtifacts.find(
       (item) => item.id === request.artifactId && item.workshopId === _workshopId
@@ -812,6 +851,12 @@ export const apiFoundryRepository: FoundryRepository = {
   listArtifacts: async (workshopId) =>
     unwrap(
       await apiClient.get<ApiEnvelope<ArtifactDto[]>>(foundryApiRoutes.artifacts(workshopId))
+    ),
+  listTrials: async (workshopId) =>
+    unwrap(await apiClient.get<ApiEnvelope<TrialDto[]>>(foundryApiRoutes.trials(workshopId))),
+  createTrial: async (workshopId, request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<TrialDto>>(foundryApiRoutes.trials(workshopId), request)
     ),
   loadArtifactIntoConstruct: async (workshopId, request) =>
     unwrap(

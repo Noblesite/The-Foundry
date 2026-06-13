@@ -5,6 +5,7 @@ export type NavigationSection =
   | "artifacts"
   | "construct"
   | "library"
+  | "trials"
   | "academy"
   | "settings";
 
@@ -27,6 +28,7 @@ export type ConstructRuntimeMode = "simulated" | "transformers";
 export type ConstructRuntimeDevice = "auto" | "cpu" | "cuda" | "mps";
 export type ForgeRuntimeMode = "simulated" | "local";
 export type TrialStatus = "not-started" | "running" | "passed" | "failed";
+export type TrialVerdict = "pass" | "needs-work" | "fail";
 export type LearningDifficulty = "starter" | "builder" | "advanced";
 
 export interface WorkspaceSettings {
@@ -283,6 +285,21 @@ export interface ConstructRuntime {
   modelId: string;
   device: string;
   loaded: boolean;
+}
+
+export interface Trial {
+  id: string;
+  workshopId: string;
+  artifactId: string;
+  constructId: string;
+  messageId: string;
+  prompt: string;
+  response: string;
+  verdict: TrialVerdict;
+  runtimeMode: string;
+  tokenCount: number;
+  generationSettings: ConstructChatResponse["generation"] & Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface ConstructChatTokenEvent {

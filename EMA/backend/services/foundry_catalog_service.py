@@ -41,6 +41,7 @@ class FoundryCatalogService:
         with self._connect() as connection:
             self._create_schema(connection)
             self._seed_defaults(connection)
+            self._ensure_trials_catalog_rows(connection)
 
     def _create_schema(self, connection: sqlite3.Connection) -> None:
         connection.executescript(
@@ -177,6 +178,24 @@ class FoundryCatalogService:
                 FOREIGN KEY(construct_id) REFERENCES constructs(id)
             );
 
+            CREATE TABLE IF NOT EXISTS trials (
+                id TEXT PRIMARY KEY,
+                workshop_id TEXT NOT NULL,
+                artifact_id TEXT NOT NULL,
+                construct_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                prompt TEXT NOT NULL,
+                response TEXT NOT NULL,
+                verdict TEXT NOT NULL,
+                runtime_mode TEXT NOT NULL,
+                token_count INTEGER NOT NULL DEFAULT 0,
+                generation_settings_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(workshop_id) REFERENCES workshops(id),
+                FOREIGN KEY(artifact_id) REFERENCES artifacts(id),
+                FOREIGN KEY(construct_id) REFERENCES constructs(id)
+            );
+
             CREATE TABLE IF NOT EXISTS academy_concepts (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
@@ -228,6 +247,10 @@ class FoundryCatalogService:
                 ON constructs(workshop_id, artifact_id);
             CREATE INDEX IF NOT EXISTS idx_construct_messages_construct_conversation
                 ON construct_messages(construct_id, conversation_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_trials_workshop_created
+                ON trials(workshop_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_trials_artifact_verdict
+                ON trials(artifact_id, verdict);
             CREATE INDEX IF NOT EXISTS idx_academy_concepts_concept
                 ON academy_concepts(concept);
             CREATE INDEX IF NOT EXISTS idx_ui_component_station_component_cache
@@ -390,6 +413,7 @@ class FoundryCatalogService:
                 ("artifacts", "Artifacts", "fa-cubes", 40),
                 ("construct", "Construct", "fa-play", 50),
                 ("library", "Library", "fa-book-open", 60),
+                ("trials", "Trials", "fa-scale-balanced", 65),
                 ("academy", "Academy", "fa-graduation-cap", 70),
                 ("settings", "Settings", "fa-gear", 80),
             ],
@@ -459,6 +483,27 @@ class FoundryCatalogService:
             ],
         )
 
+    def _ensure_trials_catalog_rows(self, connection: sqlite3.Connection) -> None:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO navigation_items (id, label, icon, sort_order)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("trials", "Trials", "fa-scale-balanced", 65),
+        )
+        for row in self._default_section_rows():
+            if row[0] != "trials":
+                continue
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO section_summaries (
+                    id, eyebrow, title, body, stats_json, concept_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                row,
+            )
+
     def _default_section_rows(self) -> List[tuple]:
         sections = {
             "materials": {
@@ -515,6 +560,20 @@ class FoundryCatalogService:
                 "concept": {
                     "title": "Why retrieval exists",
                     "body": "The Library lets a Construct look up source-grounded context instead of relying only on weights learned during training.",
+                },
+            },
+            "trials": {
+                "eyebrow": "Evaluation bench",
+                "title": "Trials",
+                "body": "Review saved Construct replies, compare verdicts, and turn human evaluation into Artifact quality signals.",
+                "stats": [
+                    {"label": "Saved replies", "value": "0"},
+                    {"label": "Verdicts", "value": "Pass / Needs work / Fail"},
+                    {"label": "Artifact score", "value": "Live"},
+                ],
+                "concept": {
+                    "title": "Why Trials matter",
+                    "body": "Trials capture real prompts, generated replies, settings, and human verdicts so a model can be evaluated before promotion.",
                 },
             },
             "academy": {
@@ -869,6 +928,124 @@ class FoundryCatalogService:
                 return [self._construct_from_row(row) for row in rows]
 
         return await self._run_query(query)
+
+    async def list_trials(self, workshop_id: str) -> List[Dict[str, Any]]:
+        def query():
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM trials
+                    WHERE workshop_id = ?
+                    ORDER BY datetime(created_at) DESC
+                    """,
+                    (workshop_id,),
+                ).fetchall()
+                return [self._trial_from_row(row) for row in rows]
+
+        return await self._run_query(query)
+
+    async def create_trial(
+        self,
+        workshop_id: str,
+        artifact_id: str,
+        construct_id: str,
+        message_id: str,
+        prompt: str,
+        response: str,
+        verdict: str,
+        runtime_mode: str,
+        token_count: int,
+        generation_settings: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        async with self._write_lock:
+            return await self._run_query(
+                lambda: self._create_trial_sync(
+                    workshop_id=workshop_id,
+                    artifact_id=artifact_id,
+                    construct_id=construct_id,
+                    message_id=message_id,
+                    prompt=prompt,
+                    response=response,
+                    verdict=verdict,
+                    runtime_mode=runtime_mode,
+                    token_count=token_count,
+                    generation_settings=generation_settings,
+                )
+            )
+
+    def _create_trial_sync(
+        self,
+        workshop_id: str,
+        artifact_id: str,
+        construct_id: str,
+        message_id: str,
+        prompt: str,
+        response: str,
+        verdict: str,
+        runtime_mode: str,
+        token_count: int,
+        generation_settings: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if verdict not in {"pass", "needs-work", "fail"}:
+            raise ValueError("Trial verdict must be pass, needs-work, or fail.")
+
+        with self._connect() as connection:
+            workshop = connection.execute(
+                "SELECT id FROM workshops WHERE id = ?",
+                (workshop_id,),
+            ).fetchone()
+            if workshop is None:
+                raise ValueError(f"Workshop {workshop_id} was not found.")
+
+            artifact = connection.execute(
+                """
+                SELECT * FROM artifacts
+                WHERE id = ? AND workshop_id = ?
+                """,
+                (artifact_id, workshop_id),
+            ).fetchone()
+            if artifact is None:
+                raise ValueError("Artifact was not found for this Workshop.")
+
+            construct = connection.execute(
+                """
+                SELECT * FROM constructs
+                WHERE id = ? AND workshop_id = ?
+                """,
+                (construct_id, workshop_id),
+            ).fetchone()
+            if construct is None:
+                raise ValueError("Construct was not found for this Workshop.")
+            if construct["artifact_id"] != artifact_id:
+                raise ValueError("Construct is not loaded with the selected Artifact.")
+
+            trial_id = f"trl-{uuid4().hex[:12]}"
+            connection.execute(
+                """
+                INSERT INTO trials (
+                    id, workshop_id, artifact_id, construct_id, message_id,
+                    prompt, response, verdict, runtime_mode, token_count,
+                    generation_settings_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    trial_id,
+                    workshop_id,
+                    artifact_id,
+                    construct_id,
+                    message_id,
+                    prompt,
+                    response,
+                    verdict,
+                    runtime_mode,
+                    max(token_count, 0),
+                    json.dumps(generation_settings),
+                ),
+            )
+            self._refresh_artifact_trial_score(connection, artifact_id)
+            row = connection.execute("SELECT * FROM trials WHERE id = ?", (trial_id,)).fetchone()
+            return self._trial_from_row(row)
 
     async def chat_with_construct(
         self,
@@ -2054,6 +2231,47 @@ class FoundryCatalogService:
             "maxNewTokens": row["max_new_tokens"],
             "temperature": row["temperature"],
         }
+
+    def _trial_from_row(self, row: sqlite3.Row) -> Dict[str, Any]:
+        return {
+            "id": row["id"],
+            "workshopId": row["workshop_id"],
+            "artifactId": row["artifact_id"],
+            "constructId": row["construct_id"],
+            "messageId": row["message_id"],
+            "prompt": row["prompt"],
+            "response": row["response"],
+            "verdict": row["verdict"],
+            "runtimeMode": row["runtime_mode"],
+            "tokenCount": row["token_count"],
+            "generationSettings": json.loads(row["generation_settings_json"]),
+            "createdAt": row["created_at"],
+        }
+
+    def _refresh_artifact_trial_score(
+        self,
+        connection: sqlite3.Connection,
+        artifact_id: str,
+    ) -> None:
+        stats = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS total_count,
+                SUM(CASE WHEN verdict = 'pass' THEN 1 ELSE 0 END) AS pass_count
+            FROM trials
+            WHERE artifact_id = ?
+            """,
+            (artifact_id,),
+        ).fetchone()
+        total_count = stats["total_count"] or 0
+        if total_count == 0:
+            score = 0
+        else:
+            score = round(((stats["pass_count"] or 0) / total_count) * 100)
+        connection.execute(
+            "UPDATE artifacts SET trial_score = ? WHERE id = ?",
+            (score, artifact_id),
+        )
 
     def _forge_run_from_row(
         self,

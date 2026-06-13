@@ -1,15 +1,22 @@
 import React, { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Artifact, Construct, ConstructMessage, ConstructRuntime } from "../domain/foundry";
+import {
+  Artifact,
+  Construct,
+  ConstructMessage,
+  ConstructRuntime,
+  Trial,
+  TrialVerdict,
+} from "../domain/foundry";
 import { FoundryRepository } from "../services/foundryRepository";
 import { LearningCard, TrainingMetricExplainer } from "./LearningComponents";
 import { WorkspaceSettings } from "./SettingsOverlay";
 
-type TrialVerdict = "pass" | "needs-work" | "fail";
-
 interface ResponseInspection {
   messageId: string;
+  prompt: string;
+  response: string;
   totalTokens: number;
   runtimeMode: string;
   runtimeStatus: string;
@@ -55,6 +62,9 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [isSending, setIsSending] = useState(false);
   const [lastInspection, setLastInspection] = useState<ResponseInspection | null>(null);
   const [trialVerdict, setTrialVerdict] = useState<TrialVerdict | null>(null);
+  const [savedTrial, setSavedTrial] = useState<Trial | null>(null);
+  const [isSavingTrial, setIsSavingTrial] = useState(false);
+  const [trialError, setTrialError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -69,6 +79,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     ]);
     setLastInspection(null);
     setTrialVerdict(null);
+    setSavedTrial(null);
+    setTrialError(null);
     setRuntimeMode("simulated");
     setRuntimeDetail("Using deterministic simulated token streaming.");
   }, [artifact, construct]);
@@ -165,11 +177,14 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setMessages((current) => [...current, userMessage]);
     setInput("");
     setTrialVerdict(null);
+    setSavedTrial(null);
+    setTrialError(null);
     setIsSending(true);
     setError(null);
 
     try {
       const assistantMessageId = `assistant-${Date.now()}`;
+      let assistantText = "";
       setMessages((current) => [
         ...current,
         {
@@ -186,6 +201,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         temperature: settings.temperature,
       }, (event) => {
         if (event.type === "token") {
+          assistantText += event.token;
           setMessages((current) =>
             current.map((message) =>
               message.id === assistantMessageId
@@ -220,6 +236,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           );
           setLastInspection({
             messageId: event.messageId,
+            prompt: messageText,
+            response: assistantText,
             totalTokens: event.totalTokens,
             runtimeMode: eventRuntime?.mode || runtimeMode,
             runtimeStatus: eventRuntime?.status || runtime?.status || "fallback",
@@ -240,6 +258,42 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       setError(chatError instanceof Error ? chatError.message : "Could not talk to Construct.");
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const saveTrial = async (verdict: TrialVerdict) => {
+    if (!lastInspection) {
+      return;
+    }
+
+    setIsSavingTrial(true);
+    setTrialError(null);
+    try {
+      const trial = await repository.createTrial(activeArtifact.workshopId, {
+        artifactId: lastInspection.artifactId,
+        constructId: lastInspection.constructId,
+        messageId: lastInspection.messageId,
+        prompt: lastInspection.prompt,
+        response: lastInspection.response,
+        verdict,
+        runtimeMode: lastInspection.runtimeMode,
+        tokenCount: lastInspection.totalTokens,
+        generationSettings: {
+          contextWindow: lastInspection.contextWindow,
+          maxNewTokens: lastInspection.maxNewTokens,
+          temperature: lastInspection.temperature,
+          includeLibraryContext: lastInspection.includeLibraryContext,
+          runtimeStatus: lastInspection.runtimeStatus,
+          modelId: lastInspection.modelId,
+          device: lastInspection.device,
+        },
+      });
+      setTrialVerdict(verdict);
+      setSavedTrial(trial);
+    } catch (saveError: unknown) {
+      setTrialError(saveError instanceof Error ? saveError.message : "Could not save Trial.");
+    } finally {
+      setIsSavingTrial(false);
     }
   };
 
@@ -453,8 +507,9 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                       className={`button-secondary button-compact ${
                         trialVerdict === verdict ? "is-active" : ""
                       }`}
+                      disabled={isSavingTrial}
                       key={verdict}
-                      onClick={() => setTrialVerdict(verdict)}
+                      onClick={() => void saveTrial(verdict)}
                       type="button"
                     >
                       {verdict}
@@ -463,9 +518,11 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 </div>
                 {trialVerdict && (
                   <p className="save-state success-state">
-                    Trial marked {trialVerdict}. Persistence comes with the Trials service.
+                    Trial saved as {trialVerdict}
+                    {savedTrial ? ` (${savedTrial.id}).` : "."}
                   </p>
                 )}
+                {trialError && <p className="save-state error-state">{trialError}</p>}
               </>
             ) : (
               <p className="empty-state">Send a prompt to inspect generation settings.</p>

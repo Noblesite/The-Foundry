@@ -154,6 +154,37 @@ def run_forge_adapter_boundary_check() -> int:
     return 0
 
 
+def run_trial_contract_check() -> int:
+    api_server = PACKAGE_ROOT / "backend" / "api_server.py"
+    catalog_service = PACKAGE_ROOT / "backend" / "services" / "foundry_catalog_service.py"
+    api_source = api_server.read_text(encoding="utf-8")
+    service_source = catalog_service.read_text(encoding="utf-8")
+
+    required_api_patterns = (
+        "CreateTrialInput",
+        "/api/v1/workshops/{workshop_id}/trials",
+        "create_foundry_trial_endpoint",
+    )
+    missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
+    if missing_api:
+        return fail("Trial API boundary is missing: " + ", ".join(missing_api))
+
+    required_service_patterns = (
+        "CREATE TABLE IF NOT EXISTS trials",
+        "list_trials",
+        "create_trial",
+        "_refresh_artifact_trial_score",
+    )
+    missing_service = [
+        pattern for pattern in required_service_patterns if pattern not in service_source
+    ]
+    if missing_service:
+        return fail("Trial catalog contract is missing: " + ", ".join(missing_service))
+
+    print("OK: Trial persistence contract is present.")
+    return 0
+
+
 def run_chat_service_fake_engine_check() -> int:
     if str(PACKAGE_ROOT) not in sys.path:
         sys.path.insert(0, str(PACKAGE_ROOT))
@@ -211,6 +242,7 @@ def main() -> int:
         run_path_config_check,
         run_api_transport_boundary_check,
         run_forge_adapter_boundary_check,
+        run_trial_contract_check,
         run_chat_service_fake_engine_check,
     )
     failures = sum(check() for check in checks)

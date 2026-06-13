@@ -1064,6 +1064,86 @@ input[type="checkbox"] {
   box-shadow: var(--shadow-blue);
 }
 
+.trials-workbench {
+  gap: 1rem;
+}
+
+.trial-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.trial-card {
+  display: grid;
+  gap: 0.82rem;
+  padding: 1rem;
+}
+
+.trial-card h2 {
+  margin: 0.18rem 0 0;
+  font-size: 1rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.trial-card p {
+  margin: 0;
+}
+
+.trial-card-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.trial-verdict {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.32rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.verdict-pass {
+  border-color: rgba(0, 212, 255, 0.45);
+  background: rgba(0, 212, 255, 0.1);
+  color: var(--arc-blue);
+}
+
+.verdict-needs-work {
+  border-color: rgba(212, 160, 23, 0.45);
+  background: rgba(212, 160, 23, 0.12);
+  color: var(--brass);
+}
+
+.verdict-fail {
+  border-color: rgba(255, 138, 0, 0.42);
+  background: rgba(255, 138, 0, 0.1);
+  color: var(--forge-orange);
+}
+
+.trial-response {
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.trial-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.trial-meta span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.25rem 0.48rem;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
 .stat-card {
   display: grid;
   gap: 0.35rem;
@@ -2005,6 +2085,7 @@ input[type="checkbox"] {
   .artifact-row,
   .assembly-run-row,
   .assembly-review-grid,
+  .trial-card-header,
   .modal-actions,
   .settings-grid {
     grid-template-columns: 1fr;

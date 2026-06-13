@@ -92,6 +92,17 @@ class ConstructRuntimeInput(BaseModel):
 class ConstructRuntimeLoadInput(BaseModel):
     modelId: str | None = None
 
+class CreateTrialInput(BaseModel):
+    artifactId: str
+    constructId: str
+    messageId: str
+    prompt: str
+    response: str
+    verdict: Literal["pass", "needs-work", "fail"]
+    runtimeMode: str
+    tokenCount: int
+    generationSettings: dict[str, Any]
+
 # Initialize logger
 logger = get_logger(__name__)
 
@@ -455,6 +466,53 @@ async def load_foundry_artifact_into_construct_endpoint(
 @app.get("/api/v1/workshops/{workshop_id}/constructs")
 async def foundry_constructs_endpoint(workshop_id: str):
     return api_envelope(await foundry_catalog_service.list_constructs(workshop_id))
+
+
+@app.get("/api/v1/workshops/{workshop_id}/trials")
+async def foundry_trials_endpoint(workshop_id: str):
+    return api_envelope(await foundry_catalog_service.list_trials(workshop_id))
+
+
+@app.post("/api/v1/workshops/{workshop_id}/trials")
+async def create_foundry_trial_endpoint(workshop_id: str, data: CreateTrialInput):
+    artifact_id = data.artifactId.strip()
+    construct_id = data.constructId.strip()
+    message_id = data.messageId.strip()
+    prompt = data.prompt.strip()
+    response = data.response.strip()
+    runtime_mode = data.runtimeMode.strip()
+
+    if not artifact_id:
+        raise HTTPException(status_code=400, detail="Artifact id cannot be empty.")
+    if not construct_id:
+        raise HTTPException(status_code=400, detail="Construct id cannot be empty.")
+    if not message_id:
+        raise HTTPException(status_code=400, detail="Message id cannot be empty.")
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Trial prompt cannot be empty.")
+    if not response:
+        raise HTTPException(status_code=400, detail="Trial response cannot be empty.")
+    if not runtime_mode:
+        raise HTTPException(status_code=400, detail="Runtime mode cannot be empty.")
+    if data.tokenCount < 0:
+        raise HTTPException(status_code=400, detail="Token count cannot be negative.")
+
+    try:
+        trial = await foundry_catalog_service.create_trial(
+            workshop_id=workshop_id,
+            artifact_id=artifact_id,
+            construct_id=construct_id,
+            message_id=message_id,
+            prompt=prompt,
+            response=response,
+            verdict=data.verdict,
+            runtime_mode=runtime_mode,
+            token_count=data.tokenCount,
+            generation_settings=data.generationSettings,
+        )
+        return api_envelope(trial)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
 
 
 @app.post("/api/v1/constructs/{construct_id}/chat")

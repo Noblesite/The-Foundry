@@ -43,6 +43,7 @@ export const foundryNavigationItems: FoundryNavigationItem[] = [
   { id: "artifacts", label: "Artifacts", icon: "fa-cubes" },
   { id: "construct", label: "Construct", icon: "fa-play" },
   { id: "library", label: "Library", icon: "fa-book-open" },
+  { id: "trials", label: "Trials", icon: "fa-scale-balanced" },
   { id: "academy", label: "Academy", icon: "fa-graduation-cap" },
   { id: "settings", label: "Settings", icon: "fa-gear" },
 ];
@@ -233,6 +234,20 @@ export const foundrySectionSummaries: Record<
     concept: {
       title: "Why retrieval exists",
       body: "The Library lets a Construct look up source-grounded context instead of relying only on weights learned during training.",
+    },
+  },
+  trials: {
+    eyebrow: "Evaluation bench",
+    title: "Trials",
+    body: "Review saved Construct replies, compare verdicts, and turn human evaluation into Artifact quality signals.",
+    stats: [
+      { label: "Saved replies", value: "0" },
+      { label: "Verdicts", value: "Pass / Needs work / Fail" },
+      { label: "Artifact score", value: "Live" },
+    ],
+    concept: {
+      title: "Why Trials matter",
+      body: "Trials capture real prompts, generated replies, settings, and human verdicts so a model can be evaluated before promotion.",
     },
   },
   academy: {

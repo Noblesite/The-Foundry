@@ -8,6 +8,7 @@ import { LearningCard, LayerVisualizer, TokenPreview } from "./components/Learni
 import MaterialsWorkbench from "./components/MaterialsWorkbench";
 import Metrics from "./components/Metrics";
 import SettingsPanel, { WorkspaceSettings } from "./components/SettingsOverlay";
+import TrialsWorkbench from "./components/TrialsWorkbench";
 import WorkshopCreateModal from "./components/WorkshopCreateModal";
 import WorkshopSwitcher from "./components/WorkshopSwitcher";
 import { CreateWorkshopRequest } from "./contracts/foundryApi";
@@ -283,6 +284,17 @@ const App: React.FC = () => {
           summary={foundryData.sectionSummaries.artifacts}
           workshop={dashboardSummary.workshop}
           onConstructLoaded={handleConstructLoaded}
+          onOpenAcademy={() => setActiveSection("academy")}
+        />
+      );
+    }
+
+    if (activeSection === "trials") {
+      return (
+        <TrialsWorkbench
+          repository={repository}
+          summary={foundryData.sectionSummaries.trials}
+          workshop={dashboardSummary.workshop}
           onOpenAcademy={() => setActiveSection("academy")}
         />
       );

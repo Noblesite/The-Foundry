@@ -31,6 +31,8 @@ Suggested first tables:
 - `forge_runs`: training/QA generation jobs, status, progress, epoch metadata.
 - `artifacts`: model adapters, checkpoints, versions, trial scores.
 - `constructs`: runnable inference configurations tied to artifacts.
+- `trials`: saved Construct prompts, responses, verdicts, runtime settings, and
+  the data needed to update Artifact trial scores.
 - `academy_concepts`: educational explanations keyed by concept and station.
 - `ui_component_catalog`: component id, station, cache key, version, updated time.
 
@@ -50,5 +52,7 @@ to each screen.
 - `forge_runs(workshop_id, status, updated_at)`
 - `artifacts(workshop_id, status, version)`
 - `constructs(workshop_id, artifact_id)`
+- `trials(workshop_id, created_at)`
+- `trials(artifact_id, verdict)`
 - `academy_concepts(concept)`
 - `ui_component_catalog(station, component, cache_key)`

@@ -15,7 +15,8 @@ import {
   MaterialKind,
   MaterialStatus,
   TrainingMethod,
-  TrialStatus,
+  Trial,
+  TrialVerdict,
   WorkshopStatus,
 } from "../domain/foundry";
 
@@ -196,15 +197,7 @@ export interface ConstructDto {
   temperature: number;
 }
 
-export interface TrialDto {
-  id: string;
-  workshopId: string;
-  artifactId: string;
-  name: string;
-  status: TrialStatus;
-  score?: number;
-  reportUri?: string;
-}
+export type TrialDto = Trial;
 
 export interface AcademyConceptDto {
   id: string;
@@ -265,6 +258,18 @@ export interface CreateConstructRequest {
 
 export interface LoadArtifactIntoConstructRequest {
   artifactId: string;
+}
+
+export interface CreateTrialRequest {
+  artifactId: string;
+  constructId: string;
+  messageId: string;
+  prompt: string;
+  response: string;
+  verdict: TrialVerdict;
+  runtimeMode: string;
+  tokenCount: number;
+  generationSettings: Record<string, unknown>;
 }
 
 export interface ConfigureConstructRuntimeRequest {
