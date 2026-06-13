@@ -1178,6 +1178,59 @@ input[type="checkbox"] {
   width: auto;
 }
 
+.runtime-probe-grid {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid rgba(0, 212, 255, 0.14);
+  border-radius: 8px;
+  padding: 0.72rem;
+  background: rgba(13, 17, 23, 0.5);
+}
+
+.runtime-probe-result {
+  display: grid;
+  gap: 0.58rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.72rem;
+  background: rgba(13, 17, 23, 0.58);
+}
+
+.runtime-probe-result.is-ok {
+  border-color: rgba(0, 212, 255, 0.3);
+}
+
+.runtime-probe-result.is-error {
+  border-color: rgba(255, 138, 0, 0.4);
+}
+
+.runtime-probe-result > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.55rem;
+}
+
+.runtime-probe-result span,
+.runtime-probe-result p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.runtime-probe-result pre {
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 0;
+  padding: 0.62rem;
+  background: rgba(4, 8, 12, 0.52);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
 .prompt-presets {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

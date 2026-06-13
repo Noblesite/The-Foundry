@@ -93,6 +93,12 @@ class ConstructRuntimeInput(BaseModel):
 class ConstructRuntimeLoadInput(BaseModel):
     modelId: str | None = None
 
+class ConstructRuntimeProbeInput(BaseModel):
+    modelId: str = "sshleifer/tiny-gpt2"
+    prompt: str = "The Foundry is"
+    maxNewTokens: int = 24
+    device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
+
 class CreateTrialInput(BaseModel):
     artifactId: str
     constructId: str
@@ -183,6 +189,18 @@ async def load_foundry_construct_runtime_endpoint(data: ConstructRuntimeLoadInpu
         raise HTTPException(status_code=400, detail=str(error))
     except Exception as error:
         raise HTTPException(status_code=500, detail=f"Could not load runtime: {error}")
+
+
+@app.post("/api/v1/constructs/runtime/probe")
+async def probe_foundry_construct_runtime_endpoint(data: ConstructRuntimeProbeInput):
+    return api_envelope(
+        await construct_inference_service.probe_runtime(
+            model_id=data.modelId,
+            prompt=data.prompt,
+            max_new_tokens=data.maxNewTokens,
+            device=data.device,
+        )
+    )
 
 
 @app.post("/api/v1/constructs/runtime/unload")

@@ -3,6 +3,7 @@ import {
   AssemblyLineStatus,
   ConstructStatus,
   ConstructChatResponse,
+  ConstructRuntimeProbeResult,
   ConstructChatTokenEvent,
   ConstructChatDoneEvent,
   ConstructChatErrorEvent,
@@ -62,6 +63,7 @@ export const foundryApiRoutes = {
   constructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime`,
   configureConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/configure`,
   loadConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/load`,
+  probeConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/probe`,
   unloadConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/unload`,
   construct: (constructId: string) => `${FOUNDRY_API_VERSION}/constructs/${constructId}`,
   constructChat: (constructId: string) =>
@@ -335,6 +337,13 @@ export interface LoadConstructRuntimeRequest {
   modelId?: string;
 }
 
+export interface ProbeConstructRuntimeRequest {
+  modelId: string;
+  prompt: string;
+  maxNewTokens: number;
+  device: "auto" | "cpu" | "cuda" | "mps";
+}
+
 export interface ConstructChatRequest {
   conversationId: string;
   message: string;
@@ -345,6 +354,7 @@ export interface ConstructChatRequest {
 }
 
 export type ConstructChatResponseDto = ConstructChatResponse;
+export type ConstructRuntimeProbeDto = ConstructRuntimeProbeResult;
 
 export type ConstructChatTokenEventDto = ConstructChatTokenEvent;
 export type ConstructChatDoneEventDto = ConstructChatDoneEvent;

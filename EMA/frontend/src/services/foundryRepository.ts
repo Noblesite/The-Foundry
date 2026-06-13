@@ -9,6 +9,7 @@ import {
   ConstructDto,
   ConstructChatRequest,
   ConstructChatResponseDto,
+  ConstructRuntimeProbeDto,
   CreateTrialRequest,
   CreateWorkshopRequest,
   ExportEvaluationSamplesDto,
@@ -25,6 +26,7 @@ import {
   LoadConstructRuntimeRequest,
   MaterialChunkDto,
   QAPairDto,
+  ProbeConstructRuntimeRequest,
   StartAssemblyLineRequest,
   StartForgeRequest,
   TrialDto,
@@ -38,6 +40,7 @@ import {
   ConstructChatResponse,
   ConstructChatStreamEvent,
   ConstructRuntime,
+  ConstructRuntimeProbeResult,
   DashboardSummary,
   FoundryNavigationItem,
   ForgeEvaluationReport,
@@ -145,6 +148,9 @@ export interface FoundryRepository {
     request: ConfigureConstructRuntimeRequest
   ) => Promise<ConstructRuntime>;
   loadConstructRuntime: (request: LoadConstructRuntimeRequest) => Promise<ConstructRuntime>;
+  probeConstructRuntime: (
+    request: ProbeConstructRuntimeRequest
+  ) => Promise<ConstructRuntimeProbeResult>;
   unloadConstructRuntime: () => Promise<ConstructRuntime>;
 }
 
@@ -935,6 +941,28 @@ export const mockFoundryRepository: FoundryRepository = {
     };
     return mockConstructRuntime;
   },
+  probeConstructRuntime: async (request) => ({
+    ok: true,
+    modelId: request.modelId || "sshleifer/tiny-gpt2",
+    prompt: request.prompt,
+    output: `${request.prompt} a tiny simulated local-model smoke test.`,
+    device: request.device === "auto" ? "cpu" : request.device,
+    requestedDevice: request.device,
+    loadSeconds: 0.01,
+    totalSeconds: 0.02,
+    maxNewTokens: request.maxNewTokens,
+    diagnostics: {
+      torchVersion: "mock",
+      cudaAvailable: false,
+      mpsBuilt: false,
+      mpsAvailable: false,
+      memory: {
+        totalGb: 36,
+        availableGb: 24,
+        percentUsed: 33,
+      },
+    },
+  }),
   unloadConstructRuntime: async () => {
     mockConstructRuntime = {
       ...mockConstructRuntime,
@@ -1143,6 +1171,13 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.post<ApiEnvelope<ConstructRuntime>>(
         foundryApiRoutes.loadConstructRuntime,
+        request
+      )
+    ),
+  probeConstructRuntime: async (request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ConstructRuntimeProbeDto>>(
+        foundryApiRoutes.probeConstructRuntime,
         request
       )
     ),

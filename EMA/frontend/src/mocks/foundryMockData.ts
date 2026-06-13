@@ -32,7 +32,7 @@ export const defaultWorkspaceSettings: WorkspaceSettings = {
   loadIn4Bit: true,
   enableStreaming: true,
   constructRuntimeMode: "simulated",
-  constructModelId: "mistralai/Mistral-7B-Instruct-v0.2",
+  constructModelId: "sshleifer/tiny-gpt2",
   constructDevice: "auto",
 };
 

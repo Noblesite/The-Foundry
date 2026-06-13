@@ -6,6 +6,7 @@ import {
   Construct,
   ConstructMessage,
   ConstructRuntime,
+  ConstructRuntimeProbeResult,
   Trial,
   TrialVerdict,
 } from "../domain/foundry";
@@ -58,7 +59,11 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [runtimeMode, setRuntimeMode] = useState("simulated");
   const [runtimeDetail, setRuntimeDetail] = useState("Using deterministic simulated token streaming.");
   const [runtime, setRuntime] = useState<ConstructRuntime | null>(null);
+  const [probePrompt, setProbePrompt] = useState("The Foundry is");
+  const [probeModelId, setProbeModelId] = useState("sshleifer/tiny-gpt2");
+  const [probeResult, setProbeResult] = useState<ConstructRuntimeProbeResult | null>(null);
   const [isRuntimeBusy, setIsRuntimeBusy] = useState(false);
+  const [isProbingRuntime, setIsProbingRuntime] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [lastInspection, setLastInspection] = useState<ResponseInspection | null>(null);
   const [trialVerdict, setTrialVerdict] = useState<TrialVerdict | null>(null);
@@ -83,6 +88,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setTrialError(null);
     setRuntimeMode("simulated");
     setRuntimeDetail("Using deterministic simulated token streaming.");
+    setProbeResult(null);
   }, [artifact, construct]);
 
   useEffect(() => {
@@ -158,6 +164,29 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       setError(runtimeError instanceof Error ? runtimeError.message : "Could not unload runtime.");
     } finally {
       setIsRuntimeBusy(false);
+    }
+  };
+
+  const probeRuntime = async () => {
+    setIsProbingRuntime(true);
+    setError(null);
+    setProbeResult(null);
+    try {
+      const result = await repository.probeConstructRuntime({
+        modelId: probeModelId.trim() || "sshleifer/tiny-gpt2",
+        prompt: probePrompt.trim() || "The Foundry is",
+        maxNewTokens: Math.min(48, Math.max(1, settings.maxNewTokens || 24)),
+        device: settings.constructDevice,
+      });
+      setProbeResult(result);
+      if (result.ok) {
+        setRuntimeMode("transformers");
+        setRuntimeDetail(`Probe completed on ${result.device} in ${result.totalSeconds}s.`);
+      }
+    } catch (runtimeError: unknown) {
+      setError(runtimeError instanceof Error ? runtimeError.message : "Could not probe runtime.");
+    } finally {
+      setIsProbingRuntime(false);
     }
   };
 
@@ -396,6 +425,50 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                   Unload
                 </button>
               </div>
+              <div className="runtime-probe-grid">
+                <label className="field-label" htmlFor="runtime-probe-model">Tiny model probe</label>
+                <input
+                  id="runtime-probe-model"
+                  onChange={(event) => setProbeModelId(event.target.value)}
+                  value={probeModelId}
+                />
+                <label className="field-label" htmlFor="runtime-probe-prompt">Probe prompt</label>
+                <input
+                  id="runtime-probe-prompt"
+                  onChange={(event) => setProbePrompt(event.target.value)}
+                  value={probePrompt}
+                />
+                <button
+                  className="button-primary button-compact"
+                  disabled={isProbingRuntime}
+                  onClick={() => void probeRuntime()}
+                  type="button"
+                >
+                  <i className="fas fa-stethoscope" aria-hidden="true" />
+                  {isProbingRuntime ? "Probing" : "Probe Small Model"}
+                </button>
+              </div>
+              {probeResult && (
+                <article className={`runtime-probe-result ${probeResult.ok ? "is-ok" : "is-error"}`}>
+                  <div>
+                    <strong>{probeResult.ok ? "Probe passed" : "Probe failed"}</strong>
+                    <span>{probeResult.modelId}</span>
+                  </div>
+                  <div className="construct-inspector-grid">
+                    <span>Device</span>
+                    <strong>{probeResult.device}</strong>
+                    <span>Requested</span>
+                    <strong>{probeResult.requestedDevice}</strong>
+                    <span>Load</span>
+                    <strong>{probeResult.loadSeconds ?? "n/a"}s</strong>
+                    <span>Total</span>
+                    <strong>{probeResult.totalSeconds}s</strong>
+                  </div>
+                  {probeResult.output && <p>{probeResult.output}</p>}
+                  {probeResult.error && <p>{probeResult.error}</p>}
+                  <pre>{JSON.stringify(probeResult.diagnostics, null, 2)}</pre>
+                </article>
+              )}
               <span>{runtime?.modelId || settings.constructModelId}</span>
               <label className="toggle-row" htmlFor="construct-library-context">
                 <input

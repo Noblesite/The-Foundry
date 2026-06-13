@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from dataclasses import dataclass
 from threading import Thread
 from typing import Any, AsyncIterator, Dict, Optional
@@ -107,6 +108,65 @@ class ConstructInferenceService:
             pass
         return self.runtime_payload()
 
+    async def probe_runtime(
+        self,
+        *,
+        model_id: str,
+        prompt: str,
+        max_new_tokens: int,
+        device: str,
+    ) -> Dict[str, Any]:
+        safe_model_id = model_id.strip() or "sshleifer/tiny-gpt2"
+        safe_prompt = prompt.strip() or "The Foundry is"
+        safe_tokens = max(1, min(max_new_tokens, 128))
+        previous_device = self.device_preference
+        started_at = time.perf_counter()
+
+        diagnostics = self._runtime_diagnostics()
+        self.device_preference = device.strip().lower() or "auto"
+
+        try:
+            tokenizer, model = await self._load_transformers_model(safe_model_id)
+            load_seconds = round(time.perf_counter() - started_at, 3)
+            output_text = await asyncio.to_thread(
+                self._generate_probe_text_sync,
+                tokenizer,
+                model,
+                safe_prompt,
+                safe_tokens,
+            )
+            total_seconds = round(time.perf_counter() - started_at, 3)
+            resolved_device = str(next(model.parameters()).device)
+
+            return {
+                "ok": True,
+                "modelId": safe_model_id,
+                "prompt": safe_prompt,
+                "output": output_text,
+                "device": resolved_device,
+                "requestedDevice": self.device_preference,
+                "loadSeconds": load_seconds,
+                "totalSeconds": total_seconds,
+                "maxNewTokens": safe_tokens,
+                "diagnostics": self._runtime_diagnostics(diagnostics),
+            }
+        except Exception as error:
+            return {
+                "ok": False,
+                "modelId": safe_model_id,
+                "prompt": safe_prompt,
+                "output": "",
+                "device": "unavailable",
+                "requestedDevice": self.device_preference,
+                "loadSeconds": None,
+                "totalSeconds": round(time.perf_counter() - started_at, 3),
+                "maxNewTokens": safe_tokens,
+                "error": str(error),
+                "diagnostics": self._runtime_diagnostics(diagnostics),
+            }
+        finally:
+            self.device_preference = previous_device
+
     async def stream_tokens(
         self,
         prepared_response: Dict[str, Any],
@@ -208,10 +268,59 @@ class ConstructInferenceService:
         model.eval()
         return tokenizer, model
 
+    def _generate_probe_text_sync(self, tokenizer, model, prompt: str, max_new_tokens: int) -> str:
+        import torch
+
+        device = next(model.parameters()).device
+        inputs = tokenizer(prompt, return_tensors="pt")
+        inputs = {key: value.to(device) for key, value in inputs.items()}
+        generation_kwargs = {
+            **inputs,
+            "max_new_tokens": max_new_tokens,
+            "do_sample": False,
+            "pad_token_id": tokenizer.eos_token_id,
+        }
+        with torch.no_grad():
+            output_ids = model.generate(**generation_kwargs)
+        return tokenizer.decode(output_ids[0], skip_special_tokens=True)
+
     def _resolve_device(self, torch) -> str:
         if self.device_preference in {"cpu", "cuda", "mps"}:
             return self.device_preference
         return "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+
+    def _runtime_diagnostics(self, baseline: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        diagnostics: Dict[str, Any] = dict(baseline or {})
+        try:
+            import psutil
+
+            memory = psutil.virtual_memory()
+            diagnostics["memory"] = {
+                "totalGb": round(memory.total / (1024**3), 2),
+                "availableGb": round(memory.available / (1024**3), 2),
+                "percentUsed": memory.percent,
+            }
+        except Exception as error:
+            diagnostics["memoryError"] = str(error)
+
+        try:
+            import torch
+
+            diagnostics.update(
+                {
+                    "torchVersion": torch.__version__,
+                    "cudaAvailable": torch.cuda.is_available(),
+                    "mpsBuilt": bool(
+                        hasattr(torch.backends, "mps") and torch.backends.mps.is_built()
+                    ),
+                    "mpsAvailable": bool(
+                        hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+                    ),
+                }
+            )
+        except Exception as error:
+            diagnostics["torchError"] = str(error)
+        return diagnostics
 
     def _build_prompt(
         self,

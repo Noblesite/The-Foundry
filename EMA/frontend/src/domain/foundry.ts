@@ -319,6 +319,20 @@ export interface ConstructRuntime {
   loaded: boolean;
 }
 
+export interface ConstructRuntimeProbeResult {
+  ok: boolean;
+  modelId: string;
+  prompt: string;
+  output: string;
+  device: string;
+  requestedDevice: string;
+  loadSeconds: number | null;
+  totalSeconds: number;
+  maxNewTokens: number;
+  error?: string;
+  diagnostics: Record<string, unknown>;
+}
+
 export interface Trial {
   id: string;
   workshopId: string;
