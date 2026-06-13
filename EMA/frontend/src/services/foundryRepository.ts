@@ -9,6 +9,8 @@ import {
   ConstructChatResponseDto,
   CreateTrialRequest,
   CreateWorkshopRequest,
+  ExportEvaluationSamplesDto,
+  ExportEvaluationSamplesRequest,
   ExportQAPairsDto,
   ExportQAPairsRequest,
   ExportTrialsDto,
@@ -112,6 +114,10 @@ export interface FoundryRepository {
   listTrials: (workshopId: string) => Promise<Trial[]>;
   createTrial: (workshopId: string, request: CreateTrialRequest) => Promise<Trial>;
   exportTrials: (workshopId: string, request: ExportTrialsRequest) => Promise<ExportTrialsDto>;
+  exportEvaluationWeakSamples: (
+    forgeRunId: string,
+    request: ExportEvaluationSamplesRequest
+  ) => Promise<ExportEvaluationSamplesDto>;
   loadArtifactIntoConstruct: (
     workshopId: string,
     request: LoadArtifactIntoConstructRequest
@@ -788,6 +794,35 @@ export const mockFoundryRepository: FoundryRepository = {
       verdicts: Array.from(new Set(selectedTrials.map((trial) => trial.verdict))).sort(),
     };
   },
+  exportEvaluationWeakSamples: async (forgeRunId, request) => {
+    const forgeRun = mockForgeRuns.find((run) => run.id === forgeRunId);
+    const report = forgeRun?.workerState?.metrics.evaluationReport;
+    if (!forgeRun || !report) {
+      throw new Error("Forge evaluation report is not ready yet.");
+    }
+    const weakSamples = report.samples.filter((sample) => sample.verdict !== "pass");
+    if (weakSamples.length === 0) {
+      throw new Error("This Trial Report has no weak samples to export.");
+    }
+    const material: MaterialSource = {
+      id: `mat-weak-${Date.now()}`,
+      name: request.name || "Weak Trial Samples",
+      kind: "jsonl",
+      status: "qa-ready",
+      sourceUri: `runtime/materials/exports/${forgeRun.workshopId}/weak-samples-${Date.now()}.jsonl`,
+      chunkCount: weakSamples.length,
+      qaPairCount: weakSamples.length,
+    };
+    mockMaterialSources.unshift(material);
+    return {
+      material,
+      exportUri: material.sourceUri,
+      format: "jsonl",
+      sampleCount: weakSamples.length,
+      verdicts: Array.from(new Set(weakSamples.map((sample) => sample.verdict))).sort(),
+      forgeRunId,
+    };
+  },
   loadArtifactIntoConstruct: async (_workshopId, request) => {
     const artifact = mockArtifacts.find(
       (item) => item.id === request.artifactId && item.workshopId === _workshopId
@@ -1010,6 +1045,13 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.post<ApiEnvelope<ExportTrialsDto>>(
         foundryApiRoutes.exportTrials(workshopId),
+        request
+      )
+    ),
+  exportEvaluationWeakSamples: async (forgeRunId, request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ExportEvaluationSamplesDto>>(
+        foundryApiRoutes.exportEvaluationWeakSamples(forgeRunId),
         request
       )
     ),

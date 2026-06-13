@@ -35,6 +35,7 @@ interface ForgeWorkbenchProps {
   settings: WorkspaceSettings;
   summary: SectionSummary;
   workshop: Workshop;
+  forgePreset?: StartForgeRequest | null;
   onConstructLoaded: (construct: Construct, artifact: Artifact) => void;
   onOpenAcademy: () => void;
 }
@@ -44,6 +45,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   settings,
   summary,
   workshop,
+  forgePreset,
   onConstructLoaded,
   onOpenAcademy,
 }) => {
@@ -158,6 +160,9 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
         setForgeRuntime(runtime);
         setRuntimeModeDraft(runtime.mode);
         setDraft((current) => {
+          if (forgePreset) {
+            return forgePreset;
+          }
           const materialSetId = current.materialSetId || jsonlMaterials[0]?.id || "";
           const material = jsonlMaterials.find((source) => source.id === materialSetId);
           return {
@@ -195,6 +200,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     };
   }, [
     repository,
+    forgePreset,
     settings.epochs,
     settings.learningRate,
     settings.loadIn4Bit,
@@ -202,6 +208,19 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     settings.trainingMethod,
     workshop.id,
   ]);
+
+  useEffect(() => {
+    if (!forgePreset) {
+      return;
+    }
+    setDraft(forgePreset);
+    setStatusText(
+      forgePreset.purpose === "evaluation"
+        ? "Evaluation preset loaded from Trials."
+        : "Training preset loaded from Trials."
+    );
+    setError(null);
+  }, [forgePreset]);
 
   const jsonlMaterials = useMemo(
     () => materials.filter((source) => source.kind === "jsonl"),

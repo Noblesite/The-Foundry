@@ -49,6 +49,8 @@ export const foundryApiRoutes = {
     `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/worker/reconcile`,
   simulateForgeRun: (forgeRunId: string) =>
     `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/simulate`,
+  exportEvaluationWeakSamples: (forgeRunId: string) =>
+    `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/evaluation/weak-samples/export`,
   forgeRuntime: `${FOUNDRY_API_VERSION}/forges/runtime`,
   configureForgeRuntime: `${FOUNDRY_API_VERSION}/forges/runtime/configure`,
   artifacts: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/artifacts`,
@@ -154,6 +156,15 @@ export interface ExportTrialsDto {
   format: "jsonl";
   trialCount: number;
   verdicts: TrialVerdict[];
+}
+
+export interface ExportEvaluationSamplesDto {
+  material: MaterialSource;
+  exportUri: string;
+  format: "jsonl";
+  sampleCount: number;
+  verdicts: TrialVerdict[];
+  forgeRunId: string;
 }
 
 export interface ForgeRunDto {
@@ -288,6 +299,10 @@ export interface CreateTrialRequest {
 export interface ExportTrialsRequest {
   trialIds: string[];
   verdicts?: TrialVerdict[];
+  name?: string;
+}
+
+export interface ExportEvaluationSamplesRequest {
   name?: string;
 }
 

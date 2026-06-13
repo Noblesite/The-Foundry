@@ -109,6 +109,9 @@ class ExportTrialsInput(BaseModel):
     verdicts: list[Literal["pass", "needs-work", "fail"]] = []
     name: str | None = None
 
+class ExportEvaluationSamplesInput(BaseModel):
+    name: str | None = None
+
 # Initialize logger
 logger = get_logger(__name__)
 
@@ -534,6 +537,29 @@ async def export_foundry_trials_endpoint(workshop_id: str, data: ExportTrialsInp
             workshop_id=workshop_id,
             trial_ids=trial_ids,
             verdicts=verdicts,
+            name=data.name.strip() if data.name else None,
+        )
+        return api_envelope(export)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+
+@app.post("/api/v1/forges/{forge_run_id}/evaluation/weak-samples/export")
+async def export_foundry_evaluation_weak_samples_endpoint(
+    forge_run_id: str,
+    data: ExportEvaluationSamplesInput,
+):
+    try:
+        forge = await foundry_catalog_service.get_forge_run(forge_run_id)
+        if forge.get("purpose") != "evaluation":
+            raise ValueError("Only evaluation Forges can export weak samples.")
+        metrics = forge_training_service.get_metrics(forge_run_id)
+        evaluation_report = metrics.get("evaluationReport")
+        if not evaluation_report:
+            raise ValueError("Forge evaluation report is not ready yet.")
+        export = await foundry_catalog_service.export_evaluation_samples_to_material(
+            forge_run=forge,
+            evaluation_report=evaluation_report,
             name=data.name.strip() if data.name else None,
         )
         return api_envelope(export)

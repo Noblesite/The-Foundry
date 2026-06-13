@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { StartForgeRequest } from "../contracts/foundryApi";
 import {
   ForgeEvaluationReport,
   ForgeRun,
@@ -15,6 +16,7 @@ interface TrialsWorkbenchProps {
   summary: SectionSummary;
   workshop: Workshop;
   onOpenAcademy: () => void;
+  onOpenForgePreset: (preset: StartForgeRequest) => void;
 }
 
 const verdictLabels: Record<TrialVerdict, string> = {
@@ -78,17 +80,36 @@ const formatDelta = (value: number, suffix = "%"): string => {
   return `${value > 0 ? "+" : ""}${value}${suffix}`;
 };
 
+const weakSampleCount = (report: ForgeEvaluationReport): number =>
+  report.samples.filter((sample) => sample.verdict !== "pass").length;
+
+const createForgePreset = (
+  forgeRun: ForgeRun,
+  materialSetId: string,
+  purpose: StartForgeRequest["purpose"]
+): StartForgeRequest => ({
+  materialSetId,
+  baseModel: forgeRun.baseModel || "mistralai/Mistral-7B-Instruct-v0.2",
+  method: forgeRun.method === "LoRA" ? "LoRA" : "QLoRA",
+  purpose,
+  epochs: forgeRun.epoch?.total || 3,
+  learningRate: forgeRun.learningRate || "2e-4",
+  loadIn4Bit: Boolean(forgeRun.loadIn4Bit),
+});
+
 const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
   repository,
   summary,
   workshop,
   onOpenAcademy,
+  onOpenForgePreset,
 }) => {
   const [trials, setTrials] = useState<Trial[]>([]);
   const [evaluationReports, setEvaluationReports] = useState<EvaluationReportSummary[]>([]);
   const [selectedTrialIds, setSelectedTrialIds] = useState<string[]>([]);
   const [exportName, setExportName] = useState(`${workshop.name} Trial Dataset`);
   const [isExporting, setIsExporting] = useState(false);
+  const [activeReportActionId, setActiveReportActionId] = useState<string | null>(null);
   const [exportState, setExportState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -233,6 +254,46 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
     }
   };
 
+  const exportWeakSamples = async (
+    summary: EvaluationReportSummary,
+    { openForge = false }: { openForge?: boolean } = {}
+  ) => {
+    if (weakSampleCount(summary.report) === 0) {
+      setError("This Trial Report has no weak samples to export.");
+      return;
+    }
+
+    setActiveReportActionId(summary.report.forgeRunId);
+    setError(null);
+    setExportState(null);
+    try {
+      const exportResult = await repository.exportEvaluationWeakSamples(
+        summary.report.forgeRunId,
+        { name: `${workshop.name} Weak Trial Samples` }
+      );
+      setExportState(
+        `Exported ${exportResult.sampleCount.toLocaleString()} weak samples to ${exportResult.exportUri}`
+      );
+      if (openForge) {
+        onOpenForgePreset(
+          createForgePreset(summary.forgeRun, exportResult.material.id, "training")
+        );
+      }
+    } catch (exportError: unknown) {
+      setError(
+        exportError instanceof Error ? exportError.message : "Could not export weak samples."
+      );
+    } finally {
+      setActiveReportActionId(null);
+    }
+  };
+
+  const runEvaluationAgain = (summary: EvaluationReportSummary) => {
+    onOpenForgePreset(
+      createForgePreset(summary.forgeRun, summary.report.materialId, "evaluation")
+    );
+  };
+
   return (
     <section className="workbench-page trials-workbench" aria-label="Trials">
       <div className="workbench-hero panel-glass">
@@ -294,23 +355,32 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
                   <span>{latestReport.report.rowCount.toLocaleString()} rows</span>
                 </div>
                 <div className="evaluation-action-row" aria-label="Suggested evaluation actions">
-                  {getReadinessState(latestReport.report) === "ready-for-construct" ? (
-                    <>
-                      <span>Load best Artifact</span>
-                      <span>Run Construct prompts</span>
-                    </>
-                  ) : getReadinessState(latestReport.report) === "candidate-artifact" ? (
-                    <>
-                      <span>Review weak samples</span>
-                      <span>Compare Artifacts</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Export weak samples</span>
-                      <span>Train again</span>
-                    </>
-                  )}
-                  <span>Open Academy: Evaluation</span>
+                  <button
+                    disabled={
+                      activeReportActionId === latestReport.report.forgeRunId ||
+                      weakSampleCount(latestReport.report) === 0
+                    }
+                    onClick={() => void exportWeakSamples(latestReport)}
+                    type="button"
+                  >
+                    Export weak samples
+                  </button>
+                  <button
+                    disabled={
+                      activeReportActionId === latestReport.report.forgeRunId ||
+                      weakSampleCount(latestReport.report) === 0
+                    }
+                    onClick={() => void exportWeakSamples(latestReport, { openForge: true })}
+                    type="button"
+                  >
+                    Train again
+                  </button>
+                  <button onClick={() => runEvaluationAgain(latestReport)} type="button">
+                    Run evaluation again
+                  </button>
+                  <button onClick={onOpenAcademy} type="button">
+                    Open Academy: Evaluation
+                  </button>
                 </div>
               </article>
             )}

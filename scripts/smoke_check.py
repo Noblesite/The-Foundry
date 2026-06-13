@@ -170,8 +170,10 @@ def run_trial_contract_check() -> int:
         "ExportTrialsInput",
         "/api/v1/workshops/{workshop_id}/trials",
         "/api/v1/workshops/{workshop_id}/trials/export",
+        "/api/v1/forges/{forge_run_id}/evaluation/weak-samples/export",
         "create_foundry_trial_endpoint",
         "export_foundry_trials_endpoint",
+        "export_foundry_evaluation_weak_samples_endpoint",
     )
     missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
     if missing_api:
@@ -182,6 +184,8 @@ def run_trial_contract_check() -> int:
         "list_trials",
         "create_trial",
         "export_trials_to_material",
+        "export_evaluation_samples_to_material",
+        "foundry.evaluation.weak-sample.v1",
         "_refresh_artifact_trial_score",
     )
     missing_service = [

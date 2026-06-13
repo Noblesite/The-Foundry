@@ -11,7 +11,7 @@ import SettingsPanel, { WorkspaceSettings } from "./components/SettingsOverlay";
 import TrialsWorkbench from "./components/TrialsWorkbench";
 import WorkshopCreateModal from "./components/WorkshopCreateModal";
 import WorkshopSwitcher from "./components/WorkshopSwitcher";
-import { CreateWorkshopRequest } from "./contracts/foundryApi";
+import { CreateWorkshopRequest, StartForgeRequest } from "./contracts/foundryApi";
 import { Artifact, Construct, NavigationSection, Workshop } from "./domain/foundry";
 import {
   defaultWorkspaceSettings,
@@ -46,6 +46,7 @@ const App: React.FC = () => {
   const [createError, setCreateError] = useState<string | null>(null);
   const [isWorkshopModalOpen, setIsWorkshopModalOpen] = useState(false);
   const [isCreatingWorkshop, setIsCreatingWorkshop] = useState(false);
+  const [forgePreset, setForgePreset] = useState<StartForgeRequest | null>(null);
   const [workshops, setWorkshops] = useState<Workshop[]>([mockDashboardSummary.workshop]);
   const [foundryData, setFoundryData] = useState<FoundryBootstrap>({
     dashboard: mockDashboardSummary,
@@ -170,6 +171,11 @@ const App: React.FC = () => {
     setActiveSection("construct");
   };
 
+  const handleOpenForgePreset = (preset: StartForgeRequest) => {
+    setForgePreset(preset);
+    setActiveSection("forge");
+  };
+
   const navigationItems = foundryData.navigationItems.length
     ? foundryData.navigationItems
     : foundryNavigationItems;
@@ -270,6 +276,7 @@ const App: React.FC = () => {
           settings={settings}
           summary={foundryData.sectionSummaries.forge}
           workshop={dashboardSummary.workshop}
+          forgePreset={forgePreset}
           onConstructLoaded={handleConstructLoaded}
           onOpenAcademy={() => setActiveSection("academy")}
         />
@@ -296,6 +303,7 @@ const App: React.FC = () => {
           summary={foundryData.sectionSummaries.trials}
           workshop={dashboardSummary.workshop}
           onOpenAcademy={() => setActiveSection("academy")}
+          onOpenForgePreset={handleOpenForgePreset}
         />
       );
     }

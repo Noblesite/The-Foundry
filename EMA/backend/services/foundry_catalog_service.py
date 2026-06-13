@@ -1182,6 +1182,115 @@ class FoundryCatalogService:
                 "verdicts": exported_verdicts,
             }
 
+    async def export_evaluation_samples_to_material(
+        self,
+        forge_run: Dict[str, Any],
+        evaluation_report: Dict[str, Any],
+        name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        async with self._write_lock:
+            return await self._run_query(
+                lambda: self._export_evaluation_samples_to_material_sync(
+                    forge_run=forge_run,
+                    evaluation_report=evaluation_report,
+                    name=name,
+                )
+            )
+
+    def _export_evaluation_samples_to_material_sync(
+        self,
+        forge_run: Dict[str, Any],
+        evaluation_report: Dict[str, Any],
+        name: Optional[str],
+    ) -> Dict[str, Any]:
+        workshop_id = forge_run["workshopId"]
+        weak_samples = [
+            sample
+            for sample in evaluation_report.get("samples", [])
+            if sample.get("verdict") in {"needs-work", "fail"}
+        ]
+        if not weak_samples:
+            raise ValueError("This Trial Report has no weak samples to export.")
+
+        with self._connect() as connection:
+            workshop = connection.execute(
+                "SELECT id, name FROM workshops WHERE id = ?",
+                (workshop_id,),
+            ).fetchone()
+            if workshop is None:
+                raise ValueError(f"Workshop {workshop_id} was not found.")
+
+            export_dir = DEFAULT_EXPORT_DIR / workshop_id
+            export_dir.mkdir(parents=True, exist_ok=True)
+            export_name = self._safe_export_name(name or f"{workshop['name']} Weak Trial Samples")
+            export_path = export_dir / f"{export_name}-weak-samples-{uuid4().hex[:8]}.jsonl"
+            exported_verdicts = sorted({sample["verdict"] for sample in weak_samples})
+
+            with export_path.open("w", encoding="utf-8") as export_file:
+                for index, sample in enumerate(weak_samples):
+                    payload = {
+                        "id": f"{evaluation_report['forgeRunId']}-weak-{index}",
+                        "instruction": sample["instruction"],
+                        "input": "",
+                        "output": sample["expected"],
+                        "prompt": sample["instruction"],
+                        "response": sample["expected"],
+                        "source": {
+                            "workshopId": workshop_id,
+                            "forgeRunId": evaluation_report["forgeRunId"],
+                            "materialId": evaluation_report["materialId"],
+                            "datasetUri": evaluation_report["datasetUri"],
+                        },
+                        "metadata": {
+                            "format": "foundry.evaluation.weak-sample.v1",
+                            "rowIndex": index,
+                            "verdict": sample["verdict"],
+                            "observed": sample.get("observed", ""),
+                            "note": sample.get("note", ""),
+                            "reportVersion": evaluation_report["reportVersion"],
+                            "createdAt": evaluation_report["createdAt"],
+                        },
+                    }
+                    export_file.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+            material = self._register_material_sync(
+                workshop_id=workshop_id,
+                name=name or f"{workshop['name']} Weak Trial Samples",
+                kind="jsonl",
+                source_uri=str(export_path.relative_to(BASE_DIR)),
+            )
+            connection.execute(
+                """
+                UPDATE materials
+                SET status = 'qa-ready',
+                    chunk_count = ?,
+                    qa_pair_count = ?
+                WHERE id = ? AND workshop_id = ?
+                """,
+                (len(weak_samples), len(weak_samples), material["id"], workshop_id),
+            )
+            connection.execute(
+                """
+                UPDATE workshops
+                SET updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (workshop_id,),
+            )
+            material_row = connection.execute(
+                "SELECT * FROM materials WHERE id = ?",
+                (material["id"],),
+            ).fetchone()
+
+            return {
+                "material": self._material_from_row(material_row),
+                "exportUri": str(export_path.relative_to(BASE_DIR)),
+                "format": "jsonl",
+                "sampleCount": len(weak_samples),
+                "verdicts": exported_verdicts,
+                "forgeRunId": evaluation_report["forgeRunId"],
+            }
+
     async def chat_with_construct(
         self,
         construct_id: str,

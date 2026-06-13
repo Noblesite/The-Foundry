@@ -1148,7 +1148,7 @@ input[type="checkbox"] {
 }
 
 .evaluation-decision-metrics span,
-.evaluation-action-row span,
+.evaluation-action-row button,
 .evaluation-delta-grid span,
 .readiness-badge {
   border: 1px solid var(--border);
@@ -1160,10 +1160,16 @@ input[type="checkbox"] {
   text-transform: uppercase;
 }
 
-.evaluation-action-row span {
+.evaluation-action-row button {
   border-color: rgba(0, 212, 255, 0.26);
   background: rgba(0, 212, 255, 0.08);
   color: var(--arc-blue);
+  cursor: pointer;
+}
+
+.evaluation-action-row button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
 }
 
 .evaluation-delta-grid .is-positive {

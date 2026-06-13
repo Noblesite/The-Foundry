@@ -54,6 +54,9 @@ complexity.
   history slice.
 - Add Trial Report comparison, Artifact readiness guidance, and next-action
   prompts in the Trials station. Done for the first promotion guidance slice.
+- Wire Trial Report actions so weak samples can become JSONL Materials and
+  Trials can hand training/evaluation presets back to Forge. Done for the first
+  actionable guidance slice.
 - Add runtime health, memory pressure, and unload behavior.
 - Teach users what context windows, sampling, and quantization settings do.
 
