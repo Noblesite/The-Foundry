@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import AcademyWorkbench from "./components/AcademyWorkbench";
 import ArtifactsWorkbench from "./components/ArtifactsWorkbench";
 import ConstructWorkbench from "./components/ConstructWorkbench";
 import Dashboard from "./components/Dashboard";
@@ -47,6 +48,7 @@ const App: React.FC = () => {
   const [isWorkshopModalOpen, setIsWorkshopModalOpen] = useState(false);
   const [isCreatingWorkshop, setIsCreatingWorkshop] = useState(false);
   const [forgePreset, setForgePreset] = useState<StartForgeRequest | null>(null);
+  const [academyFocusConceptId, setAcademyFocusConceptId] = useState<string | null>(null);
   const [workshops, setWorkshops] = useState<Workshop[]>([mockDashboardSummary.workshop]);
   const [foundryData, setFoundryData] = useState<FoundryBootstrap>({
     dashboard: mockDashboardSummary,
@@ -176,6 +178,11 @@ const App: React.FC = () => {
     setActiveSection("forge");
   };
 
+  const handleOpenAcademy = (conceptId?: string) => {
+    setAcademyFocusConceptId(conceptId ?? null);
+    setActiveSection("academy");
+  };
+
   const navigationItems = foundryData.navigationItems.length
     ? foundryData.navigationItems
     : foundryNavigationItems;
@@ -253,7 +260,7 @@ const App: React.FC = () => {
           onCreateWorkshop={openWorkshopModal}
           onRunConstruct={() => setActiveSection("construct")}
           onViewQueue={() => setActiveSection("forge")}
-          onResumeLesson={() => setActiveSection("academy")}
+          onResumeLesson={() => handleOpenAcademy("attention")}
         />
       );
     }
@@ -264,7 +271,7 @@ const App: React.FC = () => {
           repository={repository}
           summary={foundryData.sectionSummaries.materials}
           workshop={dashboardSummary.workshop}
-          onOpenAcademy={() => setActiveSection("academy")}
+          onOpenAcademy={() => handleOpenAcademy()}
         />
       );
     }
@@ -278,7 +285,7 @@ const App: React.FC = () => {
           workshop={dashboardSummary.workshop}
           forgePreset={forgePreset}
           onConstructLoaded={handleConstructLoaded}
-          onOpenAcademy={() => setActiveSection("academy")}
+          onOpenAcademy={() => handleOpenAcademy()}
         />
       );
     }
@@ -291,7 +298,17 @@ const App: React.FC = () => {
           summary={foundryData.sectionSummaries.artifacts}
           workshop={dashboardSummary.workshop}
           onConstructLoaded={handleConstructLoaded}
-          onOpenAcademy={() => setActiveSection("academy")}
+          onOpenAcademy={() => handleOpenAcademy()}
+        />
+      );
+    }
+
+    if (activeSection === "academy") {
+      return (
+        <AcademyWorkbench
+          repository={repository}
+          focusConceptId={academyFocusConceptId}
+          summary={foundryData.sectionSummaries.academy}
         />
       );
     }
@@ -302,7 +319,7 @@ const App: React.FC = () => {
           repository={repository}
           summary={foundryData.sectionSummaries.trials}
           workshop={dashboardSummary.workshop}
-          onOpenAcademy={() => setActiveSection("academy")}
+          onOpenAcademy={handleOpenAcademy}
           onOpenForgePreset={handleOpenForgePreset}
         />
       );
@@ -328,7 +345,7 @@ const App: React.FC = () => {
           title={summary.concept.title}
           body={summary.concept.body}
           actionLabel="Open Academy"
-          onAction={() => setActiveSection("academy")}
+          onAction={() => handleOpenAcademy()}
         />
       </section>
     );
@@ -346,7 +363,12 @@ const App: React.FC = () => {
             <button
               key={item.id}
               className={`foundry-nav-button ${activeSection === item.id ? "is-active" : ""}`}
-              onClick={() => setActiveSection(item.id)}
+              onClick={() => {
+                if (item.id === "academy") {
+                  setAcademyFocusConceptId(null);
+                }
+                setActiveSection(item.id);
+              }}
               aria-current={activeSection === item.id ? "page" : undefined}
             >
               <i className={`fas ${item.icon}`} aria-hidden="true" />

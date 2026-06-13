@@ -1,5 +1,6 @@
 import {
   ApiEnvelope,
+  AcademyConceptDto,
   ArtifactDto,
   AssemblyLineRunDto,
   ConfigureConstructRuntimeRequest,
@@ -29,6 +30,7 @@ import {
 } from "../contracts/foundryApi";
 import {
   Artifact,
+  AcademyConcept,
   AssemblyLineRun,
   Construct,
   ConstructChatResponse,
@@ -84,6 +86,7 @@ export interface FoundryRepository {
   getNavigationItems: () => Promise<FoundryNavigationItem[]>;
   getSectionSummaries: () => Promise<SectionSummaryMap>;
   getUiCatalog: () => Promise<UiCatalogItem[]>;
+  listAcademyConcepts: () => Promise<AcademyConcept[]>;
   listWorkshops: () => Promise<Workshop[]>;
   listMaterials: (workshopId: string) => Promise<MaterialSource[]>;
   loadBootstrap: () => Promise<FoundryBootstrap>;
@@ -197,6 +200,33 @@ const mockUiCatalog: UiCatalogItem[] = [
   },
 ];
 
+const mockAcademyConcepts: AcademyConcept[] = [
+  {
+    id: "acd-attention-layers",
+    title: "Understanding Attention Layers",
+    concept: "attention",
+    shortExplanation:
+      "Attention helps a model weigh which tokens matter most when it predicts the next token.",
+    relatedStations: ["academy", "forge", "construct"],
+  },
+  {
+    id: "acd-evaluation",
+    title: "Evaluation",
+    concept: "evaluation",
+    shortExplanation:
+      "Evaluation compares a model's replies against reviewed examples so you can decide whether an Artifact is ready.",
+    relatedStations: ["trials", "forge", "artifacts"],
+  },
+  {
+    id: "acd-weak-sample-review",
+    title: "Weak Sample Review",
+    concept: "weak-sample-review",
+    shortExplanation:
+      "Weak sample review turns failed and needs-work replies into corrected training Material for the next Forge.",
+    relatedStations: ["trials", "materials", "forge"],
+  },
+];
+
 const mockAssemblyLineRuns: AssemblyLineRun[] = [];
 const mockMaterialChunks: MaterialChunk[] = [];
 const mockQAPairs: QAPair[] = [];
@@ -304,6 +334,7 @@ export const mockFoundryRepository: FoundryRepository = {
   getNavigationItems: async () => foundryNavigationItems,
   getSectionSummaries: async () => foundrySectionSummaries,
   getUiCatalog: async () => mockUiCatalog,
+  listAcademyConcepts: async () => mockAcademyConcepts,
   listWorkshops: async () => [mockDashboardSummary.workshop],
   listMaterials: async () => mockMaterialSources,
   loadBootstrap: async () => ({
@@ -945,6 +976,10 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(await apiClient.get<ApiEnvelope<SectionSummaryMap>>(foundryApiRoutes.sectionSummaries)),
   getUiCatalog: async () =>
     unwrap(await apiClient.get<ApiEnvelope<UiCatalogItem[]>>(foundryApiRoutes.uiCatalog)),
+  listAcademyConcepts: async () =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<AcademyConceptDto[]>>(foundryApiRoutes.academyConcepts)
+    ),
   listWorkshops: async () =>
     unwrap(await apiClient.get<ApiEnvelope<Workshop[]>>(foundryApiRoutes.workshops)),
   listMaterials: async (workshopId) =>

@@ -15,7 +15,7 @@ interface TrialsWorkbenchProps {
   repository: FoundryRepository;
   summary: SectionSummary;
   workshop: Workshop;
-  onOpenAcademy: () => void;
+  onOpenAcademy: (conceptId?: string) => void;
   onOpenForgePreset: (preset: StartForgeRequest) => void;
 }
 
@@ -463,7 +463,7 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
                   <button onClick={() => runEvaluationAgain(latestReport)} type="button">
                     Run evaluation again
                   </button>
-                  <button onClick={onOpenAcademy} type="button">
+                  <button onClick={() => onOpenAcademy("evaluation")} type="button">
                     Open Academy: Evaluation
                   </button>
                 </div>
@@ -641,15 +641,25 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
                   {reviewSamples.length} weak samples
                 </span>
               </div>
-              <button
-                className="icon-button"
-                type="button"
-                onClick={closeWeakSampleReview}
-                aria-label="Close weak sample review"
-                title="Close"
-              >
-                <i className="fas fa-xmark" aria-hidden="true" />
-              </button>
+              <div className="weak-sample-header-actions">
+                <button
+                  className="button-secondary button-compact"
+                  type="button"
+                  onClick={() => onOpenAcademy("weak-sample-review")}
+                >
+                  <i className="fas fa-graduation-cap" aria-hidden="true" />
+                  Learn
+                </button>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={closeWeakSampleReview}
+                  aria-label="Close weak sample review"
+                  title="Close"
+                >
+                  <i className="fas fa-xmark" aria-hidden="true" />
+                </button>
+              </div>
             </div>
 
             <div className="weak-sample-body">
@@ -743,7 +753,7 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
         title={summary.concept.title}
         body={summary.concept.body}
         actionLabel="Open Academy"
-        onAction={onOpenAcademy}
+        onAction={() => onOpenAcademy()}
       />
     </section>
   );

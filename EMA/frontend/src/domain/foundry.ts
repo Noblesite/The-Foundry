@@ -375,6 +375,14 @@ export interface AcademyLesson {
   progress: number;
 }
 
+export interface AcademyConcept {
+  id: string;
+  title: string;
+  concept: string;
+  shortExplanation: string;
+  relatedStations: string[];
+}
+
 export interface RuntimeMetric {
   id: string;
   label: string;

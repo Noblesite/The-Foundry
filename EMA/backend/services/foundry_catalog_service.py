@@ -42,6 +42,7 @@ class FoundryCatalogService:
             self._create_schema(connection)
             self._seed_defaults(connection)
             self._ensure_trials_catalog_rows(connection)
+            self._ensure_academy_concepts(connection)
 
     def _create_schema(self, connection: sqlite3.Connection) -> None:
         connection.executescript(
@@ -446,6 +447,20 @@ class FoundryCatalogService:
                     "attention",
                     "Attention helps a model weigh which tokens matter to the next token it generates.",
                     json.dumps(["academy", "forge", "construct"]),
+                ),
+                (
+                    "acd-evaluation",
+                    "Evaluation",
+                    "evaluation",
+                    "Evaluation compares model replies against reviewed examples before you promote an Artifact.",
+                    json.dumps(["trials", "forge", "artifacts"]),
+                ),
+                (
+                    "acd-weak-sample-review",
+                    "Weak Sample Review",
+                    "weak-sample-review",
+                    "Weak sample review turns failed and needs-work replies into corrected Material for the next Forge.",
+                    json.dumps(["trials", "materials", "forge"]),
                 )
             ],
         )
@@ -505,6 +520,40 @@ class FoundryCatalogService:
                 """,
                 row,
             )
+
+    def _ensure_academy_concepts(self, connection: sqlite3.Connection) -> None:
+        academy_rows = [
+            (
+                "acd-attention-layers",
+                "Understanding Attention Layers",
+                "attention",
+                "Attention helps a model weigh which tokens matter to the next token it generates.",
+                json.dumps(["academy", "forge", "construct"]),
+            ),
+            (
+                "acd-evaluation",
+                "Evaluation",
+                "evaluation",
+                "Evaluation compares model replies against reviewed examples before you promote an Artifact.",
+                json.dumps(["trials", "forge", "artifacts"]),
+            ),
+            (
+                "acd-weak-sample-review",
+                "Weak Sample Review",
+                "weak-sample-review",
+                "Weak sample review turns failed and needs-work replies into corrected Material for the next Forge.",
+                json.dumps(["trials", "materials", "forge"]),
+            ),
+        ]
+        connection.executemany(
+            """
+            INSERT OR IGNORE INTO academy_concepts (
+                id, title, concept, short_explanation, related_stations_json
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            academy_rows,
+        )
 
     def _default_section_rows(self) -> List[tuple]:
         sections = {
@@ -2610,6 +2659,34 @@ class FoundryCatalogService:
                     """
                 ).fetchall()
                 return [dict(row) for row in rows]
+
+        return await self._run_query(query)
+
+    async def get_academy_concepts(self) -> List[Dict[str, Any]]:
+        def query():
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT
+                        id,
+                        title,
+                        concept,
+                        short_explanation AS shortExplanation,
+                        related_stations_json
+                    FROM academy_concepts
+                    ORDER BY title ASC
+                    """
+                ).fetchall()
+                return [
+                    {
+                        "id": row["id"],
+                        "title": row["title"],
+                        "concept": row["concept"],
+                        "shortExplanation": row["shortExplanation"],
+                        "relatedStations": json.loads(row["related_stations_json"]),
+                    }
+                    for row in rows
+                ]
 
         return await self._run_query(query)
 
