@@ -2275,9 +2275,39 @@ input[type="checkbox"] {
   font-weight: 800;
 }
 
+.model-cache-state {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.58rem;
+  background: rgba(13, 17, 23, 0.45);
+}
+
+.model-cache-state code {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-badge.cache-cached,
+.status-badge.cache-ready {
+  border-color: rgba(0, 212, 255, 0.56);
+  color: var(--arc-blue);
+}
+
+.status-badge.cache-failed {
+  border-color: rgba(255, 138, 0, 0.56);
+  color: var(--forge-orange);
+}
+
 .model-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.55rem;
   margin: 0;
 }

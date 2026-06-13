@@ -72,6 +72,7 @@ export const foundryApiRoutes = {
   searchArchiveModels: `${FOUNDRY_API_VERSION}/archive/models/search`,
   inspectArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/inspect`,
   registerArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/register`,
+  downloadArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/download`,
   construct: (constructId: string) => `${FOUNDRY_API_VERSION}/constructs/${constructId}`,
   constructChat: (constructId: string) =>
     `${FOUNDRY_API_VERSION}/constructs/${constructId}/chat`,
@@ -379,6 +380,8 @@ export interface ArchiveModelInspectDto {
 export interface ArchiveModelRegisterDto extends ArchiveModelInspectDto {
   archiveEntry: ModelArchiveEntry;
 }
+
+export type ArchiveModelDownloadDto = ArchiveModelRegisterDto;
 
 export interface ConstructChatRequest {
   conversationId: string;

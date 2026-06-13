@@ -277,6 +277,22 @@ async def register_foundry_archive_model_endpoint(data: InspectArchiveModelInput
         raise HTTPException(status_code=502, detail=f"Hugging Face model registration failed: {error}")
 
 
+@app.post("/api/v1/archive/models/download")
+async def download_foundry_archive_model_endpoint(data: InspectArchiveModelInput):
+    try:
+        return api_envelope(
+            await huggingface_model_service.download_model(
+                repo_id=data.repoId,
+                revision=data.revision or "",
+                token=data.token,
+            )
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"Hugging Face model download failed: {error}")
+
+
 @app.get("/api/v1/foundry/bootstrap")
 async def foundry_bootstrap_endpoint():
     """

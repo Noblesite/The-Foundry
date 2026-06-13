@@ -19,6 +19,7 @@ interface ArtifactsWorkbenchProps {
   academyAction?: AcademyAction;
   onConstructLoaded: (construct: Construct, artifact: Artifact) => void;
   onBaseModelSelected: (modelId: string) => void;
+  onRuntimeLoaded?: () => void;
   onOpenAcademy: () => void;
 }
 
@@ -30,6 +31,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   academyAction,
   onConstructLoaded,
   onBaseModelSelected,
+  onRuntimeLoaded,
   onOpenAcademy,
 }) => {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
@@ -41,6 +43,8 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   const [isLoadingConstruct, setIsLoadingConstruct] = useState(false);
   const [isSearchingModels, setIsSearchingModels] = useState(false);
   const [isRegisteringModel, setIsRegisteringModel] = useState(false);
+  const [isDownloadingModel, setIsDownloadingModel] = useState(false);
+  const [isLoadingModelRuntime, setIsLoadingModelRuntime] = useState(false);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -104,6 +108,23 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     [modelResults, selectedModelId]
   );
 
+  const selectedArchiveEntry = useMemo(
+    () => {
+      if (!selectedModel) {
+        return undefined;
+      }
+      const matches = archiveEntries.filter((entry) => entry.repoId === selectedModel.repoId);
+      if (selectedModel.revision) {
+        return matches.find((entry) => entry.revision === selectedModel.revision);
+      }
+      return (
+        matches.find((entry) => entry.status === "cached" || entry.status === "ready") ||
+        matches[0]
+      );
+    },
+    [archiveEntries, selectedModel]
+  );
+
   const registeredModelIds = useMemo(
     () => new Set(archiveEntries.map((entry) => entry.repoId)),
     [archiveEntries]
@@ -153,7 +174,13 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     try {
       const result = await repository.registerArchiveModel({ repoId: selectedModel.repoId });
       setArchiveEntries((current) => {
-        const withoutDuplicate = current.filter((entry) => entry.id !== result.archiveEntry.id);
+        const withoutDuplicate = current.filter(
+          (entry) =>
+            !(
+              entry.repoId === result.archiveEntry.repoId &&
+              entry.revision === result.archiveEntry.revision
+            )
+        );
         return [result.archiveEntry, ...withoutDuplicate];
       });
       onBaseModelSelected(result.archiveEntry.repoId);
@@ -165,12 +192,74 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     }
   };
 
+  const downloadSelectedModel = async () => {
+    if (!selectedModel) {
+      return;
+    }
+
+    setIsDownloadingModel(true);
+    setStatusText(null);
+    setError(null);
+
+    try {
+      const result = await repository.downloadArchiveModel({
+        repoId: selectedModel.repoId,
+        revision: selectedModel.revision,
+      });
+      setArchiveEntries((current) => {
+        const withoutDuplicate = current.filter(
+          (entry) =>
+            !(
+              entry.repoId === result.archiveEntry.repoId &&
+              entry.revision === result.archiveEntry.revision
+            )
+        );
+        return [result.archiveEntry, ...withoutDuplicate];
+      });
+      onBaseModelSelected(result.archiveEntry.localPath || result.archiveEntry.repoId);
+      setStatusText(`${result.archiveEntry.repoId} cached at ${result.archiveEntry.localPath}.`);
+    } catch (downloadError: unknown) {
+      setError(downloadError instanceof Error ? downloadError.message : "Could not download model.");
+    } finally {
+      setIsDownloadingModel(false);
+    }
+  };
+
+  const loadCachedModelRuntime = async () => {
+    if (!selectedArchiveEntry?.localPath) {
+      return;
+    }
+
+    setIsLoadingModelRuntime(true);
+    setStatusText(null);
+    setError(null);
+
+    try {
+      await repository.configureConstructRuntime({
+        mode: "transformers",
+        modelId: selectedArchiveEntry.localPath,
+        device: "auto",
+      });
+      const runtime = await repository.loadConstructRuntime({
+        modelId: selectedArchiveEntry.localPath,
+      });
+      onBaseModelSelected(selectedArchiveEntry.localPath);
+      onRuntimeLoaded?.();
+      setStatusText(`${selectedArchiveEntry.repoId} loaded into ${runtime.device}.`);
+    } catch (runtimeError: unknown) {
+      setError(runtimeError instanceof Error ? runtimeError.message : "Could not load cached model.");
+    } finally {
+      setIsLoadingModelRuntime(false);
+    }
+  };
+
   const selectModelForRuntime = () => {
     if (!selectedModel) {
       return;
     }
-    onBaseModelSelected(selectedModel.repoId);
-    setStatusText(`${selectedModel.repoId} selected for Forge and Construct defaults.`);
+    const modelTarget = selectedArchiveEntry?.localPath || selectedModel.repoId;
+    onBaseModelSelected(modelTarget);
+    setStatusText(`${modelTarget} selected for Forge and Construct defaults.`);
   };
 
   const loadIntoConstruct = async () => {
@@ -356,6 +445,12 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                   <span>{selectedModel.fitEstimate.recommendedRuntime.toUpperCase()}</span>
                 </div>
                 <p>{selectedModel.fitEstimate.reason}</p>
+                <div className="model-cache-state">
+                  <span className={`status-badge cache-${selectedArchiveEntry?.status || "remote"}`}>
+                    {selectedArchiveEntry?.status || "remote"}
+                  </span>
+                  <code>{selectedArchiveEntry?.localPath || "Not cached locally yet."}</code>
+                </div>
                 <dl className="model-stats">
                   <div>
                     <dt>Downloads</dt>
@@ -364,6 +459,10 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                   <div>
                     <dt>Likes</dt>
                     <dd>{selectedModel.likes.toLocaleString()}</dd>
+                  </div>
+                  <div>
+                    <dt>Local</dt>
+                    <dd>{formatBytes(selectedArchiveEntry?.sizeOnDiskBytes || 0)}</dd>
                   </div>
                   <div>
                     <dt>Params</dt>
@@ -387,6 +486,28 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                       : isRegisteringModel
                       ? "Registering"
                       : "Register Model"}
+                  </button>
+                  <button
+                    className="button-secondary"
+                    disabled={isDownloadingModel}
+                    onClick={() => void downloadSelectedModel()}
+                    type="button"
+                  >
+                    <i className="fas fa-download" aria-hidden="true" />
+                    {isDownloadingModel
+                      ? "Downloading"
+                      : selectedArchiveEntry?.status === "cached"
+                      ? "Refresh Cache"
+                      : "Download to Archive"}
+                  </button>
+                  <button
+                    className="button-secondary"
+                    disabled={!selectedArchiveEntry?.localPath || isLoadingModelRuntime}
+                    onClick={() => void loadCachedModelRuntime()}
+                    type="button"
+                  >
+                    <i className="fas fa-play" aria-hidden="true" />
+                    {isLoadingModelRuntime ? "Loading" : "Load Cached Construct"}
                   </button>
                   <button className="button-secondary" onClick={selectModelForRuntime} type="button">
                     <i className="fas fa-sliders" aria-hidden="true" />

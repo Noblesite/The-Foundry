@@ -3,9 +3,14 @@ from __future__ import annotations
 import os
 import platform
 import re
+from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
 import psutil
+
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+DEFAULT_MODEL_ARCHIVE_DIR = BASE_DIR / "runtime" / "models" / "huggingface"
 
 
 class HuggingFaceModelService:
@@ -19,6 +24,10 @@ class HuggingFaceModelService:
 
     def __init__(self, catalog_service) -> None:
         self.catalog_service = catalog_service
+        self.archive_dir = Path(
+            os.getenv("FOUNDRY_MODEL_ARCHIVE_DIR", str(DEFAULT_MODEL_ARCHIVE_DIR))
+        )
+        self.archive_dir.mkdir(parents=True, exist_ok=True)
 
     async def search_models(
         self,
@@ -102,6 +111,70 @@ class HuggingFaceModelService:
             "platform": inspection["platform"],
         }
 
+    async def download_model(
+        self,
+        *,
+        repo_id: str,
+        revision: str,
+        token: Optional[str],
+    ) -> Dict[str, Any]:
+        safe_repo_id = repo_id.strip()
+        if not safe_repo_id:
+            raise ValueError("Model repository id cannot be empty.")
+
+        safe_revision = revision.strip()
+        model = None
+        try:
+            model = await self._run_hf_query(
+                self._inspect_model_sync,
+                repo_id=safe_repo_id,
+                revision=safe_revision,
+                token=self._effective_token(token),
+            )
+            local_path = await self._run_hf_query(
+                self._download_model_sync,
+                repo_id=safe_repo_id,
+                revision=safe_revision,
+                token=self._effective_token(token),
+            )
+            size_on_disk = self._directory_size(Path(local_path))
+            entry = await self.catalog_service.upsert_model_archive_entry(
+                repo_id=model["repoId"],
+                revision=model.get("revision") or safe_revision,
+                local_path=local_path,
+                source="huggingface",
+                status="cached",
+                size_on_disk_bytes=size_on_disk,
+                parameter_count=model.get("parameterCount"),
+                library_name=model.get("libraryName"),
+                pipeline_tag=model.get("pipelineTag"),
+                gated=bool(model.get("gated")),
+                private=bool(model.get("private")),
+            )
+            model["archiveEntry"] = entry
+            model["cached"] = True
+            return {
+                "model": model,
+                "archiveEntry": entry,
+                "platform": self.platform_profile(),
+            }
+        except Exception:
+            if model:
+                await self.catalog_service.upsert_model_archive_entry(
+                    repo_id=model["repoId"],
+                    revision=model.get("revision") or safe_revision,
+                    local_path="",
+                    source="huggingface",
+                    status="failed",
+                    size_on_disk_bytes=0,
+                    parameter_count=model.get("parameterCount"),
+                    library_name=model.get("libraryName"),
+                    pipeline_tag=model.get("pipelineTag"),
+                    gated=bool(model.get("gated")),
+                    private=bool(model.get("private")),
+                )
+            raise
+
     async def list_archive_entries(self) -> list[Dict[str, Any]]:
         return await self.catalog_service.list_model_archive_entries()
 
@@ -170,6 +243,24 @@ class HuggingFaceModelService:
         model["fitEstimate"] = self.estimate_fit(model.get("parameterCount"), model.get("sizeBytes"))
         return model
 
+    def _download_model_sync(
+        self,
+        *,
+        repo_id: str,
+        revision: str,
+        token: Optional[str],
+    ) -> str:
+        from huggingface_hub import snapshot_download
+
+        local_dir = self.archive_dir / self._safe_archive_slug(repo_id, revision)
+        local_dir.mkdir(parents=True, exist_ok=True)
+        return snapshot_download(
+            repo_id=repo_id,
+            revision=revision or None,
+            token=token,
+            local_dir=str(local_dir),
+        )
+
     def _model_summary_from_info(self, model_info) -> Dict[str, Any]:
         repo_id = getattr(model_info, "modelId", None) or getattr(model_info, "id", "")
         tags = list(getattr(model_info, "tags", None) or [])
@@ -231,6 +322,23 @@ class HuggingFaceModelService:
             if isinstance(size, int):
                 total += size
         return total
+
+    def _directory_size(self, path: Path) -> int:
+        if not path.exists():
+            return 0
+        total = 0
+        for file_path in path.rglob("*"):
+            if file_path.is_file():
+                try:
+                    total += file_path.stat().st_size
+                except OSError:
+                    continue
+        return total
+
+    def _safe_archive_slug(self, repo_id: str, revision: str) -> str:
+        raw_value = f"{repo_id}@{revision}" if revision else repo_id
+        normalized = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw_value).strip("-")
+        return normalized or "model"
 
     def platform_profile(self) -> Dict[str, Any]:
         memory = psutil.virtual_memory()

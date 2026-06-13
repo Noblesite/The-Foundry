@@ -264,6 +264,13 @@ const App: React.FC = () => {
     setActiveSection("construct");
   };
 
+  const refreshConstructRuntime = () => {
+    repository
+      .getConstructRuntime()
+      .then(setConstructRuntime)
+      .catch((error: unknown) => console.error("[Construct Runtime]", error));
+  };
+
   const handleOpenForgePreset = (preset: StartForgeRequest) => {
     setForgePreset(preset);
     setActiveSection("forge");
@@ -415,6 +422,7 @@ const App: React.FC = () => {
           academyAction={getAcademyAction(ACADEMY_ACTION_IDS.artifactsOpenPromotion)}
           onConstructLoaded={handleConstructLoaded}
           onBaseModelSelected={handleBaseModelSelected}
+          onRuntimeLoaded={refreshConstructRuntime}
           onOpenAcademy={() =>
             handleOpenAcademyAction(ACADEMY_ACTION_IDS.artifactsOpenPromotion)
           }

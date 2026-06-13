@@ -3,6 +3,7 @@ import {
   AcademyActionDto,
   AcademyConceptDto,
   ArchiveModelInspectDto,
+  ArchiveModelDownloadDto,
   ArchiveModelRegisterDto,
   ArchiveModelSearchDto,
   ArtifactDto,
@@ -164,6 +165,7 @@ export interface FoundryRepository {
   searchArchiveModels: (request: SearchArchiveModelsRequest) => Promise<ArchiveModelSearchDto>;
   inspectArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelInspectDto>;
   registerArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelRegisterDto>;
+  downloadArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelDownloadDto>;
 }
 
 const mockMaterialSources: MaterialSource[] = [
@@ -1112,6 +1114,55 @@ export const mockFoundryRepository: FoundryRepository = {
       archiveEntry,
     };
   },
+  downloadArchiveModel: async (request) => {
+    const inspection = await mockFoundryRepository.inspectArchiveModel(request);
+    const existingEntry = mockModelArchiveEntries.find(
+      (entry) => entry.repoId === request.repoId && entry.revision === (request.revision || "")
+    );
+    const now = new Date().toISOString();
+    const archiveEntry: ModelArchiveEntry = existingEntry
+      ? {
+          ...existingEntry,
+          localPath: `runtime/models/huggingface/${request.repoId.replace(/[^A-Za-z0-9_.-]+/g, "-")}`,
+          status: "cached",
+          sizeOnDiskBytes: inspection.model.sizeBytes || existingEntry.sizeOnDiskBytes,
+          lastCheckedAt: now,
+          updatedAt: now,
+        }
+      : {
+          id: `mdl-${Date.now()}`,
+          repoId: request.repoId,
+          revision: request.revision || "",
+          localPath: `runtime/models/huggingface/${request.repoId.replace(/[^A-Za-z0-9_.-]+/g, "-")}`,
+          source: "huggingface",
+          status: "cached",
+          sizeOnDiskBytes: inspection.model.sizeBytes,
+          parameterCount: inspection.model.parameterCount,
+          libraryName: inspection.model.libraryName,
+          pipelineTag: inspection.model.pipelineTag,
+          gated: inspection.model.gated,
+          private: inspection.model.private,
+          lastUsedAt: null,
+          lastCheckedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        };
+    if (existingEntry) {
+      const index = mockModelArchiveEntries.findIndex((entry) => entry.id === existingEntry.id);
+      mockModelArchiveEntries.splice(index, 1, archiveEntry);
+    } else {
+      mockModelArchiveEntries.unshift(archiveEntry);
+    }
+    return {
+      ...inspection,
+      model: {
+        ...inspection.model,
+        archiveEntry,
+        cached: true,
+      },
+      archiveEntry,
+    };
+  },
 };
 
 export const apiFoundryRepository: FoundryRepository = {
@@ -1348,6 +1399,13 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.post<ApiEnvelope<ArchiveModelRegisterDto>>(
         foundryApiRoutes.registerArchiveModel,
+        request
+      )
+    ),
+  downloadArchiveModel: async (request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ArchiveModelDownloadDto>>(
+        foundryApiRoutes.downloadArchiveModel,
         request
       )
     ),
