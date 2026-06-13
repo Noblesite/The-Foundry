@@ -2,6 +2,9 @@ import {
   ApiEnvelope,
   AcademyActionDto,
   AcademyConceptDto,
+  ArchiveModelInspectDto,
+  ArchiveModelRegisterDto,
+  ArchiveModelSearchDto,
   ArtifactDto,
   AssemblyLineRunDto,
   ConfigureConstructRuntimeRequest,
@@ -22,11 +25,13 @@ import {
   ForgeWorkerReconcileDto,
   foundryApiRoutes,
   IngestMaterialRequest,
+  InspectArchiveModelRequest,
   LoadArtifactIntoConstructRequest,
   LoadConstructRuntimeRequest,
   MaterialChunkDto,
   QAPairDto,
   ProbeConstructRuntimeRequest,
+  SearchArchiveModelsRequest,
   StartAssemblyLineRequest,
   StartForgeRequest,
   TrialDto,
@@ -51,6 +56,9 @@ import {
   ForgeRun,
   MaterialChunk,
   MaterialSource,
+  ModelArchiveEntry,
+  ModelPlatformProfile,
+  ModelSearchResult,
   NavigationSection,
   QAPair,
   SectionSummary,
@@ -152,6 +160,10 @@ export interface FoundryRepository {
     request: ProbeConstructRuntimeRequest
   ) => Promise<ConstructRuntimeProbeResult>;
   unloadConstructRuntime: () => Promise<ConstructRuntime>;
+  listModelArchiveEntries: () => Promise<ModelArchiveEntry[]>;
+  searchArchiveModels: (request: SearchArchiveModelsRequest) => Promise<ArchiveModelSearchDto>;
+  inspectArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelInspectDto>;
+  registerArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelRegisterDto>;
 }
 
 const mockMaterialSources: MaterialSource[] = [
@@ -218,6 +230,69 @@ const mockForgeRuns: ForgeRun[] = [...mockDashboardSummary.forgeQueue];
 const mockArtifacts: Artifact[] = [mockDashboardSummary.currentArtifact];
 const mockTrials: Trial[] = [];
 const mockForgeWorkerStates: Record<string, ForgeWorkerState> = {};
+const mockPlatformProfile: ModelPlatformProfile = {
+  os: "Darwin",
+  machine: "arm64",
+  python: "3.12",
+  accelerator: "mps",
+  systemMemoryBytes: 36 * 1024 ** 3,
+  availableMemoryBytes: 18 * 1024 ** 3,
+  acceleratorMemoryBytes: 18 * 1024 ** 3,
+  unifiedMemory: true,
+  torch: {
+    cudaAvailable: false,
+    mpsAvailable: true,
+  },
+};
+const mockModelArchiveEntries: ModelArchiveEntry[] = [];
+const mockArchiveModels: ModelSearchResult[] = [
+  {
+    repoId: "sshleifer/tiny-gpt2",
+    author: "sshleifer",
+    sha: "mock",
+    lastModified: new Date().toISOString(),
+    downloads: 184000,
+    likes: 98,
+    libraryName: "transformers",
+    pipelineTag: "text-generation",
+    tags: ["transformers", "pytorch", "gpt2", "tiny"],
+    gated: false,
+    private: false,
+    parameterCount: 102714,
+    sizeBytes: 2514146,
+    fitEstimate: {
+      status: "fits",
+      recommendedRuntime: "mps",
+      estimatedBytes: 3394097,
+      availableBytes: mockPlatformProfile.availableMemoryBytes,
+      assumedQuantization: "int4",
+      reason: "Estimated memory fits with comfortable runtime headroom.",
+    },
+  },
+  {
+    repoId: "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    author: "TinyLlama",
+    sha: "mock",
+    lastModified: new Date().toISOString(),
+    downloads: 921000,
+    likes: 2000,
+    libraryName: "transformers",
+    pipelineTag: "text-generation",
+    tags: ["transformers", "pytorch", "llama", "1.1b"],
+    gated: false,
+    private: false,
+    parameterCount: 1_100_000_000,
+    sizeBytes: 2_200_000_000,
+    fitEstimate: {
+      status: "fits",
+      recommendedRuntime: "mps",
+      estimatedBytes: 2_970_000_000,
+      availableBytes: mockPlatformProfile.availableMemoryBytes,
+      assumedQuantization: "int4",
+      reason: "Estimated memory fits with comfortable runtime headroom.",
+    },
+  },
+];
 let mockConstruct: Construct = mockDashboardSummary.construct;
 let mockConstructRuntime: ConstructRuntime = {
   mode: "simulated",
@@ -971,6 +1046,72 @@ export const mockFoundryRepository: FoundryRepository = {
     };
     return mockConstructRuntime;
   },
+  listModelArchiveEntries: async () => mockModelArchiveEntries,
+  searchArchiveModels: async (request) => {
+    const query = (request.query || "").toLowerCase();
+    return {
+      models: mockArchiveModels
+        .filter((model) => (query ? model.repoId.toLowerCase().includes(query) : true))
+        .filter((model) => request.includeGated || !model.gated)
+        .slice(0, request.limit || 20),
+      platform: mockPlatformProfile,
+    };
+  },
+  inspectArchiveModel: async (request) => {
+    const archiveEntry = mockModelArchiveEntries.find(
+      (entry) => entry.repoId === request.repoId && entry.revision === (request.revision || "")
+    );
+    const model =
+      mockArchiveModels.find((candidate) => candidate.repoId === request.repoId) ||
+      mockArchiveModels[0];
+    return {
+      model: {
+        ...model,
+        repoId: request.repoId,
+        revision: request.revision || "",
+        cached: Boolean(archiveEntry),
+        archiveEntry: archiveEntry || null,
+      },
+      platform: mockPlatformProfile,
+    };
+  },
+  registerArchiveModel: async (request) => {
+    const inspection = await mockFoundryRepository.inspectArchiveModel(request);
+    const existingEntry = mockModelArchiveEntries.find(
+      (entry) => entry.repoId === request.repoId && entry.revision === (request.revision || "")
+    );
+    const archiveEntry: ModelArchiveEntry =
+      existingEntry || {
+        id: `mdl-${Date.now()}`,
+        repoId: request.repoId,
+        revision: request.revision || "",
+        localPath: "",
+        source: "huggingface",
+        status: "remote",
+        sizeOnDiskBytes: inspection.model.sizeBytes,
+        parameterCount: inspection.model.parameterCount,
+        libraryName: inspection.model.libraryName,
+        pipelineTag: inspection.model.pipelineTag,
+        gated: inspection.model.gated,
+        private: inspection.model.private,
+        lastUsedAt: null,
+        lastCheckedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    if (!existingEntry) {
+      mockModelArchiveEntries.unshift(archiveEntry);
+    }
+    return {
+      ...inspection,
+      model: {
+        ...inspection.model,
+        archiveEntry,
+        cached: archiveEntry.status !== "remote",
+      },
+      archiveEntry,
+    };
+  },
 };
 
 export const apiFoundryRepository: FoundryRepository = {
@@ -1185,6 +1326,29 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.post<ApiEnvelope<ConstructRuntime>>(
         foundryApiRoutes.unloadConstructRuntime
+      )
+    ),
+  listModelArchiveEntries: async () =>
+    unwrap(await apiClient.get<ApiEnvelope<ModelArchiveEntry[]>>(foundryApiRoutes.modelArchive)),
+  searchArchiveModels: async (request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ArchiveModelSearchDto>>(
+        foundryApiRoutes.searchArchiveModels,
+        request
+      )
+    ),
+  inspectArchiveModel: async (request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ArchiveModelInspectDto>>(
+        foundryApiRoutes.inspectArchiveModel,
+        request
+      )
+    ),
+  registerArchiveModel: async (request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ArchiveModelRegisterDto>>(
+        foundryApiRoutes.registerArchiveModel,
+        request
       )
     ),
 };

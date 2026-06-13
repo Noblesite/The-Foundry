@@ -16,6 +16,9 @@ import {
   MaterialSource,
   MaterialKind,
   MaterialStatus,
+  ModelArchiveEntry,
+  ModelPlatformProfile,
+  ModelSearchResult,
   TrainingMethod,
   Trial,
   TrialVerdict,
@@ -65,6 +68,10 @@ export const foundryApiRoutes = {
   loadConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/load`,
   probeConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/probe`,
   unloadConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/unload`,
+  modelArchive: `${FOUNDRY_API_VERSION}/archive/models`,
+  searchArchiveModels: `${FOUNDRY_API_VERSION}/archive/models/search`,
+  inspectArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/inspect`,
+  registerArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/register`,
   construct: (constructId: string) => `${FOUNDRY_API_VERSION}/constructs/${constructId}`,
   constructChat: (constructId: string) =>
     `${FOUNDRY_API_VERSION}/constructs/${constructId}/chat`,
@@ -342,6 +349,35 @@ export interface ProbeConstructRuntimeRequest {
   prompt: string;
   maxNewTokens: number;
   device: "auto" | "cpu" | "cuda" | "mps";
+}
+
+export interface SearchArchiveModelsRequest {
+  query?: string;
+  pipelineTag?: string;
+  sort?: "downloads" | "likes" | "lastModified";
+  limit?: number;
+  includeGated?: boolean;
+  token?: string;
+}
+
+export interface InspectArchiveModelRequest {
+  repoId: string;
+  revision?: string;
+  token?: string;
+}
+
+export interface ArchiveModelSearchDto {
+  models: ModelSearchResult[];
+  platform: ModelPlatformProfile;
+}
+
+export interface ArchiveModelInspectDto {
+  model: ModelSearchResult;
+  platform: ModelPlatformProfile;
+}
+
+export interface ArchiveModelRegisterDto extends ArchiveModelInspectDto {
+  archiveEntry: ModelArchiveEntry;
 }
 
 export interface ConstructChatRequest {

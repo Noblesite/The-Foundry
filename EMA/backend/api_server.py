@@ -11,6 +11,7 @@ from backend.services.chat_orchestration_service import ChatOrchestrationService
 from backend.services.construct_inference_service import ConstructInferenceService
 from backend.services.forge_training_service import ForgeTrainingService
 from backend.services.foundry_catalog_service import FoundryCatalogService
+from backend.services.huggingface_model_service import HuggingFaceModelService
 
 
 # Initialize FastAPI app
@@ -99,6 +100,19 @@ class ConstructRuntimeProbeInput(BaseModel):
     maxNewTokens: int = 24
     device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
 
+class SearchArchiveModelsInput(BaseModel):
+    query: str = ""
+    pipelineTag: str = "text-generation"
+    sort: Literal["downloads", "likes", "lastModified"] = "downloads"
+    limit: int = 20
+    includeGated: bool = False
+    token: str | None = None
+
+class InspectArchiveModelInput(BaseModel):
+    repoId: str
+    revision: str | None = None
+    token: str | None = None
+
 class CreateTrialInput(BaseModel):
     artifactId: str
     constructId: str
@@ -133,6 +147,7 @@ chat_service = ChatOrchestrationService()
 construct_inference_service = ConstructInferenceService()
 forge_training_service = ForgeTrainingService()
 foundry_catalog_service = FoundryCatalogService()
+huggingface_model_service = HuggingFaceModelService(foundry_catalog_service)
 
 active_connections: Set[WebSocket] = set()
 
@@ -206,6 +221,60 @@ async def probe_foundry_construct_runtime_endpoint(data: ConstructRuntimeProbeIn
 @app.post("/api/v1/constructs/runtime/unload")
 async def unload_foundry_construct_runtime_endpoint():
     return api_envelope(await construct_inference_service.unload())
+
+
+@app.get("/api/v1/archive/models")
+async def foundry_model_archive_endpoint():
+    return api_envelope(await huggingface_model_service.list_archive_entries())
+
+
+@app.post("/api/v1/archive/models/search")
+async def search_foundry_archive_models_endpoint(data: SearchArchiveModelsInput):
+    try:
+        return api_envelope(
+            await huggingface_model_service.search_models(
+                query=data.query,
+                pipeline_tag=data.pipelineTag,
+                sort=data.sort,
+                limit=data.limit,
+                include_gated=data.includeGated,
+                token=data.token,
+            )
+        )
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"Hugging Face model search failed: {error}")
+
+
+@app.post("/api/v1/archive/models/inspect")
+async def inspect_foundry_archive_model_endpoint(data: InspectArchiveModelInput):
+    try:
+        return api_envelope(
+            await huggingface_model_service.inspect_model(
+                repo_id=data.repoId,
+                revision=data.revision or "",
+                token=data.token,
+            )
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"Hugging Face model inspection failed: {error}")
+
+
+@app.post("/api/v1/archive/models/register")
+async def register_foundry_archive_model_endpoint(data: InspectArchiveModelInput):
+    try:
+        return api_envelope(
+            await huggingface_model_service.register_remote_model(
+                repo_id=data.repoId,
+                revision=data.revision or "",
+                token=data.token,
+            )
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"Hugging Face model registration failed: {error}")
 
 
 @app.get("/api/v1/foundry/bootstrap")

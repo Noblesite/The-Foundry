@@ -28,6 +28,8 @@ export type ConstructStatus = "offline" | "warming" | "streaming" | "paused";
 export type ConstructRuntimeMode = "simulated" | "transformers";
 export type ConstructRuntimeDevice = "auto" | "cpu" | "cuda" | "mps";
 export type ForgeRuntimeMode = "simulated" | "local";
+export type ModelArchiveStatus = "remote" | "cached" | "ready" | "failed";
+export type ModelFitStatus = "fits" | "tight" | "too-large" | "unknown";
 export type TrialStatus = "not-started" | "running" | "passed" | "failed";
 export type TrialVerdict = "pass" | "needs-work" | "fail";
 export type LearningDifficulty = "starter" | "builder" | "advanced";
@@ -331,6 +333,66 @@ export interface ConstructRuntimeProbeResult {
   maxNewTokens: number;
   error?: string;
   diagnostics: Record<string, unknown>;
+}
+
+export interface ModelPlatformProfile {
+  os: string;
+  machine: string;
+  python: string;
+  accelerator: "cpu" | "cuda" | "mps" | string;
+  systemMemoryBytes: number;
+  availableMemoryBytes: number;
+  acceleratorMemoryBytes: number;
+  unifiedMemory: boolean;
+  torch: Record<string, unknown>;
+}
+
+export interface ModelFitEstimate {
+  status: ModelFitStatus;
+  recommendedRuntime: string;
+  estimatedBytes: number;
+  availableBytes: number;
+  assumedQuantization?: string;
+  reason: string;
+}
+
+export interface ModelArchiveEntry {
+  id: string;
+  repoId: string;
+  revision: string;
+  localPath: string;
+  source: "huggingface" | string;
+  status: ModelArchiveStatus;
+  sizeOnDiskBytes: number;
+  parameterCount?: number | null;
+  libraryName?: string | null;
+  pipelineTag?: string | null;
+  gated: boolean;
+  private: boolean;
+  lastUsedAt?: string | null;
+  lastCheckedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ModelSearchResult {
+  repoId: string;
+  author?: string | null;
+  sha?: string | null;
+  lastModified?: string | null;
+  downloads: number;
+  likes: number;
+  libraryName?: string | null;
+  pipelineTag?: string | null;
+  tags: string[];
+  gated: boolean;
+  private: boolean;
+  parameterCount?: number | null;
+  sizeBytes: number;
+  revision?: string;
+  cached?: boolean;
+  archiveEntry?: ModelArchiveEntry | null;
+  fitEstimate: ModelFitEstimate;
 }
 
 export interface Trial {

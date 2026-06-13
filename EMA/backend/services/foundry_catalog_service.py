@@ -227,6 +227,25 @@ class FoundryCatalogService:
                 last_updated TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS model_archive_entries (
+                id TEXT PRIMARY KEY,
+                repo_id TEXT NOT NULL,
+                revision TEXT NOT NULL DEFAULT '',
+                local_path TEXT NOT NULL DEFAULT '',
+                source TEXT NOT NULL DEFAULT 'huggingface',
+                status TEXT NOT NULL DEFAULT 'remote',
+                size_on_disk_bytes INTEGER NOT NULL DEFAULT 0,
+                parameter_count INTEGER,
+                library_name TEXT,
+                pipeline_tag TEXT,
+                gated INTEGER NOT NULL DEFAULT 0,
+                private INTEGER NOT NULL DEFAULT 0,
+                last_used_at TEXT,
+                last_checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE TABLE IF NOT EXISTS navigation_items (
                 id TEXT PRIMARY KEY,
                 label TEXT NOT NULL,
@@ -273,6 +292,10 @@ class FoundryCatalogService:
                 ON academy_action_mappings(station, action);
             CREATE INDEX IF NOT EXISTS idx_ui_component_station_component_cache
                 ON ui_component_catalog(station, component, cache_key);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_model_archive_source_repo_revision
+                ON model_archive_entries(source, repo_id, revision);
+            CREATE INDEX IF NOT EXISTS idx_model_archive_status_updated
+                ON model_archive_entries(status, updated_at);
             """
         )
         self._ensure_forge_contract_columns(connection)
@@ -2793,6 +2816,146 @@ class FoundryCatalogService:
                 return [dict(row) for row in rows]
 
         return await self._run_query(query)
+
+    async def list_model_archive_entries(self) -> List[Dict[str, Any]]:
+        def query():
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM model_archive_entries
+                    ORDER BY datetime(updated_at) DESC, repo_id ASC
+                    """
+                ).fetchall()
+                return [self._model_archive_entry_from_row(row) for row in rows]
+
+        return await self._run_query(query)
+
+    async def get_model_archive_entry(
+        self,
+        repo_id: str,
+        revision: str = "",
+    ) -> Optional[Dict[str, Any]]:
+        def query():
+            with self._connect() as connection:
+                row = connection.execute(
+                    """
+                    SELECT * FROM model_archive_entries
+                    WHERE source = 'huggingface'
+                        AND repo_id = ?
+                        AND revision = ?
+                    """,
+                    (repo_id, revision or ""),
+                ).fetchone()
+                return self._model_archive_entry_from_row(row) if row else None
+
+        return await self._run_query(query)
+
+    async def upsert_model_archive_entry(
+        self,
+        *,
+        repo_id: str,
+        revision: str = "",
+        local_path: str = "",
+        source: str = "huggingface",
+        status: str = "remote",
+        size_on_disk_bytes: int = 0,
+        parameter_count: Optional[int] = None,
+        library_name: Optional[str] = None,
+        pipeline_tag: Optional[str] = None,
+        gated: bool = False,
+        private: bool = False,
+    ) -> Dict[str, Any]:
+        safe_revision = revision or ""
+        entry_id = f"mdl-{uuid4().hex[:12]}"
+
+        async with self._write_lock:
+            with self._connect() as connection:
+                existing = connection.execute(
+                    """
+                    SELECT id FROM model_archive_entries
+                    WHERE source = ? AND repo_id = ? AND revision = ?
+                    """,
+                    (source, repo_id, safe_revision),
+                ).fetchone()
+                if existing:
+                    entry_id = existing["id"]
+                    connection.execute(
+                        """
+                        UPDATE model_archive_entries
+                        SET local_path = ?,
+                            status = ?,
+                            size_on_disk_bytes = ?,
+                            parameter_count = ?,
+                            library_name = ?,
+                            pipeline_tag = ?,
+                            gated = ?,
+                            private = ?,
+                            last_checked_at = CURRENT_TIMESTAMP,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (
+                            local_path,
+                            status,
+                            size_on_disk_bytes,
+                            parameter_count,
+                            library_name,
+                            pipeline_tag,
+                            int(gated),
+                            int(private),
+                            entry_id,
+                        ),
+                    )
+                else:
+                    connection.execute(
+                        """
+                        INSERT INTO model_archive_entries (
+                            id, repo_id, revision, local_path, source, status,
+                            size_on_disk_bytes, parameter_count, library_name,
+                            pipeline_tag, gated, private
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            entry_id,
+                            repo_id,
+                            safe_revision,
+                            local_path,
+                            source,
+                            status,
+                            size_on_disk_bytes,
+                            parameter_count,
+                            library_name,
+                            pipeline_tag,
+                            int(gated),
+                            int(private),
+                        ),
+                    )
+                row = connection.execute(
+                    "SELECT * FROM model_archive_entries WHERE id = ?",
+                    (entry_id,),
+                ).fetchone()
+                return self._model_archive_entry_from_row(row)
+
+    def _model_archive_entry_from_row(self, row: sqlite3.Row) -> Dict[str, Any]:
+        return {
+            "id": row["id"],
+            "repoId": row["repo_id"],
+            "revision": row["revision"],
+            "localPath": row["local_path"],
+            "source": row["source"],
+            "status": row["status"],
+            "sizeOnDiskBytes": row["size_on_disk_bytes"],
+            "parameterCount": row["parameter_count"],
+            "libraryName": row["library_name"],
+            "pipelineTag": row["pipeline_tag"],
+            "gated": bool(row["gated"]),
+            "private": bool(row["private"]),
+            "lastUsedAt": row["last_used_at"],
+            "lastCheckedAt": row["last_checked_at"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+        }
 
     async def get_bootstrap(self) -> Dict[str, Any]:
         dashboard, academy_actions, navigation_items, section_summaries, ui_catalog = await asyncio.gather(
