@@ -15,6 +15,7 @@ import WorkshopSwitcher from "./components/WorkshopSwitcher";
 import { CreateWorkshopRequest, StartForgeRequest } from "./contracts/foundryApi";
 import {
   ACADEMY_ACTION_IDS,
+  defaultAcademyActions,
   findAcademyAction,
 } from "./domain/academyRegistry";
 import { Artifact, Construct, NavigationSection, Workshop } from "./domain/foundry";
@@ -188,8 +189,14 @@ const App: React.FC = () => {
     setActiveSection("academy");
   };
 
+  const academyActions = foundryData.academyActions.length
+    ? foundryData.academyActions
+    : defaultAcademyActions;
+
+  const getAcademyAction = (actionId: string) => findAcademyAction(academyActions, actionId);
+
   const handleOpenAcademyAction = (actionId: string) => {
-    const action = findAcademyAction(foundryData.academyActions, actionId);
+    const action = getAcademyAction(actionId);
     handleOpenAcademy(action?.conceptId);
   };
 
@@ -270,6 +277,7 @@ const App: React.FC = () => {
           onCreateWorkshop={openWorkshopModal}
           onRunConstruct={() => setActiveSection("construct")}
           onViewQueue={() => setActiveSection("forge")}
+          academyAction={getAcademyAction(ACADEMY_ACTION_IDS.dashboardResumeLesson)}
           onResumeLesson={() => handleOpenAcademyAction(ACADEMY_ACTION_IDS.dashboardResumeLesson)}
         />
       );
@@ -281,7 +289,10 @@ const App: React.FC = () => {
           repository={repository}
           summary={foundryData.sectionSummaries.materials}
           workshop={dashboardSummary.workshop}
-          onOpenAcademy={() => handleOpenAcademy()}
+          academyAction={getAcademyAction(ACADEMY_ACTION_IDS.materialsOpenAssemblyLine)}
+          onOpenAcademy={() =>
+            handleOpenAcademyAction(ACADEMY_ACTION_IDS.materialsOpenAssemblyLine)
+          }
         />
       );
     }
@@ -294,8 +305,9 @@ const App: React.FC = () => {
           summary={foundryData.sectionSummaries.forge}
           workshop={dashboardSummary.workshop}
           forgePreset={forgePreset}
+          academyAction={getAcademyAction(ACADEMY_ACTION_IDS.forgeOpenTraining)}
           onConstructLoaded={handleConstructLoaded}
-          onOpenAcademy={() => handleOpenAcademy()}
+          onOpenAcademy={() => handleOpenAcademyAction(ACADEMY_ACTION_IDS.forgeOpenTraining)}
         />
       );
     }
@@ -307,8 +319,11 @@ const App: React.FC = () => {
           repository={repository}
           summary={foundryData.sectionSummaries.artifacts}
           workshop={dashboardSummary.workshop}
+          academyAction={getAcademyAction(ACADEMY_ACTION_IDS.artifactsOpenPromotion)}
           onConstructLoaded={handleConstructLoaded}
-          onOpenAcademy={() => handleOpenAcademy()}
+          onOpenAcademy={() =>
+            handleOpenAcademyAction(ACADEMY_ACTION_IDS.artifactsOpenPromotion)
+          }
         />
       );
     }
@@ -329,7 +344,7 @@ const App: React.FC = () => {
           repository={repository}
           summary={foundryData.sectionSummaries.trials}
           workshop={dashboardSummary.workshop}
-          academyActions={foundryData.academyActions}
+          academyActions={academyActions}
           onOpenAcademy={handleOpenAcademy}
           onOpenAcademyAction={handleOpenAcademyAction}
           onOpenForgePreset={handleOpenForgePreset}

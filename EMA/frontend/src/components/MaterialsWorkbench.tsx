@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { IngestMaterialRequest, StartAssemblyLineRequest } from "../contracts/foundryApi";
 import {
+  AcademyAction,
   AssemblyLineRun,
   MaterialChunk,
   MaterialKind,
@@ -10,12 +11,13 @@ import {
   Workshop,
 } from "../domain/foundry";
 import { FoundryRepository } from "../services/foundryRepository";
-import { ConceptTooltip, LearningCard } from "./LearningComponents";
+import { AcademyActionTooltip, LearningCard } from "./LearningComponents";
 
 interface MaterialsWorkbenchProps {
   repository: FoundryRepository;
   summary: SectionSummary;
   workshop: Workshop;
+  academyAction?: AcademyAction;
   onOpenAcademy: () => void;
 }
 
@@ -33,6 +35,7 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   repository,
   summary,
   workshop,
+  academyAction,
   onOpenAcademy,
 }) => {
   const [draft, setDraft] = useState<IngestMaterialRequest>({
@@ -471,15 +474,12 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
       <LearningCard
         title={summary.concept.title}
         body={summary.concept.body}
-        actionLabel="Open Academy"
+        academyAction={academyAction}
         onAction={onOpenAcademy}
       />
 
       <div className="dashboard-note">
-        <ConceptTooltip label="What happens next?" title="Assembly Line">
-          Staged Materials are not training data yet. The Assembly Line chunks,
-          cleans, embeds, and turns them into QA pairs before the Forge can use them.
-        </ConceptTooltip>
+        <AcademyActionTooltip action={academyAction} label="What happens next?" />
       </div>
     </section>
   );

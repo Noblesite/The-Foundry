@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { StartForgeRequest } from "../contracts/foundryApi";
 import {
+  AcademyAction,
   Artifact,
   Construct,
   ForgeRun,
@@ -16,7 +17,12 @@ import {
 } from "../domain/foundry";
 import { FoundryRepository } from "../services/foundryRepository";
 import { WorkspaceSettings } from "./SettingsOverlay";
-import { ConceptTooltip, LearningCard, TrainingMetricExplainer } from "./LearningComponents";
+import {
+  AcademyActionTooltip,
+  ConceptTooltip,
+  LearningCard,
+  TrainingMetricExplainer,
+} from "./LearningComponents";
 
 const FORGE_WORKER_POLL_MS = 3000;
 
@@ -36,6 +42,7 @@ interface ForgeWorkbenchProps {
   summary: SectionSummary;
   workshop: Workshop;
   forgePreset?: StartForgeRequest | null;
+  academyAction?: AcademyAction;
   onConstructLoaded: (construct: Construct, artifact: Artifact) => void;
   onOpenAcademy: () => void;
 }
@@ -46,6 +53,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   summary,
   workshop,
   forgePreset,
+  academyAction,
   onConstructLoaded,
   onOpenAcademy,
 }) => {
@@ -1147,9 +1155,12 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
       <LearningCard
         title={summary.concept.title}
         body={summary.concept.body}
-        actionLabel="Open Academy"
+        academyAction={academyAction}
         onAction={onOpenAcademy}
       />
+      <div className="dashboard-note">
+        <AcademyActionTooltip action={academyAction} label="Why this Forge lesson?" />
+      </div>
     </section>
   );
 };

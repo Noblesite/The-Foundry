@@ -1,6 +1,11 @@
 import React from "react";
-import { DashboardSummary } from "../domain/foundry";
-import { ConceptTooltip, LearningCard, ProcessExplainer } from "./LearningComponents";
+import { AcademyAction, DashboardSummary } from "../domain/foundry";
+import {
+  AcademyActionTooltip,
+  LearningAction,
+  LearningCard,
+  ProcessExplainer,
+} from "./LearningComponents";
 import ProgressRing from "./ProgressRing";
 
 interface DashboardProps {
@@ -8,6 +13,7 @@ interface DashboardProps {
   onCreateWorkshop: () => void;
   onRunConstruct: () => void;
   onViewQueue: () => void;
+  academyAction?: AcademyAction;
   onResumeLesson: () => void;
 }
 
@@ -16,6 +22,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   onCreateWorkshop,
   onRunConstruct,
   onViewQueue,
+  academyAction,
   onResumeLesson,
 }) => {
   const { workshop, currentArtifact, forgeQueue, academyLesson } = summary;
@@ -105,22 +112,25 @@ const Dashboard: React.FC<DashboardProps> = ({
             ))}
           </div>
           <p>{academyLesson.title}</p>
-          <button className="button-secondary" onClick={onResumeLesson}>Resume Lesson</button>
+          <LearningAction
+            action={academyAction}
+            className="button-secondary"
+            fallbackLabel="Resume Lesson"
+            onOpen={onResumeLesson}
+          />
         </article>
       </div>
 
       <LearningCard
         title="What is LoRA?"
         body="LoRA, or Low-Rank Adaptation, lets us fine-tune a model by training small update matrices instead of changing all model weights. This makes training faster and more memory efficient."
+        academyAction={academyAction}
         actionLabel="Learn more"
         onAction={onResumeLesson}
       />
 
       <div className="dashboard-note">
-        <ConceptTooltip label="What is an Assembly Line?" title="Assembly Line">
-          The Assembly Line turns raw Materials into structured chunks, embeddings,
-          QA pairs, and Material Sets that can be used by the Forge.
-        </ConceptTooltip>
+        <AcademyActionTooltip action={academyAction} label="Why learn this now?" />
       </div>
     </section>
   );

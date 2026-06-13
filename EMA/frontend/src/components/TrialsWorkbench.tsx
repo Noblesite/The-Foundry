@@ -11,7 +11,7 @@ import {
   Workshop,
 } from "../domain/foundry";
 import { FoundryRepository } from "../services/foundryRepository";
-import { LearningCard } from "./LearningComponents";
+import { AcademyActionTooltip, LearningAction, LearningCard } from "./LearningComponents";
 
 interface TrialsWorkbenchProps {
   academyActions: AcademyAction[];
@@ -477,15 +477,13 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
                   <button onClick={() => runEvaluationAgain(latestReport)} type="button">
                     Run evaluation again
                   </button>
-                  <button
-                    onClick={() =>
+                  <LearningAction
+                    action={evaluationAcademyAction}
+                    fallbackLabel="Open Academy: Evaluation"
+                    onOpen={() =>
                       onOpenAcademyAction(ACADEMY_ACTION_IDS.trialsOpenEvaluation)
                     }
-                    title={evaluationAcademyAction?.tooltipBody}
-                    type="button"
-                  >
-                    {evaluationAcademyAction?.label || "Open Academy: Evaluation"}
-                  </button>
+                  />
                 </div>
               </article>
             )}
@@ -662,17 +660,15 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
                 </span>
               </div>
               <div className="weak-sample-header-actions">
-                <button
+                <LearningAction
+                  action={weakSampleAcademyAction}
                   className="button-secondary button-compact"
-                  type="button"
-                  onClick={() =>
+                  fallbackLabel="Learn"
+                  icon="fa-graduation-cap"
+                  onOpen={() =>
                     onOpenAcademyAction(ACADEMY_ACTION_IDS.trialsReviewWeakSamples)
                   }
-                  title={weakSampleAcademyAction?.tooltipBody}
-                >
-                  <i className="fas fa-graduation-cap" aria-hidden="true" />
-                  {weakSampleAcademyAction?.label || "Learn"}
-                </button>
+                />
                 <button
                   className="icon-button"
                   type="button"
@@ -775,9 +771,12 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
       <LearningCard
         title={summary.concept.title}
         body={summary.concept.body}
-        actionLabel="Open Academy"
+        academyAction={evaluationAcademyAction}
         onAction={() => onOpenAcademy()}
       />
+      <div className="dashboard-note">
+        <AcademyActionTooltip action={evaluationAcademyAction} label="Why evaluate?" />
+      </div>
     </section>
   );
 };

@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Artifact, Construct, SectionSummary, Workshop } from "../domain/foundry";
+import { AcademyAction, Artifact, Construct, SectionSummary, Workshop } from "../domain/foundry";
 import { FoundryRepository } from "../services/foundryRepository";
-import { ConceptTooltip, LearningCard } from "./LearningComponents";
+import { AcademyActionTooltip, ConceptTooltip, LearningCard } from "./LearningComponents";
 
 interface ArtifactsWorkbenchProps {
   activeArtifactId: string;
   repository: FoundryRepository;
   summary: SectionSummary;
   workshop: Workshop;
+  academyAction?: AcademyAction;
   onConstructLoaded: (construct: Construct, artifact: Artifact) => void;
   onOpenAcademy: () => void;
 }
@@ -17,6 +18,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   repository,
   summary,
   workshop,
+  academyAction,
   onConstructLoaded,
   onOpenAcademy,
 }) => {
@@ -167,9 +169,12 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
       <LearningCard
         title={summary.concept.title}
         body={summary.concept.body}
-        actionLabel="Open Academy"
+        academyAction={academyAction}
         onAction={onOpenAcademy}
       />
+      <div className="dashboard-note">
+        <AcademyActionTooltip action={academyAction} label="What should I learn before promotion?" />
+      </div>
     </section>
   );
 };

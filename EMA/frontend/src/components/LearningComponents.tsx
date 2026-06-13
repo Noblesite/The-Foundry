@@ -1,4 +1,5 @@
 import React from "react";
+import { AcademyAction } from "../domain/foundry";
 
 interface ConceptTooltipProps {
   label: string;
@@ -9,8 +10,22 @@ interface ConceptTooltipProps {
 interface LearningCardProps {
   title: string;
   body: string;
+  academyAction?: AcademyAction;
   actionLabel?: string;
   onAction?: () => void;
+}
+
+interface AcademyActionTooltipProps {
+  action?: AcademyAction;
+  label?: string;
+}
+
+interface LearningActionProps {
+  action?: AcademyAction;
+  className?: string;
+  fallbackLabel?: string;
+  icon?: string;
+  onOpen: (action?: AcademyAction) => void;
 }
 
 interface TokenPreviewProps {
@@ -27,9 +42,50 @@ export const ConceptTooltip: React.FC<ConceptTooltipProps> = ({ label, title, ch
   </span>
 );
 
+export const AcademyActionTooltip: React.FC<AcademyActionTooltipProps> = ({
+  action,
+  label,
+}) => {
+  if (!action) {
+    return null;
+  }
+
+  return (
+    <ConceptTooltip label={label || action.tooltipTitle} title={action.tooltipTitle}>
+      {action.tooltipBody}
+    </ConceptTooltip>
+  );
+};
+
+export const LearningAction: React.FC<LearningActionProps> = ({
+  action,
+  className = "button-ghost",
+  fallbackLabel,
+  icon = "fa-arrow-right",
+  onOpen,
+}) => {
+  const label = action?.label || fallbackLabel;
+  if (!label) {
+    return null;
+  }
+
+  return (
+    <button
+      className={className}
+      onClick={() => onOpen(action)}
+      title={action?.tooltipBody}
+      type="button"
+    >
+      {label}
+      {icon && <i className={`fas ${icon}`} aria-hidden="true" />}
+    </button>
+  );
+};
+
 export const LearningCard: React.FC<LearningCardProps> = ({
   title,
   body,
+  academyAction,
   actionLabel,
   onAction,
 }) => (
@@ -41,12 +97,11 @@ export const LearningCard: React.FC<LearningCardProps> = ({
       <p className="section-eyebrow">Academy</p>
       <h3>{title}</h3>
       <p>{body}</p>
-      {actionLabel && (
-        <button className="button-ghost" onClick={onAction}>
-          {actionLabel}
-          <i className="fas fa-arrow-right" aria-hidden="true" />
-        </button>
-      )}
+      <LearningAction
+        action={academyAction}
+        fallbackLabel={actionLabel}
+        onOpen={() => onAction?.()}
+      />
     </div>
   </article>
 );
