@@ -1047,6 +1047,139 @@ class FoundryCatalogService:
             row = connection.execute("SELECT * FROM trials WHERE id = ?", (trial_id,)).fetchone()
             return self._trial_from_row(row)
 
+    async def export_trials_to_material(
+        self,
+        workshop_id: str,
+        trial_ids: List[str],
+        verdicts: List[str],
+        name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        async with self._write_lock:
+            return await self._run_query(
+                lambda: self._export_trials_to_material_sync(
+                    workshop_id=workshop_id,
+                    trial_ids=trial_ids,
+                    verdicts=verdicts,
+                    name=name,
+                )
+            )
+
+    def _export_trials_to_material_sync(
+        self,
+        workshop_id: str,
+        trial_ids: List[str],
+        verdicts: List[str],
+        name: Optional[str],
+    ) -> Dict[str, Any]:
+        invalid_verdicts = [verdict for verdict in verdicts if verdict not in {"pass", "needs-work", "fail"}]
+        if invalid_verdicts:
+            raise ValueError("Trial export verdicts must be pass, needs-work, or fail.")
+
+        with self._connect() as connection:
+            workshop = connection.execute(
+                "SELECT id, name FROM workshops WHERE id = ?",
+                (workshop_id,),
+            ).fetchone()
+            if workshop is None:
+                raise ValueError(f"Workshop {workshop_id} was not found.")
+
+            filters = ["workshop_id = ?"]
+            params: List[Any] = [workshop_id]
+            if trial_ids:
+                placeholders = ", ".join("?" for _ in trial_ids)
+                filters.append(f"id IN ({placeholders})")
+                params.extend(trial_ids)
+            if verdicts:
+                placeholders = ", ".join("?" for _ in verdicts)
+                filters.append(f"verdict IN ({placeholders})")
+                params.extend(verdicts)
+
+            rows = connection.execute(
+                f"""
+                SELECT * FROM trials
+                WHERE {" AND ".join(filters)}
+                ORDER BY datetime(created_at) ASC, id ASC
+                """,
+                params,
+            ).fetchall()
+            if not rows:
+                raise ValueError("No Trials matched this export selection.")
+
+            if trial_ids and len(rows) != len(set(trial_ids)):
+                raise ValueError("One or more selected Trials were not found for this Workshop.")
+
+            export_dir = DEFAULT_EXPORT_DIR / workshop_id
+            export_dir.mkdir(parents=True, exist_ok=True)
+            export_name = self._safe_export_name(name or f"{workshop['name']} Trial Dataset")
+            export_path = export_dir / f"{export_name}-trials-{uuid4().hex[:8]}.jsonl"
+
+            exported_verdicts = sorted({row["verdict"] for row in rows})
+            with export_path.open("w", encoding="utf-8") as export_file:
+                for index, row in enumerate(rows):
+                    generation_settings = json.loads(row["generation_settings_json"])
+                    payload = {
+                        "id": row["id"],
+                        "instruction": row["prompt"],
+                        "input": "",
+                        "output": row["response"],
+                        "prompt": row["prompt"],
+                        "response": row["response"],
+                        "source": {
+                            "workshopId": workshop_id,
+                            "trialId": row["id"],
+                            "artifactId": row["artifact_id"],
+                            "constructId": row["construct_id"],
+                            "messageId": row["message_id"],
+                        },
+                        "metadata": {
+                            "format": "foundry.trial.v1",
+                            "rowIndex": index,
+                            "verdict": row["verdict"],
+                            "runtimeMode": row["runtime_mode"],
+                            "tokenCount": row["token_count"],
+                            "generationSettings": generation_settings,
+                            "createdAt": row["created_at"],
+                        },
+                    }
+                    export_file.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+            material = self._register_material_sync(
+                workshop_id=workshop_id,
+                name=name or f"{workshop['name']} Trial Dataset",
+                kind="jsonl",
+                source_uri=str(export_path.relative_to(BASE_DIR)),
+            )
+            connection.execute(
+                """
+                UPDATE materials
+                SET status = 'qa-ready',
+                    chunk_count = ?,
+                    qa_pair_count = ?
+                WHERE id = ? AND workshop_id = ?
+                """,
+                (len(rows), len(rows), material["id"], workshop_id),
+            )
+            connection.execute(
+                """
+                UPDATE workshops
+                SET updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (workshop_id,),
+            )
+            material_row = connection.execute(
+                "SELECT * FROM materials WHERE id = ?",
+                (material["id"],),
+            ).fetchone()
+
+            return {
+                "material": self._material_from_row(material_row),
+                "exportUri": str(export_path.relative_to(BASE_DIR)),
+                "format": "jsonl",
+                "trialCount": len(rows),
+                "verdicts": exported_verdicts,
+            }
+
     async def chat_with_construct(
         self,
         construct_id: str,

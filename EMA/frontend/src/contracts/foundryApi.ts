@@ -37,6 +37,8 @@ export const foundryApiRoutes = {
   qaPairs: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/qa-pairs`,
   exportQAPairs: (workshopId: string) =>
     `${FOUNDRY_API_VERSION}/workshops/${workshopId}/qa-pairs/export`,
+  exportTrials: (workshopId: string) =>
+    `${FOUNDRY_API_VERSION}/workshops/${workshopId}/trials/export`,
   forgeRuns: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/forges`,
   forgeRun: (forgeRunId: string) => `${FOUNDRY_API_VERSION}/forges/${forgeRunId}`,
   forgeContract: (forgeRunId: string) =>
@@ -143,6 +145,14 @@ export interface ExportQAPairsDto {
   format: "jsonl";
   qaPairCount: number;
   assemblyLineRunId: string;
+}
+
+export interface ExportTrialsDto {
+  material: MaterialSource;
+  exportUri: string;
+  format: "jsonl";
+  trialCount: number;
+  verdicts: TrialVerdict[];
 }
 
 export interface ForgeRunDto {
@@ -270,6 +280,12 @@ export interface CreateTrialRequest {
   runtimeMode: string;
   tokenCount: number;
   generationSettings: Record<string, unknown>;
+}
+
+export interface ExportTrialsRequest {
+  trialIds: string[];
+  verdicts?: TrialVerdict[];
+  name?: string;
 }
 
 export interface ConfigureConstructRuntimeRequest {

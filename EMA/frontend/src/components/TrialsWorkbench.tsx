@@ -23,6 +23,10 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
   onOpenAcademy,
 }) => {
   const [trials, setTrials] = useState<Trial[]>([]);
+  const [selectedTrialIds, setSelectedTrialIds] = useState<string[]>([]);
+  const [exportName, setExportName] = useState(`${workshop.name} Trial Dataset`);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportState, setExportState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,6 +40,11 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
       .then((savedTrials) => {
         if (isCurrent) {
           setTrials(savedTrials);
+          setSelectedTrialIds(
+            savedTrials
+              .filter((trial) => trial.verdict === "pass")
+              .map((trial) => trial.id)
+          );
         }
       })
       .catch((loadError: unknown) => {
@@ -54,6 +63,11 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
     };
   }, [repository, workshop.id]);
 
+  useEffect(() => {
+    setExportName(`${workshop.name} Trial Dataset`);
+    setExportState(null);
+  }, [workshop.name]);
+
   const verdictCounts = useMemo(
     () =>
       trials.reduce(
@@ -65,6 +79,46 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
       ),
     [trials]
   );
+
+  const selectedTrials = useMemo(
+    () => trials.filter((trial) => selectedTrialIds.includes(trial.id)),
+    [selectedTrialIds, trials]
+  );
+
+  const selectTrialsByVerdict = (verdict: TrialVerdict) => {
+    setSelectedTrialIds(trials.filter((trial) => trial.verdict === verdict).map((trial) => trial.id));
+  };
+
+  const toggleTrialSelection = (trialId: string) => {
+    setSelectedTrialIds((current) =>
+      current.includes(trialId)
+        ? current.filter((id) => id !== trialId)
+        : [...current, trialId]
+    );
+  };
+
+  const exportSelectedTrials = async () => {
+    if (selectedTrialIds.length === 0) {
+      return;
+    }
+
+    setIsExporting(true);
+    setError(null);
+    setExportState(null);
+    try {
+      const exportResult = await repository.exportTrials(workshop.id, {
+        trialIds: selectedTrialIds,
+        name: exportName.trim() || `${workshop.name} Trial Dataset`,
+      });
+      setExportState(
+        `Exported ${exportResult.trialCount.toLocaleString()} Trials to ${exportResult.exportUri}`
+      );
+    } catch (exportError: unknown) {
+      setError(exportError instanceof Error ? exportError.message : "Could not export Trials.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <section className="workbench-page trials-workbench" aria-label="Trials">
@@ -94,6 +148,45 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
       </div>
 
       {error && <p className="save-state error-state">{error}</p>}
+      {exportState && <p className="save-state success-state">{exportState}</p>}
+
+      <div className="trial-export-panel panel-glass">
+        <div>
+          <p className="panel-kicker">Trial export</p>
+          <h2>Promote reviewed replies into Material</h2>
+          <p>
+            Export selected Trials as JSONL rows so the Forge can reuse vetted
+            prompt-response examples as training or evaluation Material.
+          </p>
+        </div>
+        <div className="trial-export-controls">
+          <button className="button-secondary button-compact" onClick={() => selectTrialsByVerdict("pass")} type="button">
+            Select pass
+          </button>
+          <button className="button-secondary button-compact" onClick={() => setSelectedTrialIds(trials.map((trial) => trial.id))} type="button">
+            Select all
+          </button>
+          <button className="button-secondary button-compact" onClick={() => setSelectedTrialIds([])} type="button">
+            Clear
+          </button>
+        </div>
+        <label className="field-label" htmlFor="trial-export-name">Material name</label>
+        <input
+          className="text-input"
+          id="trial-export-name"
+          onChange={(event) => setExportName(event.target.value)}
+          value={exportName}
+        />
+        <button
+          className="button-primary"
+          disabled={selectedTrialIds.length === 0 || isExporting}
+          onClick={() => void exportSelectedTrials()}
+          type="button"
+        >
+          <i className="fas fa-file-export" aria-hidden="true" />
+          {isExporting ? "Exporting" : `Export ${selectedTrials.length} JSONL`}
+        </button>
+      </div>
 
       <div className="trial-list">
         {isLoading ? (
@@ -113,6 +206,15 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
           trials.map((trial) => (
             <article className="trial-card panel-glass" key={trial.id}>
               <div className="trial-card-header">
+                <label className="trial-select" htmlFor={`trial-${trial.id}`}>
+                  <input
+                    checked={selectedTrialIds.includes(trial.id)}
+                    id={`trial-${trial.id}`}
+                    onChange={() => toggleTrialSelection(trial.id)}
+                    type="checkbox"
+                  />
+                  <span className="sr-only">Select Trial {trial.id}</span>
+                </label>
                 <div>
                   <p className="panel-kicker">{trial.runtimeMode}</p>
                   <h2>{trial.prompt}</h2>

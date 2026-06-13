@@ -11,6 +11,8 @@ import {
   CreateWorkshopRequest,
   ExportQAPairsDto,
   ExportQAPairsRequest,
+  ExportTrialsDto,
+  ExportTrialsRequest,
   ForgeRunDto,
   ForgeWorkerReconcileDto,
   foundryApiRoutes,
@@ -108,6 +110,7 @@ export interface FoundryRepository {
   listArtifacts: (workshopId: string) => Promise<Artifact[]>;
   listTrials: (workshopId: string) => Promise<Trial[]>;
   createTrial: (workshopId: string, request: CreateTrialRequest) => Promise<Trial>;
+  exportTrials: (workshopId: string, request: ExportTrialsRequest) => Promise<ExportTrialsDto>;
   loadArtifactIntoConstruct: (
     workshopId: string,
     request: LoadArtifactIntoConstructRequest
@@ -640,6 +643,35 @@ export const mockFoundryRepository: FoundryRepository = {
     }
     return trial;
   },
+  exportTrials: async (_workshopId, request) => {
+    const selectedTrials = mockTrials.filter((trial) => {
+      const isSelected = request.trialIds.includes(trial.id);
+      const matchesVerdict = request.verdicts?.length
+        ? request.verdicts.includes(trial.verdict)
+        : true;
+      return trial.workshopId === _workshopId && isSelected && matchesVerdict;
+    });
+    if (selectedTrials.length === 0) {
+      throw new Error("No Trials matched this export selection.");
+    }
+    const material: MaterialSource = {
+      id: `mat-trials-${Date.now()}`,
+      name: request.name || "Trial Review Dataset",
+      kind: "jsonl",
+      status: "qa-ready",
+      sourceUri: `runtime/materials/exports/${_workshopId}/trial-review-${Date.now()}.jsonl`,
+      chunkCount: selectedTrials.length,
+      qaPairCount: selectedTrials.length,
+    };
+    mockMaterialSources.unshift(material);
+    return {
+      material,
+      exportUri: material.sourceUri,
+      format: "jsonl",
+      trialCount: selectedTrials.length,
+      verdicts: Array.from(new Set(selectedTrials.map((trial) => trial.verdict))).sort(),
+    };
+  },
   loadArtifactIntoConstruct: async (_workshopId, request) => {
     const artifact = mockArtifacts.find(
       (item) => item.id === request.artifactId && item.workshopId === _workshopId
@@ -857,6 +889,13 @@ export const apiFoundryRepository: FoundryRepository = {
   createTrial: async (workshopId, request) =>
     unwrap(
       await apiClient.post<ApiEnvelope<TrialDto>>(foundryApiRoutes.trials(workshopId), request)
+    ),
+  exportTrials: async (workshopId, request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ExportTrialsDto>>(
+        foundryApiRoutes.exportTrials(workshopId),
+        request
+      )
     ),
   loadArtifactIntoConstruct: async (workshopId, request) =>
     unwrap(

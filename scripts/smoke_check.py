@@ -162,8 +162,11 @@ def run_trial_contract_check() -> int:
 
     required_api_patterns = (
         "CreateTrialInput",
+        "ExportTrialsInput",
         "/api/v1/workshops/{workshop_id}/trials",
+        "/api/v1/workshops/{workshop_id}/trials/export",
         "create_foundry_trial_endpoint",
+        "export_foundry_trials_endpoint",
     )
     missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
     if missing_api:
@@ -173,6 +176,7 @@ def run_trial_contract_check() -> int:
         "CREATE TABLE IF NOT EXISTS trials",
         "list_trials",
         "create_trial",
+        "export_trials_to_material",
         "_refresh_artifact_trial_score",
     )
     missing_service = [

@@ -1073,6 +1073,29 @@ input[type="checkbox"] {
   gap: 1rem;
 }
 
+.trial-export-panel {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+}
+
+.trial-export-panel h2 {
+  margin: 0.16rem 0 0;
+  font-size: 1rem;
+}
+
+.trial-export-panel p {
+  margin: 0.35rem 0 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.trial-export-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .trial-card {
   display: grid;
   gap: 0.82rem;
@@ -1092,9 +1115,20 @@ input[type="checkbox"] {
 
 .trial-card-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 0.8rem;
   align-items: start;
+}
+
+.trial-select {
+  display: grid;
+  min-width: 1.35rem;
+  min-height: 1.35rem;
+  place-items: center;
+}
+
+.trial-select input {
+  accent-color: var(--arc-blue);
 }
 
 .trial-verdict {

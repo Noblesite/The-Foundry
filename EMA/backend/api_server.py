@@ -103,6 +103,11 @@ class CreateTrialInput(BaseModel):
     tokenCount: int
     generationSettings: dict[str, Any]
 
+class ExportTrialsInput(BaseModel):
+    trialIds: list[str] = []
+    verdicts: list[Literal["pass", "needs-work", "fail"]] = []
+    name: str | None = None
+
 # Initialize logger
 logger = get_logger(__name__)
 
@@ -511,6 +516,25 @@ async def create_foundry_trial_endpoint(workshop_id: str, data: CreateTrialInput
             generation_settings=data.generationSettings,
         )
         return api_envelope(trial)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+
+@app.post("/api/v1/workshops/{workshop_id}/trials/export")
+async def export_foundry_trials_endpoint(workshop_id: str, data: ExportTrialsInput):
+    trial_ids = [trial_id.strip() for trial_id in data.trialIds if trial_id.strip()]
+    verdicts = list(dict.fromkeys(data.verdicts))
+    if not trial_ids and not verdicts:
+        raise HTTPException(status_code=400, detail="Select Trials or verdicts to export.")
+
+    try:
+        export = await foundry_catalog_service.export_trials_to_material(
+            workshop_id=workshop_id,
+            trial_ids=trial_ids,
+            verdicts=verdicts,
+            name=data.name.strip() if data.name else None,
+        )
+        return api_envelope(export)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error))
 

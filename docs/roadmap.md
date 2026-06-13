@@ -42,6 +42,8 @@ complexity.
 - Support streaming token output from loaded local models.
 - Add prompt presets, response inspection, and persisted Trial verdicts. Done
   for the first Construct testing bench and Trial persistence slices.
+- Export reviewed Trials as JSONL Materials so they can feed Forge training or
+  evaluation runs. Done for the first Trial review/export slice.
 - Add runtime health, memory pressure, and unload behavior.
 - Teach users what context windows, sampling, and quantization settings do.
 
