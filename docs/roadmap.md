@@ -49,6 +49,9 @@ complexity.
 - Render completed evaluation Forges as Trial Reports with pass-rate metrics,
   sample checks, and next-step recommendations. Done for the first simulated
   evaluator report slice.
+- Surface completed Forge Trial Reports from the Trials station so evaluation
+  history is visible outside the Forge drawer. Done for the first report
+  history slice.
 - Add runtime health, memory pressure, and unload behavior.
 - Teach users what context windows, sampling, and quantization settings do.
 

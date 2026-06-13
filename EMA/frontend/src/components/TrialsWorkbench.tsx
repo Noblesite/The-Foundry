@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { SectionSummary, Trial, TrialVerdict, Workshop } from "../domain/foundry";
+import {
+  ForgeEvaluationReport,
+  ForgeRun,
+  SectionSummary,
+  Trial,
+  TrialVerdict,
+  Workshop,
+} from "../domain/foundry";
 import { FoundryRepository } from "../services/foundryRepository";
 import { LearningCard } from "./LearningComponents";
 
@@ -16,6 +23,11 @@ const verdictLabels: Record<TrialVerdict, string> = {
   fail: "Fail",
 };
 
+interface EvaluationReportSummary {
+  forgeRun: ForgeRun;
+  report: ForgeEvaluationReport;
+}
+
 const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
   repository,
   summary,
@@ -23,6 +35,7 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
   onOpenAcademy,
 }) => {
   const [trials, setTrials] = useState<Trial[]>([]);
+  const [evaluationReports, setEvaluationReports] = useState<EvaluationReportSummary[]>([]);
   const [selectedTrialIds, setSelectedTrialIds] = useState<string[]>([]);
   const [exportName, setExportName] = useState(`${workshop.name} Trial Dataset`);
   const [isExporting, setIsExporting] = useState(false);
@@ -35,11 +48,27 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
     setIsLoading(true);
     setError(null);
 
-    repository
-      .listTrials(workshop.id)
-      .then((savedTrials) => {
+    Promise.all([repository.listTrials(workshop.id), repository.listForgeRuns(workshop.id)])
+      .then(async ([savedTrials, forgeRuns]) => {
+        const completedEvaluationRuns = forgeRuns.filter(
+          (run) => run.purpose === "evaluation" && run.status === "completed"
+        );
+        const reports = await Promise.all(
+          completedEvaluationRuns.map(async (forgeRun) => {
+            try {
+              const workerState = await repository.getForgeWorkerState(forgeRun.id);
+              const report = workerState.metrics.evaluationReport;
+              return report ? { forgeRun, report } : null;
+            } catch {
+              return null;
+            }
+          })
+        );
         if (isCurrent) {
           setTrials(savedTrials);
+          setEvaluationReports(
+            reports.filter((report): report is EvaluationReportSummary => Boolean(report))
+          );
           setSelectedTrialIds(
             savedTrials
               .filter((trial) => trial.verdict === "pass")
@@ -134,6 +163,10 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
           <strong>{trials.length}</strong>
         </article>
         <article className="stat-card panel-glass">
+          <span>Trial Reports</span>
+          <strong>{evaluationReports.length}</strong>
+        </article>
+        <article className="stat-card panel-glass">
           <span>Pass</span>
           <strong>{verdictCounts.pass}</strong>
         </article>
@@ -149,6 +182,52 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
 
       {error && <p className="save-state error-state">{error}</p>}
       {exportState && <p className="save-state success-state">{exportState}</p>}
+
+      <section className="evaluation-report-panel panel-glass" aria-label="Forge Trial Reports">
+        <div className="panel-heading">
+          <div>
+            <p className="panel-kicker">Evaluation history</p>
+            <h2>Forge Trial Reports</h2>
+          </div>
+          <span className="status-badge">{evaluationReports.length} reports</span>
+        </div>
+        {evaluationReports.length === 0 ? (
+          <p className="empty-state">
+            Complete an evaluation Forge to see pass rates, rubric scores, and sample checks here.
+          </p>
+        ) : (
+          <div className="evaluation-report-list">
+            {evaluationReports.map(({ forgeRun, report }) => (
+              <article className="evaluation-report-card" key={report.forgeRunId}>
+                <div className="evaluation-report-card-header">
+                  <div>
+                    <p className="panel-kicker">{forgeRun.method} evaluation</p>
+                    <h3>{forgeRun.label}</h3>
+                    <span>{report.rowCount.toLocaleString()} rows / {report.materialId}</span>
+                  </div>
+                  <strong>{report.passRate}%</strong>
+                </div>
+                <div className="forge-progress-track" aria-label={`${forgeRun.label} pass rate`}>
+                  <span style={{ width: `${report.passRate}%` }} />
+                </div>
+                <div className="trial-report-counts">
+                  <span className="verdict-pass">{report.passCount} pass</span>
+                  <span className="verdict-needs-work">{report.needsWorkCount} needs work</span>
+                  <span className="verdict-fail">{report.failCount} fail</span>
+                </div>
+                <div className="evaluation-rubric-strip">
+                  {report.rubric.map((item) => (
+                    <span key={item.label}>
+                      {item.label}: {item.score}%
+                    </span>
+                  ))}
+                </div>
+                <p>{report.recommendations[0]}</p>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       <div className="trial-export-panel panel-glass">
         <div>

@@ -1102,6 +1102,69 @@ input[type="checkbox"] {
   gap: 1rem;
 }
 
+.evaluation-report-panel {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+}
+
+.evaluation-report-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.evaluation-report-card {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  border-radius: 8px;
+  padding: 0.9rem;
+  background:
+    linear-gradient(145deg, rgba(0, 212, 255, 0.08), transparent 42%),
+    rgba(13, 17, 23, 0.58);
+}
+
+.evaluation-report-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.evaluation-report-card h3 {
+  margin: 0.12rem 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.evaluation-report-card-header span,
+.evaluation-report-card p {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.evaluation-report-card-header strong {
+  color: var(--arc-blue);
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.evaluation-rubric-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.48rem;
+}
+
+.evaluation-rubric-strip span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.25rem 0.48rem;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+}
+
 .trial-export-panel {
   display: grid;
   gap: 0.8rem;
@@ -2262,11 +2325,13 @@ input[type="checkbox"] {
   .materials-layout,
   .forge-layout,
   .artifact-layout,
+  .evaluation-report-list,
   .material-row,
   .artifact-row,
   .assembly-run-row,
   .assembly-review-grid,
   .trial-card-header,
+  .trial-rubric-grid,
   .modal-actions,
   .settings-grid {
     grid-template-columns: 1fr;
