@@ -1192,6 +1192,75 @@ input[type="checkbox"] {
   gap: 0.5rem;
 }
 
+.runtime-load-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.runtime-load-header p {
+  margin: 0 0 0.22rem;
+}
+
+.status-badge.runtime-phase-ready {
+  border-color: rgba(0, 212, 255, 0.56);
+  color: var(--arc-blue);
+}
+
+.status-badge.runtime-phase-loading,
+.status-badge.runtime-phase-configuring {
+  border-color: rgba(212, 160, 23, 0.56);
+  color: var(--brass);
+}
+
+.status-badge.runtime-phase-failed {
+  border-color: rgba(255, 138, 0, 0.56);
+  color: var(--forge-orange);
+}
+
+.runtime-load-meter {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.runtime-load-meter span {
+  height: 0.38rem;
+  border-radius: 999px;
+  background: rgba(119, 140, 152, 0.18);
+}
+
+.runtime-load-meter span.is-active {
+  background: linear-gradient(90deg, var(--arc-blue), var(--forge-orange));
+  box-shadow: var(--shadow-blue);
+}
+
+.runtime-diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.runtime-diagnostics-grid div {
+  display: grid;
+  gap: 0.18rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.48rem;
+  background: rgba(13, 17, 23, 0.45);
+}
+
+.runtime-diagnostics-grid span {
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.runtime-diagnostics-grid strong {
+  font-size: 0.8rem;
+}
+
 .runtime-action-row .button-secondary {
   width: auto;
 }

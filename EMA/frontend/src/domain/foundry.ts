@@ -431,6 +431,7 @@ export interface ConstructChatDoneEvent {
     modelId?: string;
     device?: string;
     loaded?: boolean;
+    diagnostics?: Record<string, unknown>;
   };
 }
 

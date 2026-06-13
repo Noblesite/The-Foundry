@@ -793,6 +793,7 @@ async def stream_foundry_construct_chat_endpoint(construct_id: str, data: Constr
                         "modelId": runtime.modelId,
                         "device": runtime.device,
                         "loaded": runtime.loaded,
+                        "diagnostics": runtime.diagnostics,
                     },
                 },
             )

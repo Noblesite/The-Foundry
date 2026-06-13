@@ -366,6 +366,7 @@ const App: React.FC = () => {
           construct={activeConstruct}
           repository={repository}
           settings={settings}
+          onRuntimeChanged={setConstructRuntime}
         />
       );
     }

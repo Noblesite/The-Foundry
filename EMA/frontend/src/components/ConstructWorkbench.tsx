@@ -31,11 +31,14 @@ interface ResponseInspection {
   constructId: string;
 }
 
+type RuntimeLoadPhase = "idle" | "configuring" | "loading" | "ready" | "failed";
+
 interface ConstructWorkbenchProps {
   artifact: Artifact;
   construct: Construct;
   repository: FoundryRepository;
   settings: WorkspaceSettings;
+  onRuntimeChanged?: (runtime: ConstructRuntime) => void;
 }
 
 const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
@@ -43,6 +46,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   construct,
   repository,
   settings,
+  onRuntimeChanged,
 }) => {
   const conversationId = `construct-${construct.id}`;
   const [activeConstruct, setActiveConstruct] = useState(construct);
@@ -63,6 +67,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [probeModelId, setProbeModelId] = useState("sshleifer/tiny-gpt2");
   const [probeResult, setProbeResult] = useState<ConstructRuntimeProbeResult | null>(null);
   const [isRuntimeBusy, setIsRuntimeBusy] = useState(false);
+  const [runtimeLoadPhase, setRuntimeLoadPhase] = useState<RuntimeLoadPhase>("idle");
+  const [runtimeLoadTarget, setRuntimeLoadTarget] = useState(
+    settings.constructModelId || artifact.baseModel
+  );
   const [isProbingRuntime, setIsProbingRuntime] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [lastInspection, setLastInspection] = useState<ResponseInspection | null>(null);
@@ -88,8 +96,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setTrialError(null);
     setRuntimeMode("simulated");
     setRuntimeDetail("Using deterministic simulated token streaming.");
+    setRuntimeLoadPhase("idle");
+    setRuntimeLoadTarget(settings.constructModelId || artifact.baseModel);
     setProbeResult(null);
-  }, [artifact, construct]);
+  }, [artifact, construct, settings.constructModelId]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -101,6 +111,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           setRuntime(runtimeStatus);
           setRuntimeMode(runtimeStatus.mode);
           setRuntimeDetail(runtimeStatus.detail);
+          onRuntimeChanged?.(runtimeStatus);
         }
       })
       .catch((runtimeError: unknown) => {
@@ -114,10 +125,12 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     return () => {
       isCurrent = false;
     };
-  }, [repository]);
+  }, [onRuntimeChanged, repository]);
 
   const configureRuntime = async () => {
     setIsRuntimeBusy(true);
+    setRuntimeLoadPhase("configuring");
+    setRuntimeLoadTarget(settings.constructModelId || activeArtifact.baseModel);
     setError(null);
     try {
       const runtimeStatus = await repository.configureConstructRuntime({
@@ -128,25 +141,43 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       setRuntime(runtimeStatus);
       setRuntimeMode(runtimeStatus.mode);
       setRuntimeDetail(runtimeStatus.detail);
+      onRuntimeChanged?.(runtimeStatus);
+      setRuntimeLoadPhase("ready");
     } catch (runtimeError: unknown) {
       setError(runtimeError instanceof Error ? runtimeError.message : "Could not configure runtime.");
+      setRuntimeLoadPhase("failed");
     } finally {
       setIsRuntimeBusy(false);
     }
   };
 
   const loadRuntime = async () => {
+    const targetModel = settings.constructModelId || activeArtifact.baseModel;
     setIsRuntimeBusy(true);
+    setRuntimeLoadPhase("configuring");
+    setRuntimeLoadTarget(targetModel);
     setError(null);
     try {
+      const configured = await repository.configureConstructRuntime({
+        mode: "transformers",
+        modelId: targetModel,
+        device: settings.constructDevice,
+      });
+      setRuntime(configured);
+      setRuntimeMode(configured.mode);
+      setRuntimeDetail(configured.detail);
+      setRuntimeLoadPhase("loading");
       const runtimeStatus = await repository.loadConstructRuntime({
-        modelId: settings.constructModelId || activeArtifact.baseModel,
+        modelId: targetModel,
       });
       setRuntime(runtimeStatus);
       setRuntimeMode(runtimeStatus.mode);
       setRuntimeDetail(runtimeStatus.detail);
+      onRuntimeChanged?.(runtimeStatus);
+      setRuntimeLoadPhase("ready");
     } catch (runtimeError: unknown) {
       setError(runtimeError instanceof Error ? runtimeError.message : "Could not load runtime.");
+      setRuntimeLoadPhase("failed");
     } finally {
       setIsRuntimeBusy(false);
     }
@@ -154,12 +185,14 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
 
   const unloadRuntime = async () => {
     setIsRuntimeBusy(true);
+    setRuntimeLoadPhase("idle");
     setError(null);
     try {
       const runtimeStatus = await repository.unloadConstructRuntime();
       setRuntime(runtimeStatus);
       setRuntimeMode(runtimeStatus.mode);
       setRuntimeDetail(runtimeStatus.detail);
+      onRuntimeChanged?.(runtimeStatus);
     } catch (runtimeError: unknown) {
       setError(runtimeError instanceof Error ? runtimeError.message : "Could not unload runtime.");
     } finally {
@@ -247,14 +280,17 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           if (event.runtime) {
             setRuntimeMode(event.runtime.mode);
             setRuntimeDetail(event.runtime.detail);
-            setRuntime((current) => ({
+            const nextRuntime = {
               mode: event.runtime?.mode === "transformers" ? "transformers" : "simulated",
-              status: event.runtime?.status || current?.status || "fallback",
-              detail: event.runtime?.detail || current?.detail || "",
-              modelId: event.runtime?.modelId || current?.modelId || activeArtifact.baseModel,
-              device: event.runtime?.device || current?.device || "none",
-              loaded: event.runtime?.loaded ?? current?.loaded ?? false,
-            }));
+              status: event.runtime?.status || runtime?.status || "fallback",
+              detail: event.runtime?.detail || runtime?.detail || "",
+              modelId: event.runtime?.modelId || runtime?.modelId || activeArtifact.baseModel,
+              device: event.runtime?.device || runtime?.device || "none",
+              loaded: event.runtime?.loaded ?? runtime?.loaded ?? false,
+              diagnostics: event.runtime?.diagnostics || runtime?.diagnostics,
+            } satisfies ConstructRuntime;
+            setRuntime(nextRuntime);
+            onRuntimeChanged?.(nextRuntime);
           }
           setMessages((current) =>
             current.map((message) =>
@@ -333,6 +369,18 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     "Give a short refusal if the question is outside your source Material.",
   ];
 
+  const runtimeDiagnostics = runtime?.diagnostics || {};
+  const runtimeMemory = runtimeDiagnostics.memory as
+    | { totalGb?: number; availableGb?: number; percentUsed?: number }
+    | undefined;
+  const runtimePhaseLabel = {
+    idle: "Idle",
+    configuring: "Configuring",
+    loading: "Loading",
+    ready: "Ready",
+    failed: "Failed",
+  }[runtimeLoadPhase];
+
   return (
     <section className="construct-workbench" aria-label="Local model construct">
       <div className="construct-brief panel-glass">
@@ -389,12 +437,55 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
             </div>
 
             <div className="construct-runtime-card">
-              <strong>{activeArtifact.version}</strong>
-              <span>{activeArtifact.adapterPath || "No adapter path registered."}</span>
+              <div className="runtime-load-header">
+                <div>
+                  <p className="panel-kicker">Local runtime</p>
+                  <strong>{runtime?.loaded ? "Model loaded" : "Ready to load cached model"}</strong>
+                </div>
+                <span className={`status-badge runtime-phase-${runtimeLoadPhase}`}>
+                  {runtimePhaseLabel}
+                </span>
+              </div>
+              <span>{runtimeLoadTarget}</span>
               <div className="runtime-control-grid">
                 <span className="status-badge">{runtime?.status || runtimeMode}</span>
                 <span className="status-badge">{runtime?.loaded ? "loaded" : "not loaded"}</span>
                 <span className="status-badge">{runtime?.device || settings.constructDevice}</span>
+              </div>
+              <div className="runtime-load-meter" aria-label={`Runtime load ${runtimePhaseLabel}`}>
+                {(["configuring", "loading", "ready"] as RuntimeLoadPhase[]).map((phase) => (
+                  <span
+                    className={
+                      runtimeLoadPhase === phase ||
+                      (runtimeLoadPhase === "ready" && phase !== "configuring")
+                        ? "is-active"
+                        : ""
+                    }
+                    key={phase}
+                  />
+                ))}
+              </div>
+              <div className="runtime-diagnostics-grid">
+                <div>
+                  <span>Memory</span>
+                  <strong>
+                    {runtimeMemory?.percentUsed !== undefined
+                      ? `${runtimeMemory.percentUsed}%`
+                      : "n/a"}
+                  </strong>
+                </div>
+                <div>
+                  <span>Available</span>
+                  <strong>
+                    {runtimeMemory?.availableGb !== undefined
+                      ? `${runtimeMemory.availableGb} GB`
+                      : "n/a"}
+                  </strong>
+                </div>
+                <div>
+                  <span>MPS</span>
+                  <strong>{runtimeDiagnostics.mpsAvailable ? "yes" : "no"}</strong>
+                </div>
               </div>
               <div className="runtime-action-row">
                 <button
@@ -413,7 +504,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                   type="button"
                 >
                   <i className="fas fa-download" aria-hidden="true" />
-                  Load
+                  {isRuntimeBusy ? runtimePhaseLabel : "Load Current Model"}
                 </button>
                 <button
                   className="button-secondary button-compact"

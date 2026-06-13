@@ -16,6 +16,7 @@ class InferenceRuntime:
     modelId: str
     device: str
     loaded: bool
+    diagnostics: Dict[str, Any]
 
 
 class ConstructInferenceService:
@@ -37,14 +38,16 @@ class ConstructInferenceService:
     def describe_runtime(self) -> InferenceRuntime:
         model_id = self.model_id or "active Artifact base model"
         loaded = self.mode == "simulated" or bool(self._model_cache)
+        loaded_device = self._loaded_device(model_id) if self._model_cache else self.device_preference
         if self.mode == "transformers":
             return InferenceRuntime(
                 mode="transformers",
                 status="loaded" if self._model_cache else "configured",
                 detail="Local Transformers inference is enabled.",
                 modelId=model_id,
-                device=self.device_preference,
+                device=loaded_device,
                 loaded=loaded,
+                diagnostics=self._runtime_diagnostics(),
             )
         return InferenceRuntime(
             mode="simulated",
@@ -53,6 +56,7 @@ class ConstructInferenceService:
             modelId=model_id,
             device="none",
             loaded=True,
+            diagnostics=self._runtime_diagnostics(),
         )
 
     def runtime_payload(self) -> Dict[str, Any]:
@@ -64,7 +68,7 @@ class ConstructInferenceService:
             "modelId": runtime.modelId,
             "device": runtime.device,
             "loaded": runtime.loaded,
-            "diagnostics": self._runtime_diagnostics(),
+            "diagnostics": runtime.diagnostics,
         }
 
     async def configure(
@@ -231,9 +235,11 @@ class ConstructInferenceService:
             **inputs,
             "streamer": streamer,
             "max_new_tokens": generation["maxNewTokens"],
-            "temperature": generation["temperature"],
             "do_sample": generation["temperature"] > 0,
+            "pad_token_id": tokenizer.eos_token_id,
         }
+        if generation["temperature"] > 0:
+            generation_kwargs["temperature"] = generation["temperature"]
         thread = Thread(target=model.generate, kwargs=generation_kwargs, daemon=True)
         thread.start()
 
@@ -289,6 +295,15 @@ class ConstructInferenceService:
         if self.device_preference in {"cpu", "cuda", "mps"}:
             return self.device_preference
         return "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+
+    def _loaded_device(self, model_id: str) -> str:
+        cached = self._model_cache.get(model_id)
+        if not cached:
+            return self.device_preference
+        try:
+            return str(next(cached["model"].parameters()).device)
+        except Exception:
+            return self.device_preference
 
     def _runtime_diagnostics(self, baseline: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         diagnostics: Dict[str, Any] = dict(baseline or {})
