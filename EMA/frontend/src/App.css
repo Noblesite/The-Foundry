@@ -1486,6 +1486,124 @@ input[type="checkbox"] {
   min-height: 360px;
 }
 
+.trial-report {
+  display: grid;
+  gap: 1rem;
+}
+
+.trial-report-hero {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid rgba(0, 212, 255, 0.18);
+  border-radius: 8px;
+  padding: 1rem;
+  background:
+    radial-gradient(circle at top right, rgba(0, 212, 255, 0.13), transparent 38%),
+    rgba(13, 17, 23, 0.62);
+}
+
+.trial-report-hero h3,
+.trial-sample-list h3 {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.trial-report-hero span {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.trial-report-counts,
+.trial-sample-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.trial-report-counts span,
+.trial-sample-header span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.trial-rubric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.72rem;
+}
+
+.trial-rubric-card,
+.trial-sample-card,
+.trial-recommendations {
+  display: grid;
+  gap: 0.68rem;
+  border: 1px solid rgba(0, 212, 255, 0.14);
+  border-radius: 8px;
+  padding: 0.82rem;
+  background: rgba(13, 17, 23, 0.52);
+}
+
+.trial-rubric-card > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.trial-rubric-card strong,
+.trial-sample-card strong {
+  color: var(--text-primary);
+}
+
+.trial-rubric-card span {
+  color: var(--arc-blue);
+  font-weight: 800;
+}
+
+.trial-rubric-card p,
+.trial-sample-card p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.trial-sample-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.trial-sample-card dl {
+  display: grid;
+  gap: 0.62rem;
+  margin: 0;
+}
+
+.trial-sample-card dl > div {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.trial-sample-card dt {
+  color: var(--arc-blue);
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.trial-sample-card dd {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 .artifacts-catalog {
   overflow: hidden;
 }

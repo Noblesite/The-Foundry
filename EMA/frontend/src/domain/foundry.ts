@@ -216,11 +216,38 @@ export interface ForgeMetrics {
     current: number;
     total: number;
   };
+  evaluationReport?: ForgeEvaluationReport;
 }
 
 export interface ForgeWorkerState {
   events: ForgeEvent[];
   metrics: ForgeMetrics;
+}
+
+export interface ForgeEvaluationReport {
+  reportVersion: "foundry.forge.evaluation.v1";
+  forgeRunId: string;
+  materialId: string;
+  datasetUri: string;
+  rowCount: number;
+  passCount: number;
+  needsWorkCount: number;
+  failCount: number;
+  passRate: number;
+  rubric: Array<{
+    label: string;
+    score: number;
+    explanation: string;
+  }>;
+  samples: Array<{
+    instruction: string;
+    expected: string;
+    observed: string;
+    verdict: TrialVerdict;
+    note: string;
+  }>;
+  recommendations: string[];
+  createdAt: string;
 }
 
 export interface ForgeWorkerReconcileResult extends ForgeWorkerState {

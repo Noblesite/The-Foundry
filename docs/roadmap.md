@@ -46,6 +46,9 @@ complexity.
   evaluation runs. Done for the first Trial review/export slice.
 - Add a Forge purpose switch for training versus evaluation contracts. Done
   for the first Trial-backed Forge preset slice.
+- Render completed evaluation Forges as Trial Reports with pass-rate metrics,
+  sample checks, and next-step recommendations. Done for the first simulated
+  evaluator report slice.
 - Add runtime health, memory pressure, and unload behavior.
 - Teach users what context windows, sampling, and quantization settings do.
 

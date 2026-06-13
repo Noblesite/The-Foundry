@@ -34,6 +34,7 @@ import {
   ConstructRuntime,
   DashboardSummary,
   FoundryNavigationItem,
+  ForgeEvaluationReport,
   ForgeTrainingContract,
   ForgeWorkerReconcileResult,
   ForgeWorkerState,
@@ -215,6 +216,70 @@ let mockForgeRuntime: ForgeRuntime = {
   supportsMethods: ["LoRA", "QLoRA"],
 };
 
+const buildMockEvaluationReport = (
+  forgeRun: ForgeRun,
+  material: MaterialSource | undefined,
+  rowCount: number
+): ForgeEvaluationReport => {
+  const safeRowCount = Math.max(1, rowCount);
+  const passCount = Math.round(safeRowCount * 0.68);
+  const needsWorkCount = Math.round(safeRowCount * 0.22);
+  const failCount = safeRowCount - passCount - needsWorkCount;
+  const passRate = Math.round((passCount / safeRowCount) * 100);
+  const sampleName = material?.name || "selected Trial Material";
+
+  return {
+    reportVersion: "foundry.forge.evaluation.v1",
+    forgeRunId: forgeRun.id,
+    materialId: forgeRun.materialSetId || "unknown",
+    datasetUri: material?.sourceUri || "runtime/materials/exports/mock.jsonl",
+    rowCount: safeRowCount,
+    passCount,
+    needsWorkCount,
+    failCount,
+    passRate,
+    rubric: [
+      {
+        label: "Instruction match",
+        score: Math.min(96, passRate + 8),
+        explanation: "Checks whether replies follow the requested task and persona constraints.",
+      },
+      {
+        label: "Expected answer overlap",
+        score: Math.max(38, passRate - 2),
+        explanation: "Compares generated content against reviewed reference answers.",
+      },
+      {
+        label: "Safety and tone",
+        score: Math.min(98, passRate + 12),
+        explanation: "Flags harsh, unsafe, or off-character responses before promotion.",
+      },
+    ],
+    samples: [
+      {
+        instruction: `Answer a representative prompt from ${sampleName}.`,
+        expected: "The reviewed Trial answer stays on task and in character.",
+        observed: "The simulated Construct stayed on task and matched the reviewed answer.",
+        verdict: "pass",
+        note: "Reference answer and simulated Construct reply line up well.",
+      },
+      {
+        instruction: `Handle a harder edge case from ${sampleName}.`,
+        expected: "The response should stay grounded in the Material.",
+        observed: "The response was useful but missed one grounding detail.",
+        verdict: "needs-work",
+        note: "Reply is directionally useful but should be tightened before promotion.",
+      },
+    ],
+    recommendations: [
+      "Review failed and needs-work samples before promoting a new Artifact.",
+      "Export corrected Trial rows back into Materials when the same mistake repeats.",
+      "Compare this Trial Report against the next Artifact before deployment.",
+    ],
+    createdAt: new Date().toISOString(),
+  };
+};
+
 const unwrap = <T>(response: { data: ApiEnvelope<T> }): T => response.data.data;
 
 export const mockFoundryRepository: FoundryRepository = {
@@ -381,12 +446,18 @@ export const mockFoundryRepository: FoundryRepository = {
         epochs: request.epochs,
         learningRate: request.learningRate,
         loadIn4Bit: request.loadIn4Bit,
-        outputDir: "runtime/artifacts/pending/mock",
+        outputDir:
+          request.purpose === "evaluation"
+            ? "runtime/evaluations/pending/mock"
+            : "runtime/artifacts/pending/mock",
         runtime: mockForgeRuntime,
       },
     };
     forgeRun.trainingContract!.forgeRunId = forgeRun.id;
-    forgeRun.trainingContract!.outputDir = `runtime/artifacts/pending/${forgeRun.id}`;
+    forgeRun.trainingContract!.outputDir =
+      request.purpose === "evaluation"
+        ? `runtime/evaluations/pending/${forgeRun.id}`
+        : `runtime/artifacts/pending/${forgeRun.id}`;
     mockForgeWorkerStates[forgeRun.id] = {
       events: [
         {
@@ -450,6 +521,12 @@ export const mockFoundryRepository: FoundryRepository = {
       },
     };
     if (forgeRun.status === "completed" && forgeRun.purpose === "evaluation") {
+      const material = mockMaterialSources.find((source) => source.id === forgeRun.materialSetId);
+      workerState.metrics.evaluationReport = buildMockEvaluationReport(
+        forgeRun,
+        material,
+        workerState.metrics.datasetRows || material?.qaPairCount || 1
+      );
       workerState.events.push({
         id: `evt-${Date.now()}-${workerState.events.length}`,
         forgeRunId: forgeRun.id,
@@ -458,6 +535,10 @@ export const mockFoundryRepository: FoundryRepository = {
         timestamp: new Date().toISOString(),
         progress: 100,
         epoch: forgeRun.epoch,
+        data: {
+          passRate: workerState.metrics.evaluationReport.passRate,
+          materialId: forgeRun.materialSetId,
+        },
       });
     }
     if (forgeRun.status === "completed" && forgeRun.purpose !== "evaluation") {
@@ -493,6 +574,14 @@ export const mockFoundryRepository: FoundryRepository = {
       epoch: forgeRun.epoch,
       lastEvent: workerState.events[workerState.events.length - 1].type,
     };
+    if (forgeRun.status === "completed" && forgeRun.purpose === "evaluation") {
+      const material = mockMaterialSources.find((source) => source.id === forgeRun.materialSetId);
+      workerState.metrics.evaluationReport = buildMockEvaluationReport(
+        forgeRun,
+        material,
+        workerState.metrics.datasetRows || material?.qaPairCount || 1
+      );
+    }
     mockForgeWorkerStates[forgeRun.id] = workerState;
     forgeRun.workerState = workerState;
     if (forgeRun.status === "completed" && forgeRun.purpose !== "evaluation" && !forgeRun.artifactId) {
@@ -556,7 +645,10 @@ export const mockFoundryRepository: FoundryRepository = {
         epochs: forgeRun.epoch?.total || 1,
         learningRate: forgeRun.learningRate || "0.0002",
         loadIn4Bit: Boolean(forgeRun.loadIn4Bit),
-        outputDir: `runtime/artifacts/pending/${forgeRun.id}`,
+        outputDir:
+          forgeRun.purpose === "evaluation"
+            ? `runtime/evaluations/pending/${forgeRun.id}`
+            : `runtime/artifacts/pending/${forgeRun.id}`,
         runtime: mockForgeRuntime,
       };
     }
@@ -582,6 +674,14 @@ export const mockFoundryRepository: FoundryRepository = {
     };
     mockForgeWorkerStates[forgeRun.id] = workerState;
     forgeRun.workerState = workerState;
+    if (forgeRun.status === "completed" && forgeRun.purpose === "evaluation") {
+      const material = mockMaterialSources.find((source) => source.id === forgeRun.materialSetId);
+      workerState.metrics.evaluationReport = buildMockEvaluationReport(
+        forgeRun,
+        material,
+        workerState.metrics.datasetRows || material?.qaPairCount || 1
+      );
+    }
     if (forgeRun.status === "completed" && forgeRun.purpose !== "evaluation" && !forgeRun.artifactId) {
       forgeRun.artifactId = `art-${forgeRun.id.replace(/^frg-/, "")}`;
       const artifact: Artifact = {

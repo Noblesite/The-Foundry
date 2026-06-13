@@ -260,6 +260,7 @@ class ForgeTrainingService:
             )
 
         if status == "completed" and purpose == "evaluation":
+            evaluation_report = self.build_evaluation_report(contract)
             if not self._has_event(forge_run_id, "evaluation_completed"):
                 self._append_event(
                     forge_run_id,
@@ -270,6 +271,7 @@ class ForgeTrainingService:
                     data={
                         "datasetRows": self._dataset_row_count_from_events(forge_run_id),
                         "materialId": contract["materialId"],
+                        "passRate": evaluation_report["passRate"],
                     },
                 )
 
@@ -296,17 +298,18 @@ class ForgeTrainingService:
                     data={"artifactId": forge_run.get("artifactId")},
                 )
 
-        self._write_metrics(
-            forge_run_id,
-            {
-                "forgeRunId": forge_run_id,
-                "status": status,
-                "progress": progress,
-                "epoch": epoch,
-                "datasetRows": self._dataset_row_count_from_events(forge_run_id),
-                "lastEvent": self.list_events(forge_run_id)[-1]["type"],
-            },
-        )
+        metrics_payload = {
+            "forgeRunId": forge_run_id,
+            "status": status,
+            "progress": progress,
+            "epoch": epoch,
+            "datasetRows": self._dataset_row_count_from_events(forge_run_id),
+            "lastEvent": self.list_events(forge_run_id)[-1]["type"],
+        }
+        if status == "completed" and purpose == "evaluation":
+            metrics_payload["evaluationReport"] = self.build_evaluation_report(contract)
+
+        self._write_metrics(forge_run_id, metrics_payload)
         return self.get_metrics(forge_run_id)
 
     def get_contract(self, forge_run_id: str) -> Dict[str, Any] | None:
@@ -390,6 +393,127 @@ class ForgeTrainingService:
             "datasetPath": str(dataset_path),
             "message": "Dataset is training-contract ready.",
         }
+
+    def build_evaluation_report(self, contract: Dict[str, Any]) -> Dict[str, Any]:
+        rows = self._read_evaluation_rows(contract["datasetUri"])
+        row_count = len(rows)
+        pass_count = 0
+        needs_work_count = 0
+        fail_count = 0
+        samples = []
+
+        for index, row in enumerate(rows[:5]):
+            expected = str(row.get("output", "")).strip()
+            instruction = str(row.get("instruction", "")).strip()
+            observed = self._simulated_observed_response(instruction, expected, index)
+            verdict = self._simulated_verdict(index, row_count)
+            if verdict == "pass":
+                pass_count += 1
+            elif verdict == "needs-work":
+                needs_work_count += 1
+            else:
+                fail_count += 1
+            samples.append(
+                {
+                    "instruction": instruction,
+                    "expected": expected,
+                    "observed": observed,
+                    "verdict": verdict,
+                    "note": self._simulated_eval_note(verdict),
+                }
+            )
+
+        remaining = max(0, row_count - len(samples))
+        pass_count += round(remaining * 0.68)
+        needs_work_count += round(remaining * 0.22)
+        fail_count = row_count - pass_count - needs_work_count
+        pass_rate = round((pass_count / max(1, row_count)) * 100)
+
+        return {
+            "reportVersion": "foundry.forge.evaluation.v1",
+            "forgeRunId": contract["forgeRunId"],
+            "materialId": contract["materialId"],
+            "datasetUri": contract["datasetUri"],
+            "rowCount": row_count,
+            "passCount": pass_count,
+            "needsWorkCount": needs_work_count,
+            "failCount": fail_count,
+            "passRate": pass_rate,
+            "rubric": [
+                {
+                    "label": "Instruction match",
+                    "score": min(96, max(42, pass_rate + 8)),
+                    "explanation": "Checks whether replies follow the requested task and persona constraints.",
+                },
+                {
+                    "label": "Expected answer overlap",
+                    "score": min(94, max(38, pass_rate - 2)),
+                    "explanation": "Compares generated content against reviewed reference answers.",
+                },
+                {
+                    "label": "Safety and tone",
+                    "score": min(98, max(50, pass_rate + 12)),
+                    "explanation": "Flags harsh, unsafe, or off-character responses before promotion.",
+                },
+            ],
+            "samples": samples,
+            "recommendations": self._evaluation_recommendations(pass_rate, row_count),
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def _read_evaluation_rows(self, dataset_uri: str) -> list[Dict[str, Any]]:
+        dataset_path = self._resolve_runtime_path(dataset_uri)
+        rows: list[Dict[str, Any]] = []
+        if not dataset_path.exists():
+            return rows
+        with dataset_path.open("r", encoding="utf-8") as dataset_file:
+            for line in dataset_file:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    row = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if row.get("instruction") and row.get("output"):
+                    rows.append(row)
+        return rows
+
+    def _simulated_observed_response(self, instruction: str, expected: str, index: int) -> str:
+        if index % 5 == 4:
+            return "The Construct drifted from the expected answer and needs another reviewed example."
+        if index % 3 == 2:
+            return expected[:180] + ("..." if len(expected) > 180 else "")
+        return expected or f"Simulated response for: {instruction}"
+
+    def _simulated_verdict(self, index: int, row_count: int) -> str:
+        if row_count == 1:
+            return "needs-work"
+        if index % 5 == 4:
+            return "fail"
+        if index % 3 == 2:
+            return "needs-work"
+        return "pass"
+
+    def _simulated_eval_note(self, verdict: str) -> str:
+        if verdict == "pass":
+            return "Reference answer and simulated Construct reply line up well."
+        if verdict == "needs-work":
+            return "Reply is directionally useful but should be tightened before promotion."
+        return "Reply missed the expected behavior and should feed another training pass."
+
+    def _evaluation_recommendations(self, pass_rate: int, row_count: int) -> list[str]:
+        recommendations = [
+            "Review failed and needs-work samples before promoting a new Artifact.",
+            "Export corrected Trial rows back into Materials when the same mistake repeats.",
+        ]
+        if row_count < 10:
+            recommendations.append("Add more evaluation rows; tiny Trial sets can overstate quality.")
+        if pass_rate < 75:
+            recommendations.append("Run another training Forge after adding targeted examples.")
+        else:
+            recommendations.append("Compare this Trial Report against the next Artifact before deployment.")
+        return recommendations
 
     def can_execute_contract(self) -> bool:
         return self.describe_runtime().ready

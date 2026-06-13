@@ -137,6 +137,8 @@ def run_forge_adapter_boundary_check() -> int:
         "foundry.forge.training.v1",
         "\"purpose\": purpose",
         "evaluation_completed",
+        "foundry.forge.evaluation.v1",
+        "build_evaluation_report",
         "FOUNDRY_FORGE_RUNTIME_MODE",
         "supportsMethods",
         "events.jsonl",

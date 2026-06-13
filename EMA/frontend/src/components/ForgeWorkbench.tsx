@@ -20,7 +20,7 @@ import { ConceptTooltip, LearningCard, TrainingMetricExplainer } from "./Learnin
 
 const FORGE_WORKER_POLL_MS = 3000;
 
-type ForgeDetailTab = "events" | "contract" | "metrics";
+type ForgeDetailTab = "events" | "contract" | "trial" | "metrics";
 
 const inferForgePurpose = (material?: MaterialSource): ForgePurpose => {
   if (!material) {
@@ -226,6 +226,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   const selectedForgeWorkerState = selectedForgeDetailId
     ? workerStates[selectedForgeDetailId]
     : undefined;
+  const selectedEvaluationReport = selectedForgeWorkerState?.metrics.evaluationReport;
 
   useEffect(() => {
     if (!hasActiveForgeRuns) {
@@ -276,10 +277,15 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
 
   const loadForgeDetail = async (
     forgeRun: ForgeRun,
-    { resetTab = true }: { resetTab?: boolean } = {}
+    {
+      resetTab = true,
+      initialTab,
+    }: { resetTab?: boolean; initialTab?: ForgeDetailTab } = {}
   ) => {
     setSelectedForgeDetailId(forgeRun.id);
-    if (resetTab) {
+    if (initialTab) {
+      setForgeDetailTab(initialTab);
+    } else if (resetTab) {
       setForgeDetailTab("events");
     }
     setSelectedForgeContract(forgeRun.trainingContract || null);
@@ -844,7 +850,14 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                       {autoCompletingRunId === run.id ? "Running" : "Run to Complete"}
                     </button>
                     {run.status === "completed" && run.purpose === "evaluation" && (
-                      <span className="status-badge">Evaluation complete</span>
+                      <button
+                        className="button-primary button-compact"
+                        type="button"
+                        onClick={() => void loadForgeDetail(run, { initialTab: "trial" })}
+                      >
+                        <i className="fas fa-scale-balanced" aria-hidden="true" />
+                        View Trial Report
+                      </button>
                     )}
                     {run.status === "completed" && run.purpose !== "evaluation" && (
                       <button
@@ -931,7 +944,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
             </div>
 
             <div className="forge-detail-tabs" role="tablist" aria-label="Forge detail views">
-              {(["events", "contract", "metrics"] as ForgeDetailTab[]).map((tab) => (
+              {(["events", "contract", "trial", "metrics"] as ForgeDetailTab[]).map((tab) => (
                 <button
                   key={tab}
                   className={forgeDetailTab === tab ? "is-active" : ""}
@@ -1001,6 +1014,103 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                     ? JSON.stringify(selectedForgeContract, null, 2)
                     : "Forge contract has not been written yet."}
                 </pre>
+              )}
+
+              {forgeDetailTab === "trial" && (
+                <div className="trial-report">
+                  {selectedEvaluationReport ? (
+                    <>
+                      <section className="trial-report-hero">
+                        <div>
+                          <p className="panel-kicker">Trial Report</p>
+                          <h3>{selectedEvaluationReport.passRate}% pass rate</h3>
+                          <span>{selectedEvaluationReport.rowCount.toLocaleString()} evaluation rows</span>
+                        </div>
+                        <div className="trial-report-counts" aria-label="Trial report counts">
+                          <span className="verdict-pass">{selectedEvaluationReport.passCount} pass</span>
+                          <span className="verdict-needs-work">
+                            {selectedEvaluationReport.needsWorkCount} needs work
+                          </span>
+                          <span className="verdict-fail">{selectedEvaluationReport.failCount} fail</span>
+                        </div>
+                      </section>
+
+                      <section className="trial-rubric-grid" aria-label="Evaluation rubric">
+                        {selectedEvaluationReport.rubric.map((item) => (
+                          <article className="trial-rubric-card" key={item.label}>
+                            <div>
+                              <strong>{item.label}</strong>
+                              <span>{item.score}%</span>
+                            </div>
+                            <div className="forge-progress-track" aria-hidden="true">
+                              <span style={{ width: `${item.score}%` }} />
+                            </div>
+                            <p>{item.explanation}</p>
+                          </article>
+                        ))}
+                      </section>
+
+                      <section className="trial-sample-list" aria-label="Evaluation samples">
+                        <div className="panel-heading">
+                          <div>
+                            <p className="panel-kicker">Samples</p>
+                            <h3>Model Checks</h3>
+                          </div>
+                        </div>
+                        {selectedEvaluationReport.samples.map((sample, index) => (
+                          <article className="trial-sample-card" key={`${sample.instruction}-${index}`}>
+                            <div className="trial-sample-header">
+                              <strong>Sample {index + 1}</strong>
+                              <span className={`verdict-${sample.verdict}`}>{sample.verdict}</span>
+                            </div>
+                            <dl>
+                              <div>
+                                <dt>Prompt</dt>
+                                <dd>{sample.instruction}</dd>
+                              </div>
+                              <div>
+                                <dt>Expected</dt>
+                                <dd>{sample.expected}</dd>
+                              </div>
+                              <div>
+                                <dt>Observed</dt>
+                                <dd>{sample.observed}</dd>
+                              </div>
+                            </dl>
+                            <p>{sample.note}</p>
+                          </article>
+                        ))}
+                      </section>
+
+                      <section className="trial-recommendations" aria-label="Trial recommendations">
+                        <p className="panel-kicker">Next Moves</p>
+                        {selectedEvaluationReport.recommendations.map((recommendation) => (
+                          <div className="forge-event-row" key={recommendation}>
+                            <span>recommendation</span>
+                            <p>{recommendation}</p>
+                          </div>
+                        ))}
+                      </section>
+                    </>
+                  ) : selectedForgeRun.purpose === "evaluation" ? (
+                    <div className="forge-detail-empty">
+                      <p className="empty-state">
+                        Complete or reconcile this evaluation Forge to generate a Trial Report.
+                      </p>
+                      <button
+                        className="button-secondary button-compact"
+                        type="button"
+                        onClick={() => void reconcileForgeDetail()}
+                        disabled={isReconcilingForgeDetail}
+                      >
+                        <i className="fas fa-screwdriver-wrench" aria-hidden="true" />
+                        {isReconcilingForgeDetail ? "Reconciling" : "Reconcile report"}
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="empty-state">Training Forges create Artifacts; evaluation Forges create Trial Reports.</p>
+                  )}
+                </div>
               )}
 
               {forgeDetailTab === "metrics" && (

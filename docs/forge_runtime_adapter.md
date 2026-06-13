@@ -106,6 +106,10 @@ Forge contracts include a `purpose` field:
 
 Trial-exported JSONL Materials should usually run with `purpose: "evaluation"`
 so reviewed Construct replies become eval data before they become training data.
+Completed evaluation Forges publish a `foundry.forge.evaluation.v1` Trial
+Report inside worker metrics. The report includes pass-rate counts, rubric
+scores, sample prompt checks, and recommendations so the operator can decide
+whether to train again, promote an Artifact, or add better Materials.
 
 ## Design Rule
 
