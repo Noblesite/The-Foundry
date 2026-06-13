@@ -171,6 +171,7 @@ def run_trial_contract_check() -> int:
         "/api/v1/workshops/{workshop_id}/trials",
         "/api/v1/workshops/{workshop_id}/trials/export",
         "/api/v1/forges/{forge_run_id}/evaluation/weak-samples/export",
+        "ReviewedEvaluationSampleInput",
         "create_foundry_trial_endpoint",
         "export_foundry_trials_endpoint",
         "export_foundry_evaluation_weak_samples_endpoint",
@@ -186,6 +187,7 @@ def run_trial_contract_check() -> int:
         "export_trials_to_material",
         "export_evaluation_samples_to_material",
         "foundry.evaluation.weak-sample.v1",
+        "\"reviewed\": bool(reviewed_samples)",
         "_refresh_artifact_trial_score",
     )
     missing_service = [

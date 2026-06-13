@@ -109,8 +109,16 @@ class ExportTrialsInput(BaseModel):
     verdicts: list[Literal["pass", "needs-work", "fail"]] = []
     name: str | None = None
 
+class ReviewedEvaluationSampleInput(BaseModel):
+    instruction: str
+    expected: str
+    observed: str = ""
+    verdict: Literal["needs-work", "fail"]
+    note: str = ""
+
 class ExportEvaluationSamplesInput(BaseModel):
     name: str | None = None
+    samples: list[ReviewedEvaluationSampleInput] = []
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -561,6 +569,17 @@ async def export_foundry_evaluation_weak_samples_endpoint(
             forge_run=forge,
             evaluation_report=evaluation_report,
             name=data.name.strip() if data.name else None,
+            reviewed_samples=[
+                {
+                    "instruction": sample.instruction.strip(),
+                    "expected": sample.expected.strip(),
+                    "observed": sample.observed.strip(),
+                    "verdict": sample.verdict,
+                    "note": sample.note.strip(),
+                }
+                for sample in data.samples
+                if sample.instruction.strip() and sample.expected.strip()
+            ],
         )
         return api_envelope(export)
     except ValueError as error:

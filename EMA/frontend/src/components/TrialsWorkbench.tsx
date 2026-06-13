@@ -30,6 +30,16 @@ interface EvaluationReportSummary {
   report: ForgeEvaluationReport;
 }
 
+interface ReviewedWeakSample {
+  id: string;
+  include: boolean;
+  instruction: string;
+  expected: string;
+  observed: string;
+  verdict: Exclude<TrialVerdict, "pass">;
+  note: string;
+}
+
 type ReadinessState =
   | "needs-more-data"
   | "ready-for-forge"
@@ -83,6 +93,25 @@ const formatDelta = (value: number, suffix = "%"): string => {
 const weakSampleCount = (report: ForgeEvaluationReport): number =>
   report.samples.filter((sample) => sample.verdict !== "pass").length;
 
+const isWeakVerdict = (verdict: TrialVerdict): verdict is Exclude<TrialVerdict, "pass"> =>
+  verdict !== "pass";
+
+const createReviewedSamples = (report: ForgeEvaluationReport): ReviewedWeakSample[] =>
+  report.samples.flatMap((sample, index) => {
+    if (!isWeakVerdict(sample.verdict)) {
+      return [];
+    }
+    return [{
+      id: `${report.forgeRunId}-${index}`,
+      include: true,
+      instruction: sample.instruction,
+      expected: sample.expected,
+      observed: sample.observed,
+      verdict: sample.verdict,
+      note: sample.note,
+    }];
+  });
+
 const createForgePreset = (
   forgeRun: ForgeRun,
   materialSetId: string,
@@ -110,6 +139,10 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
   const [exportName, setExportName] = useState(`${workshop.name} Trial Dataset`);
   const [isExporting, setIsExporting] = useState(false);
   const [activeReportActionId, setActiveReportActionId] = useState<string | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<EvaluationReportSummary | null>(null);
+  const [reviewSamples, setReviewSamples] = useState<ReviewedWeakSample[]>([]);
+  const [reviewExportOpensForge, setReviewExportOpensForge] = useState(false);
+  const [isExportingReview, setIsExportingReview] = useState(false);
   const [exportState, setExportState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -254,7 +287,7 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
     }
   };
 
-  const exportWeakSamples = async (
+  const openWeakSampleReview = (
     summary: EvaluationReportSummary,
     { openForge = false }: { openForge?: boolean } = {}
   ) => {
@@ -263,20 +296,71 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
       return;
     }
 
-    setActiveReportActionId(summary.report.forgeRunId);
+    setReviewTarget(summary);
+    setReviewSamples(createReviewedSamples(summary.report));
+    setReviewExportOpensForge(openForge);
+    setError(null);
+    setExportState(null);
+  };
+
+  const updateReviewedSample = <K extends keyof ReviewedWeakSample>(
+    sampleId: string,
+    key: K,
+    value: ReviewedWeakSample[K]
+  ) => {
+    setReviewSamples((current) =>
+      current.map((sample) => (sample.id === sampleId ? { ...sample, [key]: value } : sample))
+    );
+  };
+
+  const closeWeakSampleReview = () => {
+    if (isExportingReview) {
+      return;
+    }
+    setReviewTarget(null);
+    setReviewSamples([]);
+    setReviewExportOpensForge(false);
+  };
+
+  const exportReviewedWeakSamples = async ({
+    openForge,
+  }: { openForge?: boolean } = {}) => {
+    if (!reviewTarget) {
+      return;
+    }
+    const includedSamples = reviewSamples.filter((sample) => sample.include);
+    if (includedSamples.length === 0) {
+      setError("Select at least one weak sample to export.");
+      return;
+    }
+
+    setActiveReportActionId(reviewTarget.report.forgeRunId);
+    setIsExportingReview(true);
     setError(null);
     setExportState(null);
     try {
       const exportResult = await repository.exportEvaluationWeakSamples(
-        summary.report.forgeRunId,
-        { name: `${workshop.name} Weak Trial Samples` }
+        reviewTarget.report.forgeRunId,
+        {
+          name: `${workshop.name} Reviewed Weak Samples`,
+          samples: includedSamples.map((sample) => ({
+            instruction: sample.instruction,
+            expected: sample.expected,
+            observed: sample.observed,
+            verdict: sample.verdict,
+            note: sample.note,
+          })),
+        }
       );
       setExportState(
-        `Exported ${exportResult.sampleCount.toLocaleString()} weak samples to ${exportResult.exportUri}`
+        `Exported ${exportResult.sampleCount.toLocaleString()} reviewed weak samples to ${exportResult.exportUri}`
       );
-      if (openForge) {
+      setReviewTarget(null);
+      setReviewSamples([]);
+      setReviewExportOpensForge(false);
+      if (openForge ?? reviewExportOpensForge) {
         onOpenForgePreset(
-          createForgePreset(summary.forgeRun, exportResult.material.id, "training")
+          createForgePreset(reviewTarget.forgeRun, exportResult.material.id, "training")
         );
       }
     } catch (exportError: unknown) {
@@ -285,6 +369,7 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
       );
     } finally {
       setActiveReportActionId(null);
+      setIsExportingReview(false);
     }
   };
 
@@ -360,17 +445,17 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
                       activeReportActionId === latestReport.report.forgeRunId ||
                       weakSampleCount(latestReport.report) === 0
                     }
-                    onClick={() => void exportWeakSamples(latestReport)}
+                    onClick={() => openWeakSampleReview(latestReport)}
                     type="button"
                   >
-                    Export weak samples
+                    Review weak samples
                   </button>
                   <button
                     disabled={
                       activeReportActionId === latestReport.report.forgeRunId ||
                       weakSampleCount(latestReport.report) === 0
                     }
-                    onClick={() => void exportWeakSamples(latestReport, { openForge: true })}
+                    onClick={() => openWeakSampleReview(latestReport, { openForge: true })}
                     type="button"
                   >
                     Train again
@@ -537,6 +622,122 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
           ))
         )}
       </div>
+
+      {reviewTarget && (
+        <div className="weak-sample-backdrop" role="presentation" onClick={closeWeakSampleReview}>
+          <aside
+            className="weak-sample-drawer panel-glass"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Review weak samples"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="weak-sample-header">
+              <div>
+                <p className="panel-kicker">Weak sample review</p>
+                <h2>{reviewTarget.forgeRun.label}</h2>
+                <span>
+                  {reviewSamples.filter((sample) => sample.include).length} selected /{" "}
+                  {reviewSamples.length} weak samples
+                </span>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={closeWeakSampleReview}
+                aria-label="Close weak sample review"
+                title="Close"
+              >
+                <i className="fas fa-xmark" aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="weak-sample-body">
+              {reviewSamples.map((sample, index) => (
+                <article className="weak-sample-card" key={sample.id}>
+                  <div className="weak-sample-card-header">
+                    <label className="toggle-row" htmlFor={`weak-sample-${sample.id}`}>
+                      <input
+                        id={`weak-sample-${sample.id}`}
+                        type="checkbox"
+                        checked={sample.include}
+                        onChange={(event) =>
+                          updateReviewedSample(sample.id, "include", event.target.checked)
+                        }
+                      />
+                      <span>Include sample {index + 1}</span>
+                    </label>
+                    <span className={`trial-verdict verdict-${sample.verdict}`}>
+                      {verdictLabels[sample.verdict]}
+                    </span>
+                  </div>
+                  <div className="weak-sample-grid">
+                    <div>
+                      <span>Prompt</span>
+                      <p>{sample.instruction}</p>
+                    </div>
+                    <div>
+                      <span>Observed</span>
+                      <p>{sample.observed || "No observed response recorded."}</p>
+                    </div>
+                  </div>
+                  <label className="field-label" htmlFor={`weak-output-${sample.id}`}>
+                    Corrected output
+                  </label>
+                  <textarea
+                    id={`weak-output-${sample.id}`}
+                    value={sample.expected}
+                    onChange={(event) =>
+                      updateReviewedSample(sample.id, "expected", event.target.value)
+                    }
+                    rows={5}
+                  />
+                  <label className="field-label" htmlFor={`weak-note-${sample.id}`}>
+                    Review note
+                  </label>
+                  <input
+                    className="text-input"
+                    id={`weak-note-${sample.id}`}
+                    value={sample.note}
+                    onChange={(event) =>
+                      updateReviewedSample(sample.id, "note", event.target.value)
+                    }
+                  />
+                </article>
+              ))}
+            </div>
+
+            <div className="weak-sample-footer">
+              <button
+                className="button-secondary"
+                type="button"
+                onClick={closeWeakSampleReview}
+                disabled={isExportingReview}
+              >
+                Cancel
+              </button>
+              <button
+                className="button-secondary"
+                type="button"
+                onClick={() => void exportReviewedWeakSamples()}
+                disabled={isExportingReview}
+              >
+                <i className="fas fa-file-export" aria-hidden="true" />
+                {isExportingReview ? "Exporting" : "Export Material"}
+              </button>
+              <button
+                className="button-primary"
+                type="button"
+                onClick={() => void exportReviewedWeakSamples({ openForge: true })}
+                disabled={isExportingReview}
+              >
+                <i className="fas fa-fire-flame-curved" aria-hidden="true" />
+                {isExportingReview ? "Exporting" : "Export and Train"}
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
 
       <LearningCard
         title={summary.concept.title}

@@ -104,7 +104,8 @@ body::after {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -120,6 +121,7 @@ button:disabled {
 
 button:focus-visible,
 input:focus-visible,
+textarea:focus-visible,
 select:focus-visible,
 .concept-tooltip:focus-visible,
 .help-tooltip:focus-visible {
@@ -128,7 +130,8 @@ select:focus-visible,
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--border);
@@ -139,6 +142,7 @@ select {
 }
 
 input:focus,
+textarea:focus,
 select:focus {
   border-color: var(--arc-blue);
   box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.12);
@@ -1369,6 +1373,103 @@ input[type="checkbox"] {
   font-size: 0.72rem;
 }
 
+.weak-sample-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 88;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(4, 8, 12, 0.62);
+  backdrop-filter: blur(8px);
+}
+
+.weak-sample-drawer {
+  display: flex;
+  width: min(820px, 100%);
+  height: 100%;
+  flex-direction: column;
+  border-width: 0 0 0 1px;
+  border-radius: 0;
+  box-shadow: -22px 0 58px rgba(0, 0, 0, 0.42);
+}
+
+.weak-sample-header,
+.weak-sample-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.weak-sample-footer {
+  border-top: 1px solid var(--border);
+  border-bottom: 0;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.weak-sample-header h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.25rem;
+}
+
+.weak-sample-header span {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
+.weak-sample-body {
+  display: grid;
+  gap: 0.85rem;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem;
+}
+
+.weak-sample-card {
+  display: grid;
+  gap: 0.72rem;
+  border: 1px solid rgba(0, 212, 255, 0.14);
+  border-radius: 8px;
+  padding: 0.9rem;
+  background: rgba(13, 17, 23, 0.58);
+}
+
+.weak-sample-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.weak-sample-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.weak-sample-grid span {
+  color: var(--arc-blue);
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.weak-sample-grid p {
+  margin: 0.28rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.weak-sample-card textarea {
+  width: 100%;
+  min-height: 8rem;
+  resize: vertical;
+}
+
 .stat-card {
   display: grid;
   gap: 0.35rem;
@@ -2431,6 +2532,7 @@ input[type="checkbox"] {
   .assembly-review-grid,
   .trial-card-header,
   .trial-rubric-grid,
+  .weak-sample-grid,
   .modal-actions,
   .settings-grid {
     grid-template-columns: 1fr;

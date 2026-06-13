@@ -57,6 +57,9 @@ complexity.
 - Wire Trial Report actions so weak samples can become JSONL Materials and
   Trials can hand training/evaluation presets back to Forge. Done for the first
   actionable guidance slice.
+- Add a weak-sample review drawer so users can edit corrected answers and
+  include/exclude rows before exporting them as training Materials. Done for
+  the first review-before-training slice.
 - Add runtime health, memory pressure, and unload behavior.
 - Teach users what context windows, sampling, and quantization settings do.
 

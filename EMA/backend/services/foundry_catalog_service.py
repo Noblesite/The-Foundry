@@ -1187,6 +1187,7 @@ class FoundryCatalogService:
         forge_run: Dict[str, Any],
         evaluation_report: Dict[str, Any],
         name: Optional[str] = None,
+        reviewed_samples: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         async with self._write_lock:
             return await self._run_query(
@@ -1194,6 +1195,7 @@ class FoundryCatalogService:
                     forge_run=forge_run,
                     evaluation_report=evaluation_report,
                     name=name,
+                    reviewed_samples=reviewed_samples,
                 )
             )
 
@@ -1202,9 +1204,10 @@ class FoundryCatalogService:
         forge_run: Dict[str, Any],
         evaluation_report: Dict[str, Any],
         name: Optional[str],
+        reviewed_samples: Optional[List[Dict[str, Any]]],
     ) -> Dict[str, Any]:
         workshop_id = forge_run["workshopId"]
-        weak_samples = [
+        weak_samples = reviewed_samples or [
             sample
             for sample in evaluation_report.get("samples", [])
             if sample.get("verdict") in {"needs-work", "fail"}
@@ -1249,6 +1252,7 @@ class FoundryCatalogService:
                             "note": sample.get("note", ""),
                             "reportVersion": evaluation_report["reportVersion"],
                             "createdAt": evaluation_report["createdAt"],
+                            "reviewed": bool(reviewed_samples),
                         },
                     }
                     export_file.write(json.dumps(payload, ensure_ascii=False) + "\n")

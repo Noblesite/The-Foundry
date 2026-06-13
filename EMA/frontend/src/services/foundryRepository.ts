@@ -800,7 +800,10 @@ export const mockFoundryRepository: FoundryRepository = {
     if (!forgeRun || !report) {
       throw new Error("Forge evaluation report is not ready yet.");
     }
-    const weakSamples = report.samples.filter((sample) => sample.verdict !== "pass");
+    const weakSamples =
+      request.samples?.length
+        ? request.samples
+        : report.samples.filter((sample) => sample.verdict !== "pass");
     if (weakSamples.length === 0) {
       throw new Error("This Trial Report has no weak samples to export.");
     }

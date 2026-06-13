@@ -304,6 +304,13 @@ export interface ExportTrialsRequest {
 
 export interface ExportEvaluationSamplesRequest {
   name?: string;
+  samples?: Array<{
+    instruction: string;
+    expected: string;
+    observed: string;
+    verdict: Exclude<TrialVerdict, "pass">;
+    note: string;
+  }>;
 }
 
 export interface ConfigureConstructRuntimeRequest {
