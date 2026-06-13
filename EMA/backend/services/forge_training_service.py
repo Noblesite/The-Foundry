@@ -101,11 +101,17 @@ class ForgeTrainingService:
         forge_run: Dict[str, Any],
         material: Dict[str, Any],
     ) -> Dict[str, Any]:
-        output_dir = f"runtime/artifacts/pending/{forge_run['id']}"
+        purpose = forge_run.get("purpose") or "training"
+        output_dir = (
+            f"runtime/evaluations/pending/{forge_run['id']}"
+            if purpose == "evaluation"
+            else f"runtime/artifacts/pending/{forge_run['id']}"
+        )
         return {
             "contractVersion": "foundry.forge.training.v1",
             "forgeRunId": forge_run["id"],
             "workshopId": forge_run["workshopId"],
+            "purpose": purpose,
             "materialId": material["id"],
             "datasetUri": material["sourceUri"],
             "baseModel": forge_run.get("baseModel") or "unknown",
@@ -131,6 +137,7 @@ class ForgeTrainingService:
                 progress=0,
                 data={
                     "contractVersion": contract["contractVersion"],
+                    "purpose": contract.get("purpose", "training"),
                     "method": contract["method"],
                     "datasetUri": contract["datasetUri"],
                 },
@@ -142,7 +149,7 @@ class ForgeTrainingService:
                 self._append_event(
                     forge_run_id,
                     "dataset_validated",
-                    f"Dataset validated with {validation['rowCount']} training rows.",
+                    f"Dataset validated with {validation['rowCount']} {contract.get('purpose', 'training')} rows.",
                     progress=6,
                     data=validation,
                 )
@@ -218,7 +225,18 @@ class ForgeTrainingService:
         progress = forge_run["progress"]
         epoch = forge_run.get("epoch")
 
-        if status == "running" and not self._has_event(forge_run_id, "epoch_started"):
+        purpose = contract.get("purpose", "training")
+
+        if purpose == "evaluation" and status == "running" and not self._has_event(forge_run_id, "evaluation_started"):
+            self._append_event(
+                forge_run_id,
+                "evaluation_started",
+                "Simulator started evaluating the selected Artifact examples.",
+                progress=progress,
+                epoch=epoch,
+            )
+
+        if purpose != "evaluation" and status == "running" and not self._has_event(forge_run_id, "epoch_started"):
             self._append_event(
                 forge_run_id,
                 "epoch_started",
@@ -241,7 +259,21 @@ class ForgeTrainingService:
                 },
             )
 
-        if status == "completed":
+        if status == "completed" and purpose == "evaluation":
+            if not self._has_event(forge_run_id, "evaluation_completed"):
+                self._append_event(
+                    forge_run_id,
+                    "evaluation_completed",
+                    "Forge evaluation completed. Review metrics before promoting an Artifact.",
+                    progress=100,
+                    epoch=epoch,
+                    data={
+                        "datasetRows": self._dataset_row_count_from_events(forge_run_id),
+                        "materialId": contract["materialId"],
+                    },
+                )
+
+        if status == "completed" and purpose != "evaluation":
             if not self._has_event(forge_run_id, "artifact_planned"):
                 self._append_event(
                     forge_run_id,

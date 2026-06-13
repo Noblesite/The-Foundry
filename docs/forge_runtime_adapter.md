@@ -99,6 +99,14 @@ The `POST /api/v1/workshops/{workshop_id}/forges` response includes
 `trainingContract` so the frontend and future workers can inspect exactly what
 will be executed.
 
+Forge contracts include a `purpose` field:
+
+- `training` produces an Artifact when the Forge completes.
+- `evaluation` validates and scores examples without creating an Artifact.
+
+Trial-exported JSONL Materials should usually run with `purpose: "evaluation"`
+so reviewed Construct replies become eval data before they become training data.
+
 ## Design Rule
 
 FastAPI owns HTTP validation and response envelopes. It should not own training

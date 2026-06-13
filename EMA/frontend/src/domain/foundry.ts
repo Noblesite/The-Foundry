@@ -10,6 +10,7 @@ export type NavigationSection =
   | "settings";
 
 export type TrainingMethod = "LoRA" | "QLoRA";
+export type ForgePurpose = "training" | "evaluation";
 export type WorkshopStatus = "planning" | "assembling" | "forging" | "evaluating" | "ready";
 export type MaterialKind =
   | "csv"
@@ -141,6 +142,7 @@ export interface ForgeRun {
   materialSetId?: string;
   artifactId?: string;
   baseModel?: string;
+  purpose: ForgePurpose;
   label: string;
   method: TrainingMethod | "QA Generation" | "Embedding Build";
   status: ForgeRunStatus;
@@ -172,6 +174,7 @@ export interface ForgeTrainingContract {
   datasetUri: string;
   baseModel: string;
   method: TrainingMethod;
+  purpose: ForgePurpose;
   epochs: number;
   learningRate: string;
   loadIn4Bit: boolean;
@@ -187,6 +190,8 @@ export interface ForgeEvent {
     | "dataset_validated"
     | "dataset_validation_failed"
     | "contract_missing"
+    | "evaluation_started"
+    | "evaluation_completed"
     | "epoch_started"
     | "step_completed"
     | "artifact_planned"

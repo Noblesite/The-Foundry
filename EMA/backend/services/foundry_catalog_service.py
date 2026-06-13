@@ -79,6 +79,7 @@ class FoundryCatalogService:
                 workshop_id TEXT NOT NULL,
                 material_id TEXT,
                 base_model TEXT,
+                purpose TEXT NOT NULL DEFAULT 'training',
                 label TEXT NOT NULL,
                 method TEXT NOT NULL,
                 status TEXT NOT NULL,
@@ -266,6 +267,7 @@ class FoundryCatalogService:
         migrations = [
             ("material_id", "ALTER TABLE forge_runs ADD COLUMN material_id TEXT"),
             ("base_model", "ALTER TABLE forge_runs ADD COLUMN base_model TEXT"),
+            ("purpose", "ALTER TABLE forge_runs ADD COLUMN purpose TEXT NOT NULL DEFAULT 'training'"),
             ("learning_rate", "ALTER TABLE forge_runs ADD COLUMN learning_rate TEXT"),
             ("load_in_4bit", "ALTER TABLE forge_runs ADD COLUMN load_in_4bit INTEGER NOT NULL DEFAULT 0"),
         ]
@@ -350,13 +352,13 @@ class FoundryCatalogService:
             """
             INSERT INTO forge_runs (
                 id, workshop_id, label, method, status, progress,
-                epoch_current, epoch_total
+                epoch_current, epoch_total, purpose
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                ("frg-lora-001", workshop_id, "LoRA Training", "LoRA", "running", 45, 2, 3),
-                ("frg-qa-001", workshop_id, "QA Generation", "QA Generation", "running", 87, None, None),
+                ("frg-lora-001", workshop_id, "LoRA Training", "LoRA", "running", 45, 2, 3, "training"),
+                ("frg-qa-001", workshop_id, "QA Generation", "QA Generation", "running", 87, None, None, "training"),
             ],
         )
 
@@ -1720,6 +1722,7 @@ class FoundryCatalogService:
         material_id: str,
         base_model: str,
         method: str,
+        purpose: str,
         epochs: int,
         learning_rate: str,
         load_in_4bit: bool,
@@ -1731,6 +1734,7 @@ class FoundryCatalogService:
                     material_id,
                     base_model,
                     method,
+                    purpose,
                     epochs,
                     learning_rate,
                     load_in_4bit,
@@ -1743,11 +1747,14 @@ class FoundryCatalogService:
         material_id: str,
         base_model: str,
         method: str,
+        purpose: str,
         epochs: int,
         learning_rate: str,
         load_in_4bit: bool,
     ) -> Dict[str, Any]:
         forge_id = f"frg-{uuid4().hex[:12]}"
+        if purpose not in {"training", "evaluation"}:
+            raise ValueError("Forge purpose must be training or evaluation.")
 
         with self._connect() as connection:
             workshop = connection.execute(
@@ -1774,18 +1781,19 @@ class FoundryCatalogService:
             connection.execute(
                 """
                 INSERT INTO forge_runs (
-                    id, workshop_id, material_id, base_model, label, method,
+                    id, workshop_id, material_id, base_model, purpose, label, method,
                     status, progress, epoch_current, epoch_total,
                     learning_rate, load_in_4bit
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     forge_id,
                     workshop_id,
                     material_id,
                     base_model,
-                    f"{method} Training",
+                    purpose,
+                    f"{method} {'Evaluation' if purpose == 'evaluation' else 'Training'}",
                     method,
                     "queued",
                     0,
@@ -1798,12 +1806,12 @@ class FoundryCatalogService:
             connection.execute(
                 """
                 UPDATE workshops
-                SET status = 'forging',
+                SET status = ?,
                     progress = CASE WHEN progress < 45 THEN 45 ELSE progress END,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
-                (workshop_id,),
+                ("evaluating" if purpose == "evaluation" else "forging", workshop_id),
             )
 
             row = connection.execute(
@@ -1827,6 +1835,8 @@ class FoundryCatalogService:
             if row is None:
                 raise ValueError(f"Forge {forge_run_id} was not found.")
             if row["status"] == "completed":
+                if row["purpose"] == "evaluation":
+                    return self._forge_run_from_row(row)
                 artifact = self._ensure_artifact_for_forge(connection, row)
                 return self._forge_run_from_row(row, artifact_id=artifact["id"])
             if row["status"] == "failed":
@@ -1874,7 +1884,8 @@ class FoundryCatalogService:
             )
             artifact = None
             if next_status == "completed":
-                artifact = self._ensure_artifact_for_forge(connection, row)
+                if row["purpose"] != "evaluation":
+                    artifact = self._ensure_artifact_for_forge(connection, row)
 
             updated = connection.execute(
                 "SELECT * FROM forge_runs WHERE id = ?",
@@ -1901,6 +1912,8 @@ class FoundryCatalogService:
                 raise ValueError(f"Forge {forge_run_id} was not found.")
             if row["status"] != "completed":
                 raise ValueError("Forge must be completed before creating an Artifact.")
+            if row["purpose"] == "evaluation":
+                raise ValueError("Evaluation Forges do not create Artifacts.")
 
             artifact = self._ensure_artifact_for_forge(connection, row)
             updated = connection.execute(
@@ -2417,6 +2430,7 @@ class FoundryCatalogService:
             "materialSetId": row["material_id"],
             "baseModel": row["base_model"],
             "artifactId": artifact_id or self._artifact_id_for_forge(row["id"]),
+            "purpose": row["purpose"] if "purpose" in row.keys() else "training",
             "label": row["label"],
             "method": row["method"],
             "status": row["status"],

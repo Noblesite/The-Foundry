@@ -44,6 +44,8 @@ complexity.
   for the first Construct testing bench and Trial persistence slices.
 - Export reviewed Trials as JSONL Materials so they can feed Forge training or
   evaluation runs. Done for the first Trial review/export slice.
+- Add a Forge purpose switch for training versus evaluation contracts. Done
+  for the first Trial-backed Forge preset slice.
 - Add runtime health, memory pressure, and unload behavior.
 - Teach users what context windows, sampling, and quantization settings do.
 

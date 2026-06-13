@@ -4,6 +4,7 @@ import {
   Artifact,
   Construct,
   ForgeRun,
+  ForgePurpose,
   ForgeRuntime,
   ForgeRuntimeMode,
   ForgeTrainingContract,
@@ -20,6 +21,14 @@ import { ConceptTooltip, LearningCard, TrainingMetricExplainer } from "./Learnin
 const FORGE_WORKER_POLL_MS = 3000;
 
 type ForgeDetailTab = "events" | "contract" | "metrics";
+
+const inferForgePurpose = (material?: MaterialSource): ForgePurpose => {
+  if (!material) {
+    return "training";
+  }
+  const marker = `${material.name} ${material.sourceUri}`.toLowerCase();
+  return marker.includes("trial") || marker.includes("-trials-") ? "evaluation" : "training";
+};
 
 interface ForgeWorkbenchProps {
   repository: FoundryRepository;
@@ -45,6 +54,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     materialSetId: "",
     baseModel: settings.modelName,
     method: settings.trainingMethod,
+    purpose: "training",
     epochs: settings.epochs,
     learningRate: settings.learningRate,
     loadIn4Bit: settings.loadIn4Bit,
@@ -147,15 +157,20 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
         setWorkerStates(seededStates);
         setForgeRuntime(runtime);
         setRuntimeModeDraft(runtime.mode);
-        setDraft((current) => ({
-          ...current,
-          baseModel: settings.modelName,
-          method: settings.trainingMethod,
-          learningRate: settings.learningRate,
-          loadIn4Bit: settings.loadIn4Bit,
-          epochs: settings.epochs,
-          materialSetId: current.materialSetId || jsonlMaterials[0]?.id || "",
-        }));
+        setDraft((current) => {
+          const materialSetId = current.materialSetId || jsonlMaterials[0]?.id || "";
+          const material = jsonlMaterials.find((source) => source.id === materialSetId);
+          return {
+            ...current,
+            baseModel: settings.modelName,
+            method: settings.trainingMethod,
+            learningRate: settings.learningRate,
+            loadIn4Bit: settings.loadIn4Bit,
+            epochs: settings.epochs,
+            materialSetId,
+            purpose: current.materialSetId ? current.purpose : inferForgePurpose(material),
+          };
+        });
         runs.forEach((run) => {
           repository
             .getForgeWorkerState(run.id)
@@ -229,6 +244,15 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     value: StartForgeRequest[K]
   ) => {
     setDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateMaterialSelection = (materialSetId: string) => {
+    const material = jsonlMaterials.find((source) => source.id === materialSetId);
+    setDraft((current) => ({
+      ...current,
+      materialSetId,
+      purpose: inferForgePurpose(material),
+    }));
   };
 
   const configureRuntime = async () => {
@@ -358,7 +382,11 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
           second: "2-digit",
         })
       );
-      setStatusText(`${forgeRun.label} queued with ${selectedMaterial?.qaPairCount ?? 0} QA pairs.`);
+      setStatusText(
+        `${forgeRun.label} queued with ${selectedMaterial?.qaPairCount ?? 0} ${
+          draft.purpose === "evaluation" ? "evaluation" : "training"
+        } rows.`
+      );
     } catch (startError: unknown) {
       setError(startError instanceof Error ? startError.message : "Could not start Forge.");
     } finally {
@@ -449,6 +477,11 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   };
 
   const loadForgeArtifactIntoConstruct = async (forgeRun: ForgeRun) => {
+    if (forgeRun.purpose === "evaluation") {
+      setError("Evaluation Forges produce metrics, not Artifacts. Queue a training Forge to create a Construct.");
+      return;
+    }
+
     let handoffRun = forgeRun;
     if (!handoffRun.artifactId && handoffRun.status === "completed") {
       try {
@@ -515,27 +548,43 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
         <form className="forge-panel panel-glass" onSubmit={startForge}>
           <div className="panel-heading">
             <div>
-              <p className="panel-kicker">Training contract</p>
+              <p className="panel-kicker">Forge contract</p>
               <h2>Queue a Forge</h2>
             </div>
           </div>
 
           <label className="field-label" htmlFor="forge-material">
-            Training Material
+            Material
           </label>
           <select
             id="forge-material"
             value={draft.materialSetId}
-            onChange={(event) => updateDraft("materialSetId", event.target.value)}
+            onChange={(event) => updateMaterialSelection(event.target.value)}
             required
           >
             <option value="">Select exported JSONL Material</option>
             {jsonlMaterials.map((material) => (
               <option key={material.id} value={material.id}>
-                {material.name} / {material.qaPairCount.toLocaleString()} QA
+                {material.name} / {material.qaPairCount.toLocaleString()} rows
               </option>
             ))}
           </select>
+
+          <label className="field-label" htmlFor="forge-purpose">
+            Purpose
+          </label>
+          <div className="segmented-control" id="forge-purpose" role="group" aria-label="Forge purpose">
+            {(["training", "evaluation"] as ForgePurpose[]).map((purpose) => (
+              <button
+                className={draft.purpose === purpose ? "is-active" : ""}
+                key={purpose}
+                onClick={() => updateDraft("purpose", purpose)}
+                type="button"
+              >
+                {purpose === "training" ? "Train Artifact" : "Run Evaluation"}
+              </button>
+            ))}
+          </div>
 
           <label className="field-label" htmlFor="forge-base-model">
             Base model
@@ -604,12 +653,16 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
             disabled={isStarting || !draft.materialSetId}
           >
             <i className="fas fa-fire-flame-curved" aria-hidden="true" />
-            {isStarting ? "Queueing" : "Queue Forge"}
+            {isStarting
+              ? "Queueing"
+              : draft.purpose === "evaluation"
+                ? "Queue Evaluation"
+                : "Queue Forge"}
           </button>
 
           {jsonlMaterials.length === 0 && (
             <p className="save-state">
-              Export QA pairs from Materials first, then they will appear here.
+              Export QA pairs or reviewed Trials first, then JSONL Materials will appear here.
             </p>
           )}
           {statusText && <p className="save-state success-state">{statusText}</p>}
@@ -678,6 +731,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                 <span>{selectedMaterial.qaPairCount.toLocaleString()} QA</span>
                 <span>{selectedMaterial.chunkCount.toLocaleString()} rows</span>
                 <span>{selectedMaterial.status}</span>
+                <span>{inferForgePurpose(selectedMaterial)}</span>
               </div>
             </article>
           ) : (
@@ -740,6 +794,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                   </div>
                   <div className="material-meta">
                     <span>{run.method}</span>
+                    <span>{run.purpose}</span>
                     {run.epoch && <span>Epoch {run.epoch.current} / {run.epoch.total}</span>}
                     {metrics && <span>{metrics.datasetRows.toLocaleString()} rows</span>}
                     {metrics?.lastEvent && (
@@ -788,7 +843,10 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                       <i className="fas fa-gauge-high" aria-hidden="true" />
                       {autoCompletingRunId === run.id ? "Running" : "Run to Complete"}
                     </button>
-                    {run.status === "completed" && (
+                    {run.status === "completed" && run.purpose === "evaluation" && (
+                      <span className="status-badge">Evaluation complete</span>
+                    )}
+                    {run.status === "completed" && run.purpose !== "evaluation" && (
                       <button
                         className="button-primary button-compact"
                         type="button"

@@ -585,6 +585,35 @@ input[type="checkbox"] {
   box-shadow: var(--shadow-orange);
 }
 
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.3rem;
+  background: rgba(13, 17, 23, 0.58);
+}
+
+.segmented-control button {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.55rem 0.65rem;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.segmented-control button.is-active {
+  border-color: rgba(0, 212, 255, 0.5);
+  background: rgba(0, 212, 255, 0.1);
+  color: var(--arc-blue);
+  box-shadow: var(--shadow-blue);
+}
+
 .progress-ring {
   position: relative;
   display: grid;

@@ -102,6 +102,7 @@ export const mockForgeRuns: ForgeRun[] = [
   {
     id: "frg-lora-001",
     workshopId: mockWorkshop.id,
+    purpose: "training",
     label: "LoRA Training",
     method: "LoRA",
     status: "running",
@@ -111,6 +112,7 @@ export const mockForgeRuns: ForgeRun[] = [
   {
     id: "frg-qa-001",
     workshopId: mockWorkshop.id,
+    purpose: "training",
     label: "QA Generation",
     method: "QA Generation",
     status: "running",

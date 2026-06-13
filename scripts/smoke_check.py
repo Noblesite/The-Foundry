@@ -125,6 +125,7 @@ def run_forge_adapter_boundary_check() -> int:
     required_api_patterns = (
         "ForgeTrainingService",
         "/api/v1/forges/runtime",
+        "purpose: Literal[\"training\", \"evaluation\"]",
         "build_training_contract",
         "worker/reconcile",
     )
@@ -134,6 +135,8 @@ def run_forge_adapter_boundary_check() -> int:
 
     required_service_patterns = (
         "foundry.forge.training.v1",
+        "\"purpose\": purpose",
+        "evaluation_completed",
         "FOUNDRY_FORGE_RUNTIME_MODE",
         "supportsMethods",
         "events.jsonl",

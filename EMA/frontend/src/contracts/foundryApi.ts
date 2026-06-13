@@ -8,6 +8,7 @@ import {
   ConstructChatErrorEvent,
   ConstructChatStreamEvent,
   ForgeTrainingContract,
+  ForgePurpose,
   ForgeWorkerReconcileResult,
   ForgeWorkerState,
   ForgeRunStatus,
@@ -161,6 +162,7 @@ export interface ForgeRunDto {
   materialSetId?: string;
   artifactId?: string;
   baseModel?: string;
+  purpose: ForgePurpose;
   label: string;
   method: TrainingMethod | "QA Generation" | "Embedding Build";
   status: ForgeRunStatus;
@@ -247,6 +249,7 @@ export interface StartForgeRequest {
   materialSetId: string;
   baseModel: string;
   method: TrainingMethod;
+  purpose: ForgePurpose;
   epochs: number;
   learningRate: string;
   loadIn4Bit: boolean;

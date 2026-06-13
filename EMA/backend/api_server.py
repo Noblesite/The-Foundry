@@ -65,6 +65,7 @@ class StartForgeInput(BaseModel):
     materialSetId: str
     baseModel: str
     method: Literal["LoRA", "QLoRA"]
+    purpose: Literal["training", "evaluation"] = "training"
     epochs: int
     learningRate: str
     loadIn4Bit: bool
@@ -351,7 +352,7 @@ async def start_foundry_forge_endpoint(workshop_id: str, data: StartForgeInput):
     base_model = data.baseModel.strip()
     learning_rate = data.learningRate.strip()
     if not material_id:
-        raise HTTPException(status_code=400, detail="Select a JSONL Material for training.")
+        raise HTTPException(status_code=400, detail="Select a JSONL Material for the Forge.")
     if not base_model:
         raise HTTPException(status_code=400, detail="Base model cannot be empty.")
     if data.epochs < 1:
@@ -365,6 +366,7 @@ async def start_foundry_forge_endpoint(workshop_id: str, data: StartForgeInput):
             material_id=material_id,
             base_model=base_model,
             method=data.method,
+            purpose=data.purpose,
             epochs=data.epochs,
             learning_rate=learning_rate,
             load_in_4bit=data.loadIn4Bit,
@@ -422,7 +424,7 @@ async def reconcile_foundry_forge_worker_endpoint(forge_run_id: str):
             forge_run=forge,
             material=material,
         )
-        if forge["status"] == "completed":
+        if forge["status"] == "completed" and forge.get("purpose") != "evaluation":
             forge = await foundry_catalog_service.ensure_artifact_for_completed_forge(forge_run_id)
             state["forgeRun"] = forge
         return api_envelope(state)

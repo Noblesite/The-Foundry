@@ -358,7 +358,8 @@ export const mockFoundryRepository: FoundryRepository = {
       workshopId: _workshopId,
       materialSetId: request.materialSetId,
       baseModel: request.baseModel,
-      label: `${request.method} Training`,
+      purpose: request.purpose,
+      label: `${request.method} ${request.purpose === "evaluation" ? "Evaluation" : "Training"}`,
       method: request.method,
       status: "queued",
       progress: 0,
@@ -372,6 +373,7 @@ export const mockFoundryRepository: FoundryRepository = {
         contractVersion: "foundry.forge.training.v1",
         forgeRunId: `pending-${Date.now()}`,
         workshopId: _workshopId,
+        purpose: request.purpose,
         materialId: request.materialSetId,
         datasetUri: material.sourceUri,
         baseModel: request.baseModel,
@@ -399,7 +401,7 @@ export const mockFoundryRepository: FoundryRepository = {
           id: `evt-${Date.now()}-validated`,
           forgeRunId: forgeRun.id,
           type: "dataset_validated",
-          message: `Dataset validated with ${material.qaPairCount} training rows.`,
+          message: `Dataset validated with ${material.qaPairCount} ${request.purpose} rows.`,
           timestamp: new Date().toISOString(),
           progress: 6,
           data: { rowCount: material.qaPairCount },
@@ -447,7 +449,18 @@ export const mockFoundryRepository: FoundryRepository = {
         lastEvent: null,
       },
     };
-    if (forgeRun.status === "completed") {
+    if (forgeRun.status === "completed" && forgeRun.purpose === "evaluation") {
+      workerState.events.push({
+        id: `evt-${Date.now()}-${workerState.events.length}`,
+        forgeRunId: forgeRun.id,
+        type: "evaluation_completed",
+        message: "Forge evaluation completed. Review metrics before promoting an Artifact.",
+        timestamp: new Date().toISOString(),
+        progress: 100,
+        epoch: forgeRun.epoch,
+      });
+    }
+    if (forgeRun.status === "completed" && forgeRun.purpose !== "evaluation") {
       workerState.events.push({
         id: `evt-${Date.now()}-${workerState.events.length}`,
         forgeRunId: forgeRun.id,
@@ -464,7 +477,9 @@ export const mockFoundryRepository: FoundryRepository = {
       forgeRunId: forgeRun.id,
       type: forgeRun.status === "completed" ? "completed" : "step_completed",
       message:
-        forgeRun.status === "completed"
+        forgeRun.status === "completed" && forgeRun.purpose === "evaluation"
+          ? "Forge evaluation simulation completed."
+          : forgeRun.status === "completed"
           ? "Forge simulation completed and Artifact metadata is ready."
           : `Simulator advanced Forge progress to ${forgeRun.progress}%.`,
       timestamp: new Date().toISOString(),
@@ -480,7 +495,7 @@ export const mockFoundryRepository: FoundryRepository = {
     };
     mockForgeWorkerStates[forgeRun.id] = workerState;
     forgeRun.workerState = workerState;
-    if (forgeRun.status === "completed" && !forgeRun.artifactId) {
+    if (forgeRun.status === "completed" && forgeRun.purpose !== "evaluation" && !forgeRun.artifactId) {
       forgeRun.artifactId = `art-${forgeRun.id.replace(/^frg-/, "")}`;
       const artifact: Artifact = {
         id: forgeRun.artifactId,
@@ -533,6 +548,7 @@ export const mockFoundryRepository: FoundryRepository = {
         contractVersion: "foundry.forge.training.v1",
         forgeRunId: forgeRun.id,
         workshopId: forgeRun.workshopId,
+        purpose: forgeRun.purpose || "training",
         materialId: material.id,
         datasetUri: material.sourceUri,
         baseModel: forgeRun.baseModel || "unknown",
@@ -566,7 +582,7 @@ export const mockFoundryRepository: FoundryRepository = {
     };
     mockForgeWorkerStates[forgeRun.id] = workerState;
     forgeRun.workerState = workerState;
-    if (forgeRun.status === "completed" && !forgeRun.artifactId) {
+    if (forgeRun.status === "completed" && forgeRun.purpose !== "evaluation" && !forgeRun.artifactId) {
       forgeRun.artifactId = `art-${forgeRun.id.replace(/^frg-/, "")}`;
       const artifact: Artifact = {
         id: forgeRun.artifactId,
