@@ -1114,6 +1114,70 @@ input[type="checkbox"] {
   gap: 0.8rem;
 }
 
+.evaluation-decision-card,
+.evaluation-comparison-card {
+  display: grid;
+  gap: 0.85rem;
+  border: 1px solid rgba(212, 160, 23, 0.22);
+  border-radius: 8px;
+  padding: 1rem;
+  background:
+    radial-gradient(circle at top right, rgba(255, 138, 0, 0.12), transparent 34%),
+    rgba(13, 17, 23, 0.66);
+}
+
+.evaluation-decision-card h3,
+.evaluation-comparison-card h3 {
+  margin: 0.14rem 0 0;
+  color: var(--text-primary);
+  font-size: 1.08rem;
+}
+
+.evaluation-decision-card p {
+  margin: 0.42rem 0 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.evaluation-decision-metrics,
+.evaluation-action-row,
+.evaluation-delta-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.52rem;
+}
+
+.evaluation-decision-metrics span,
+.evaluation-action-row span,
+.evaluation-delta-grid span,
+.readiness-badge {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.3rem 0.58rem;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.evaluation-action-row span {
+  border-color: rgba(0, 212, 255, 0.26);
+  background: rgba(0, 212, 255, 0.08);
+  color: var(--arc-blue);
+}
+
+.evaluation-delta-grid .is-positive {
+  border-color: rgba(0, 212, 255, 0.38);
+  background: rgba(0, 212, 255, 0.1);
+  color: var(--arc-blue);
+}
+
+.evaluation-delta-grid .is-negative {
+  border-color: rgba(255, 138, 0, 0.36);
+  background: rgba(255, 138, 0, 0.1);
+  color: var(--forge-orange);
+}
+
 .evaluation-report-card {
   display: grid;
   gap: 0.75rem;
@@ -1149,6 +1213,35 @@ input[type="checkbox"] {
   color: var(--arc-blue);
   font-size: 1.45rem;
   line-height: 1;
+}
+
+.readiness-badge {
+  justify-self: start;
+}
+
+.readiness-needs-more-data {
+  border-color: rgba(212, 160, 23, 0.45);
+  background: rgba(212, 160, 23, 0.12);
+  color: var(--brass);
+}
+
+.readiness-ready-for-forge {
+  border-color: rgba(255, 138, 0, 0.42);
+  background: rgba(255, 138, 0, 0.1);
+  color: var(--forge-orange);
+}
+
+.readiness-candidate-artifact {
+  border-color: rgba(0, 212, 255, 0.38);
+  background: rgba(0, 212, 255, 0.1);
+  color: var(--arc-blue);
+}
+
+.readiness-ready-for-construct {
+  border-color: rgba(0, 212, 255, 0.58);
+  background: rgba(0, 212, 255, 0.16);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-blue);
 }
 
 .evaluation-rubric-strip {

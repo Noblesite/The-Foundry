@@ -28,6 +28,56 @@ interface EvaluationReportSummary {
   report: ForgeEvaluationReport;
 }
 
+type ReadinessState =
+  | "needs-more-data"
+  | "ready-for-forge"
+  | "candidate-artifact"
+  | "ready-for-construct";
+
+const readinessLabels: Record<ReadinessState, string> = {
+  "needs-more-data": "Needs more data",
+  "ready-for-forge": "Ready for another Forge",
+  "candidate-artifact": "Candidate Artifact",
+  "ready-for-construct": "Ready for Construct",
+};
+
+const getReportTime = (report: ForgeEvaluationReport) => Date.parse(report.createdAt) || 0;
+
+const getReadinessState = (report: ForgeEvaluationReport): ReadinessState => {
+  if (report.rowCount < 10) {
+    return "needs-more-data";
+  }
+  if (report.passRate >= 90 && report.failCount === 0) {
+    return "ready-for-construct";
+  }
+  const acceptableFailures = Math.max(1, Math.floor(report.rowCount * 0.08));
+  if (report.passRate >= 78 && report.failCount <= acceptableFailures) {
+    return "candidate-artifact";
+  }
+  return "ready-for-forge";
+};
+
+const getReadinessReason = (report: ForgeEvaluationReport): string => {
+  const readiness = getReadinessState(report);
+  if (readiness === "needs-more-data") {
+    return "Add more evaluation rows before trusting this score.";
+  }
+  if (readiness === "ready-for-construct") {
+    return "High pass rate with no failed samples. This Artifact is ready for Construct testing.";
+  }
+  if (readiness === "candidate-artifact") {
+    return "Good signal, but review weak samples before promotion.";
+  }
+  return "Use failed and needs-work rows to train another Artifact.";
+};
+
+const formatDelta = (value: number, suffix = "%"): string => {
+  if (value === 0) {
+    return `0${suffix}`;
+  }
+  return `${value > 0 ? "+" : ""}${value}${suffix}`;
+};
+
 const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
   repository,
   summary,
@@ -114,6 +164,40 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
     [selectedTrialIds, trials]
   );
 
+  const sortedEvaluationReports = useMemo(
+    () =>
+      [...evaluationReports].sort(
+        (left, right) => getReportTime(right.report) - getReportTime(left.report)
+      ),
+    [evaluationReports]
+  );
+
+  const latestReport = sortedEvaluationReports[0];
+  const previousReport = sortedEvaluationReports[1];
+
+  const reportComparison = useMemo(() => {
+    if (!latestReport || !previousReport) {
+      return null;
+    }
+
+    const previousRubric = new Map(
+      previousReport.report.rubric.map((item) => [item.label, item.score])
+    );
+
+    return {
+      passRateDelta: latestReport.report.passRate - previousReport.report.passRate,
+      failDelta: latestReport.report.failCount - previousReport.report.failCount,
+      needsWorkDelta:
+        latestReport.report.needsWorkCount - previousReport.report.needsWorkCount,
+      rowDelta: latestReport.report.rowCount - previousReport.report.rowCount,
+      rubricDeltas: latestReport.report.rubric.map((item) => ({
+        label: item.label,
+        score: item.score,
+        delta: item.score - (previousRubric.get(item.label) ?? item.score),
+      })),
+    };
+  }, [latestReport, previousReport]);
+
   const selectTrialsByVerdict = (verdict: TrialVerdict) => {
     setSelectedTrialIds(trials.filter((trial) => trial.verdict === verdict).map((trial) => trial.id));
   };
@@ -196,36 +280,107 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
             Complete an evaluation Forge to see pass rates, rubric scores, and sample checks here.
           </p>
         ) : (
-          <div className="evaluation-report-list">
-            {evaluationReports.map(({ forgeRun, report }) => (
-              <article className="evaluation-report-card" key={report.forgeRunId}>
-                <div className="evaluation-report-card-header">
-                  <div>
-                    <p className="panel-kicker">{forgeRun.method} evaluation</p>
-                    <h3>{forgeRun.label}</h3>
-                    <span>{report.rowCount.toLocaleString()} rows / {report.materialId}</span>
-                  </div>
-                  <strong>{report.passRate}%</strong>
+          <>
+            {latestReport && (
+              <article className="evaluation-decision-card">
+                <div>
+                  <p className="panel-kicker">Promotion guidance</p>
+                  <h3>{readinessLabels[getReadinessState(latestReport.report)]}</h3>
+                  <p>{getReadinessReason(latestReport.report)}</p>
                 </div>
-                <div className="forge-progress-track" aria-label={`${forgeRun.label} pass rate`}>
-                  <span style={{ width: `${report.passRate}%` }} />
+                <div className="evaluation-decision-metrics">
+                  <span>{latestReport.report.passRate}% pass</span>
+                  <span>{latestReport.report.failCount} failed</span>
+                  <span>{latestReport.report.rowCount.toLocaleString()} rows</span>
                 </div>
-                <div className="trial-report-counts">
-                  <span className="verdict-pass">{report.passCount} pass</span>
-                  <span className="verdict-needs-work">{report.needsWorkCount} needs work</span>
-                  <span className="verdict-fail">{report.failCount} fail</span>
+                <div className="evaluation-action-row" aria-label="Suggested evaluation actions">
+                  {getReadinessState(latestReport.report) === "ready-for-construct" ? (
+                    <>
+                      <span>Load best Artifact</span>
+                      <span>Run Construct prompts</span>
+                    </>
+                  ) : getReadinessState(latestReport.report) === "candidate-artifact" ? (
+                    <>
+                      <span>Review weak samples</span>
+                      <span>Compare Artifacts</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Export weak samples</span>
+                      <span>Train again</span>
+                    </>
+                  )}
+                  <span>Open Academy: Evaluation</span>
+                </div>
+              </article>
+            )}
+
+            {latestReport && previousReport && reportComparison && (
+              <article className="evaluation-comparison-card">
+                <div>
+                  <p className="panel-kicker">Latest vs previous</p>
+                  <h3>{latestReport.forgeRun.label}</h3>
+                </div>
+                <div className="evaluation-delta-grid">
+                  <span className={reportComparison.passRateDelta >= 0 ? "is-positive" : "is-negative"}>
+                    Pass rate {formatDelta(reportComparison.passRateDelta)}
+                  </span>
+                  <span className={reportComparison.failDelta <= 0 ? "is-positive" : "is-negative"}>
+                    Failed {formatDelta(reportComparison.failDelta, "")}
+                  </span>
+                  <span className={reportComparison.needsWorkDelta <= 0 ? "is-positive" : "is-negative"}>
+                    Needs work {formatDelta(reportComparison.needsWorkDelta, "")}
+                  </span>
+                  <span className={reportComparison.rowDelta >= 0 ? "is-positive" : "is-negative"}>
+                    Rows {formatDelta(reportComparison.rowDelta, "")}
+                  </span>
                 </div>
                 <div className="evaluation-rubric-strip">
-                  {report.rubric.map((item) => (
+                  {reportComparison.rubricDeltas.map((item) => (
                     <span key={item.label}>
-                      {item.label}: {item.score}%
+                      {item.label}: {item.score}% ({formatDelta(item.delta)})
                     </span>
                   ))}
                 </div>
-                <p>{report.recommendations[0]}</p>
               </article>
-            ))}
-          </div>
+            )}
+
+            <div className="evaluation-report-list">
+              {sortedEvaluationReports.map(({ forgeRun, report }) => (
+                <article className="evaluation-report-card" key={report.forgeRunId}>
+                  <div className="evaluation-report-card-header">
+                    <div>
+                      <p className="panel-kicker">{forgeRun.method} evaluation</p>
+                      <h3>{forgeRun.label}</h3>
+                      <span>{report.rowCount.toLocaleString()} rows / {report.materialId}</span>
+                    </div>
+                    <strong>{report.passRate}%</strong>
+                  </div>
+                  <span className={`readiness-badge readiness-${getReadinessState(report)}`}>
+                    {readinessLabels[getReadinessState(report)]}
+                  </span>
+                  <div className="forge-progress-track" aria-label={`${forgeRun.label} pass rate`}>
+                    <span style={{ width: `${report.passRate}%` }} />
+                  </div>
+                  <div className="trial-report-counts">
+                    <span className="verdict-pass">{report.passCount} pass</span>
+                    <span className="verdict-needs-work">
+                      {report.needsWorkCount} needs work
+                    </span>
+                    <span className="verdict-fail">{report.failCount} fail</span>
+                  </div>
+                  <div className="evaluation-rubric-strip">
+                    {report.rubric.map((item) => (
+                      <span key={item.label}>
+                        {item.label}: {item.score}%
+                      </span>
+                    ))}
+                  </div>
+                  <p>{report.recommendations[0]}</p>
+                </article>
+              ))}
+            </div>
+          </>
         )}
       </section>
 

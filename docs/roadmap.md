@@ -52,6 +52,8 @@ complexity.
 - Surface completed Forge Trial Reports from the Trials station so evaluation
   history is visible outside the Forge drawer. Done for the first report
   history slice.
+- Add Trial Report comparison, Artifact readiness guidance, and next-action
+  prompts in the Trials station. Done for the first promotion guidance slice.
 - Add runtime health, memory pressure, and unload behavior.
 - Teach users what context windows, sampling, and quantization settings do.
 
