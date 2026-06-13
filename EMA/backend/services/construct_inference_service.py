@@ -64,6 +64,7 @@ class ConstructInferenceService:
             "modelId": runtime.modelId,
             "device": runtime.device,
             "loaded": runtime.loaded,
+            "diagnostics": self._runtime_diagnostics(),
         }
 
     async def configure(

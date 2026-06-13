@@ -18,7 +18,14 @@ import {
   defaultAcademyActions,
   findAcademyAction,
 } from "./domain/academyRegistry";
-import { Artifact, Construct, NavigationSection, Workshop } from "./domain/foundry";
+import {
+  Artifact,
+  Construct,
+  ConstructRuntime,
+  NavigationSection,
+  RuntimeMetric,
+  Workshop,
+} from "./domain/foundry";
 import {
   defaultWorkspaceSettings,
   foundryNavigationItems,
@@ -45,6 +52,74 @@ const loadWorkspaceSettings = (): WorkspaceSettings => {
   }
 };
 
+const clampPercent = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
+
+const deriveRuntimeMetrics = (
+  baselineMetrics: RuntimeMetric[],
+  runtime: ConstructRuntime | null,
+  contextWindow: number
+): RuntimeMetric[] => {
+  const diagnostics = runtime?.diagnostics || {};
+  const memory = diagnostics.memory as
+    | { percentUsed?: number; totalGb?: number; availableGb?: number }
+    | undefined;
+  const isLoaded = Boolean(runtime?.loaded);
+  const isMps = runtime?.device === "mps" || diagnostics.mpsAvailable === true;
+  const isCuda = runtime?.device === "cuda" || diagnostics.cudaAvailable === true;
+
+  return baselineMetrics.map((metric) => {
+    if (metric.id === "memory" && typeof memory?.percentUsed === "number") {
+      return {
+        ...metric,
+        value: clampPercent(memory.percentUsed),
+        state: memory.percentUsed > (metric.ideal || 80) ? "warning" : isLoaded ? "active" : "ready",
+        description:
+          memory.totalGb && memory.availableGb
+            ? `${memory.availableGb}GB available of ${memory.totalGb}GB system memory.`
+            : metric.description,
+      };
+    }
+
+    if (metric.id === "gpu") {
+      const acceleratorReady = isMps || isCuda;
+      return {
+        ...metric,
+        value: isLoaded && acceleratorReady ? 36 : acceleratorReady ? 6 : 0,
+        state: isLoaded && acceleratorReady ? "active" : "idle",
+        description: acceleratorReady
+          ? "Accelerator is available for local model inference."
+          : "No GPU/MPS accelerator is reported by the runtime.",
+      };
+    }
+
+    if (metric.id === "gpu-memory") {
+      return {
+        ...metric,
+        value: isLoaded ? 42 : isMps || isCuda ? 10 : 0,
+        state: isLoaded ? "active" : "idle",
+      };
+    }
+
+    if (metric.id === "context") {
+      return {
+        ...metric,
+        value: clampPercent(Math.min(18, (512 / Math.max(1, contextWindow)) * 100)),
+        state: isLoaded ? "ready" : "idle",
+      };
+    }
+
+    if (metric.id === "cpu") {
+      return {
+        ...metric,
+        value: isLoaded ? Math.max(metric.value, 22) : metric.value,
+        state: isLoaded ? "ready" : metric.state,
+      };
+    }
+
+    return metric;
+  });
+};
+
 const App: React.FC = () => {
   const repository = useMemo(() => getFoundryRepository(), []);
   const [activeSection, setActiveSection] = useState<NavigationSection>("workshop");
@@ -54,6 +129,7 @@ const App: React.FC = () => {
   const [isCreatingWorkshop, setIsCreatingWorkshop] = useState(false);
   const [forgePreset, setForgePreset] = useState<StartForgeRequest | null>(null);
   const [academyFocusConceptId, setAcademyFocusConceptId] = useState<string | null>(null);
+  const [constructRuntime, setConstructRuntime] = useState<ConstructRuntime | null>(null);
   const [workshops, setWorkshops] = useState<Workshop[]>([mockDashboardSummary.workshop]);
   const [foundryData, setFoundryData] = useState<FoundryBootstrap>({
     dashboard: mockDashboardSummary,
@@ -66,11 +142,16 @@ const App: React.FC = () => {
   useEffect(() => {
     let isCurrent = true;
 
-    Promise.all([loadFoundryBootstrap(repository), repository.listWorkshops()])
-      .then(([bootstrap, savedWorkshops]) => {
+    Promise.all([
+      loadFoundryBootstrap(repository),
+      repository.listWorkshops(),
+      repository.getConstructRuntime(),
+    ])
+      .then(([bootstrap, savedWorkshops, runtime]) => {
         if (isCurrent) {
           setFoundryData(bootstrap);
           setWorkshops(savedWorkshops.length ? savedWorkshops : [bootstrap.dashboard.workshop]);
+          setConstructRuntime(runtime);
         }
       })
       .catch((error: unknown) => {
@@ -162,6 +243,10 @@ const App: React.FC = () => {
   };
 
   const handleConstructLoaded = (construct: Construct, artifact: Artifact) => {
+    repository
+      .getConstructRuntime()
+      .then(setConstructRuntime)
+      .catch((error: unknown) => console.error("[Construct Runtime]", error));
     setFoundryData((current) => ({
       ...current,
       dashboard: {
@@ -182,6 +267,14 @@ const App: React.FC = () => {
   const handleOpenForgePreset = (preset: StartForgeRequest) => {
     setForgePreset(preset);
     setActiveSection("forge");
+  };
+
+  const handleBaseModelSelected = (modelId: string) => {
+    persistSettings({
+      ...settings,
+      modelName: modelId,
+      constructModelId: modelId,
+    });
   };
 
   const handleOpenAcademy = (conceptId?: string) => {
@@ -321,6 +414,7 @@ const App: React.FC = () => {
           workshop={dashboardSummary.workshop}
           academyAction={getAcademyAction(ACADEMY_ACTION_IDS.artifactsOpenPromotion)}
           onConstructLoaded={handleConstructLoaded}
+          onBaseModelSelected={handleBaseModelSelected}
           onOpenAcademy={() =>
             handleOpenAcademyAction(ACADEMY_ACTION_IDS.artifactsOpenPromotion)
           }
@@ -438,7 +532,12 @@ const App: React.FC = () => {
         <Metrics
           contextWindow={settings.contextWindow}
           maxNewTokens={settings.maxNewTokens}
-          metrics={foundryData.dashboard.runtimeMetrics}
+          metrics={deriveRuntimeMetrics(
+            foundryData.dashboard.runtimeMetrics,
+            constructRuntime,
+            settings.contextWindow
+          )}
+          runtime={constructRuntime}
           trainingMethod={settings.trainingMethod}
         />
         <LayerVisualizer />

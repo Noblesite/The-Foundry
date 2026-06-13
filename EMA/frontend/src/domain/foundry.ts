@@ -319,6 +319,7 @@ export interface ConstructRuntime {
   modelId: string;
   device: string;
   loaded: boolean;
+  diagnostics?: Record<string, unknown>;
 }
 
 export interface ConstructRuntimeProbeResult {
@@ -473,6 +474,9 @@ export interface RuntimeMetric {
   id: string;
   label: string;
   value: number;
+  ideal?: number;
+  state?: "idle" | "ready" | "active" | "warning";
+  description?: string;
 }
 
 export interface DashboardSummary {

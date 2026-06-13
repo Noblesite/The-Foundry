@@ -1,10 +1,11 @@
 import React from "react";
-import { RuntimeMetric } from "../domain/foundry";
+import { ConstructRuntime, RuntimeMetric } from "../domain/foundry";
 
 interface MetricsProps {
   contextWindow: number;
   maxNewTokens: number;
   metrics: RuntimeMetric[];
+  runtime?: ConstructRuntime | null;
   trainingMethod: string;
 }
 
@@ -12,25 +13,41 @@ const Metrics: React.FC<MetricsProps> = ({
   contextWindow,
   maxNewTokens,
   metrics,
+  runtime,
   trainingMethod,
-}) => (
+}) => {
+  const runtimeStatus = runtime?.loaded ? "Active" : "Idle";
+  const runtimeModel = runtime?.modelId || "No model loaded";
+
+  return (
     <section className="metrics-panel" aria-label="Runtime metrics">
       <div className="panel-heading">
         <div>
           <p className="panel-kicker">Runtime</p>
           <h2>Metrics</h2>
         </div>
+        <span className={`status-badge ${runtime?.loaded ? "is-active" : ""}`}>{runtimeStatus}</span>
       </div>
 
       <div className="metric-list">
         {metrics.map((metric) => (
-          <div key={metric.id} className="metric-row">
-            <label>{metric.label}</label>
+          <div
+            key={metric.id}
+            className={`metric-row metric-state-${metric.state || "idle"}`}
+            title={metric.description}
+          >
+            <label>
+              {metric.label}
+              {metric.ideal !== undefined && <small>Ideal {metric.ideal}%</small>}
+            </label>
             <div className="metric-track">
+              {metric.ideal !== undefined && (
+                <span className="metric-ideal-marker" style={{ left: `${metric.ideal}%` }} />
+              )}
               <div
                 className="metric-fill"
                 style={{ width: `${metric.value}%` }}
-              ></div>
+              />
             </div>
             <span>{metric.value}%</span>
           </div>
@@ -50,8 +67,13 @@ const Metrics: React.FC<MetricsProps> = ({
           <span>Adapter</span>
           <strong>{trainingMethod}</strong>
         </div>
+        <div>
+          <span>Model</span>
+          <strong>{runtimeModel}</strong>
+        </div>
       </div>
     </section>
-);
+  );
+};
 
 export default Metrics;
