@@ -14,8 +14,11 @@ import {
 } from "../domain/foundry";
 import { buildRuntimeReadinessSummary } from "../domain/constructReadiness";
 import {
+  formatLoadDuration,
   formatRuntimeMemory,
+  formatRuntimeTimestamp,
   getLoadedModelSnapshot,
+  getRuntimeLoadEvent,
   getRuntimeMemory,
   shortModelId,
 } from "../domain/runtimeState";
@@ -523,6 +526,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
 
   const runtimeMemory = getRuntimeMemory(runtime);
   const loadedModel = getLoadedModelSnapshot(runtime);
+  const loadEvent = getRuntimeLoadEvent(runtime);
   const runtimePhaseLabel = {
     idle: "Idle",
     configuring: "Configuring",
@@ -693,7 +697,20 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                   <span>Cache</span>
                   <strong>{loadedModel.cacheSize !== undefined ? loadedModel.cacheSize : "n/a"}</strong>
                 </div>
+                <div>
+                  <span>Last load</span>
+                  <strong>{loadEvent.status || "idle"}</strong>
+                </div>
+                <div>
+                  <span>Duration</span>
+                  <strong>{formatLoadDuration(loadEvent.durationSeconds)}</strong>
+                </div>
               </div>
+              {loadEvent.failureReason && (
+                <p className="runtime-load-failure">
+                  Load failed: {loadEvent.failureReason}
+                </p>
+              )}
               <div className="runtime-action-row">
                 <button
                   className="button-secondary button-compact"
@@ -1001,9 +1018,18 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
               <strong>{loadedModel.device || runtime?.device || "none"}</strong>
               <span>Memory</span>
               <strong>{formatRuntimeMemory(runtimeMemory)}</strong>
+              <span>Last load</span>
+              <strong>{loadEvent.status || "idle"}</strong>
+              <span>Loaded at</span>
+              <strong>{formatRuntimeTimestamp(loadEvent.finishedAt)}</strong>
+              <span>Load time</span>
+              <strong>{formatLoadDuration(loadEvent.durationSeconds)}</strong>
               <span>Library</span>
               <strong>{includeLibraryContext ? "included" : "off"}</strong>
             </div>
+            {loadEvent.failureReason && (
+              <p className="save-state error-state">Load failed: {loadEvent.failureReason}</p>
+            )}
           </article>
 
           <article className="construct-inspector-card panel-glass">

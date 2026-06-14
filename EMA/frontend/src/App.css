@@ -1291,6 +1291,17 @@ input[type="checkbox"] {
   font-size: 0.8rem;
 }
 
+.runtime-load-failure {
+  margin: 0;
+  border: 1px solid rgba(255, 138, 0, 0.42);
+  border-radius: 8px;
+  padding: 0.58rem;
+  color: var(--forge-orange);
+  background: rgba(255, 138, 0, 0.08);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
 .runtime-action-row .button-secondary {
   width: auto;
 }

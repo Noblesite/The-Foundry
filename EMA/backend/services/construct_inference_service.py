@@ -4,6 +4,7 @@ import asyncio
 import os
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Thread
 from typing import Any, AsyncIterator, Dict, Optional
@@ -35,6 +36,15 @@ class ConstructInferenceService:
         self.device_preference = os.getenv("FOUNDRY_CONSTRUCT_DEVICE", "auto").strip().lower()
         self._model_cache: Dict[str, Any] = {}
         self._active_loaded_model_id = ""
+        self._last_load_event: Dict[str, Any] = {
+            "status": "idle",
+            "modelId": self.model_id or "",
+            "device": self.device_preference,
+            "durationSeconds": None,
+            "startedAt": None,
+            "finishedAt": None,
+            "failureReason": None,
+        }
         self._load_lock = asyncio.Lock()
 
     def describe_runtime(self) -> InferenceRuntime:
@@ -49,7 +59,7 @@ class ConstructInferenceService:
         if self.mode == "transformers":
             return InferenceRuntime(
                 mode="transformers",
-                status="loaded" if self._model_cache else "configured",
+                status="loaded" if active_loaded_model_id else "configured",
                 detail="Local Transformers inference is enabled.",
                 modelId=model_id,
                 device=loaded_device,
@@ -75,6 +85,7 @@ class ConstructInferenceService:
             "loaded": runtime.loaded,
             "cacheSize": len(self._model_cache),
         }
+        diagnostics["loadEvent"] = dict(self._last_load_event)
         return {
             "mode": runtime.mode,
             "status": runtime.status,
@@ -106,13 +117,50 @@ class ConstructInferenceService:
         if model_id:
             self.model_id = model_id.strip()
         if self.mode != "transformers":
+            self._record_load_event(
+                status="skipped",
+                model_id=self.model_id or "active Artifact base model",
+                device="none",
+                duration_seconds=0,
+                failure_reason="Runtime is using simulated token streaming.",
+            )
             return self.runtime_payload()
 
         target_model = self.model_id
         if not target_model:
             raise ValueError("Set a model id before loading the Transformers runtime.")
-        await self._load_transformers_model(target_model)
-        self._active_loaded_model_id = target_model
+        started_at = time.perf_counter()
+        event_started_at = self._utc_now()
+        self._last_load_event = {
+            "status": "loading",
+            "modelId": target_model,
+            "device": self.device_preference,
+            "durationSeconds": None,
+            "startedAt": event_started_at,
+            "finishedAt": None,
+            "failureReason": None,
+        }
+        try:
+            _tokenizer, model = await self._load_transformers_model(target_model)
+            self._active_loaded_model_id = target_model
+            self._record_load_event(
+                status="loaded",
+                model_id=target_model,
+                device=self._device_for_model(model),
+                duration_seconds=round(time.perf_counter() - started_at, 3),
+                started_at=event_started_at,
+            )
+        except Exception as error:
+            self._active_loaded_model_id = ""
+            self._record_load_event(
+                status="failed",
+                model_id=target_model,
+                device=self.device_preference,
+                duration_seconds=round(time.perf_counter() - started_at, 3),
+                started_at=event_started_at,
+                failure_reason=str(error),
+            )
+            raise
         return self.runtime_payload()
 
     async def preflight_model(self, model_id: Optional[str], device: str) -> Dict[str, Any]:
@@ -130,6 +178,12 @@ class ConstructInferenceService:
     async def unload(self) -> Dict[str, Any]:
         self._model_cache.clear()
         self._active_loaded_model_id = ""
+        self._record_load_event(
+            status="unloaded",
+            model_id=self.model_id or "",
+            device=self.device_preference,
+            duration_seconds=0,
+        )
         try:
             import torch
 
@@ -228,9 +282,25 @@ class ConstructInferenceService:
     ) -> AsyncIterator[str]:
         try:
             target_model = self.model_id or prepared_response["artifact"]["baseModel"]
+            started_at = time.perf_counter()
+            event_started_at = self._utc_now()
             tokenizer, model = await self._load_transformers_model(target_model)
             self._active_loaded_model_id = target_model
+            self._record_load_event(
+                status="loaded",
+                model_id=target_model,
+                device=self._device_for_model(model),
+                duration_seconds=round(time.perf_counter() - started_at, 3),
+                started_at=event_started_at,
+            )
         except Exception as error:
+            self._record_load_event(
+                status="failed",
+                model_id=self.model_id or prepared_response["artifact"]["baseModel"],
+                device=self.device_preference,
+                duration_seconds=None,
+                failure_reason=str(error),
+            )
             fallback = (
                 "Local Transformers inference could not start, so The Foundry "
                 f"fell back to the simulator. Reason: {error}"
@@ -513,10 +583,36 @@ class ConstructInferenceService:
         cached = self._model_cache.get(model_id)
         if not cached:
             return self.device_preference
+        return self._device_for_model(cached.get("model"))
+
+    def _device_for_model(self, model) -> str:
         try:
-            return str(next(cached["model"].parameters()).device)
+            return str(next(model.parameters()).device)
         except Exception:
             return self.device_preference
+
+    def _record_load_event(
+        self,
+        *,
+        status: str,
+        model_id: str,
+        device: str,
+        duration_seconds: Optional[float],
+        started_at: Optional[str] = None,
+        failure_reason: Optional[str] = None,
+    ) -> None:
+        self._last_load_event = {
+            "status": status,
+            "modelId": model_id,
+            "device": device,
+            "durationSeconds": duration_seconds,
+            "startedAt": started_at or self._utc_now(),
+            "finishedAt": self._utc_now(),
+            "failureReason": failure_reason,
+        }
+
+    def _utc_now(self) -> str:
+        return datetime.now(timezone.utc).isoformat()
 
     def _runtime_diagnostics(self, baseline: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         diagnostics: Dict[str, Any] = dict(baseline or {})

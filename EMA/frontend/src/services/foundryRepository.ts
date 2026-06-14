@@ -302,6 +302,15 @@ const mockArchiveModels: ModelSearchResult[] = [
   },
 ];
 let mockConstruct: Construct = mockDashboardSummary.construct;
+let mockRuntimeLoadEvent: Record<string, unknown> = {
+  status: "idle",
+  modelId: "active Artifact base model",
+  device: "none",
+  durationSeconds: null,
+  startedAt: null,
+  finishedAt: null,
+  failureReason: null,
+};
 const mockRuntimeDiagnostics = (runtime?: Partial<ConstructRuntime>): Record<string, unknown> => ({
   torchVersion: "mock",
   cudaAvailable: false,
@@ -318,6 +327,7 @@ const mockRuntimeDiagnostics = (runtime?: Partial<ConstructRuntime>): Record<str
     loaded: runtime?.loaded ?? false,
     cacheSize: runtime?.loaded ? 1 : 0,
   },
+  loadEvent: mockRuntimeLoadEvent,
 });
 let mockConstructRuntime: ConstructRuntime = {
   mode: "simulated",
@@ -1025,6 +1035,15 @@ export const mockFoundryRepository: FoundryRepository = {
   },
   getConstructRuntime: async () => mockConstructRuntime,
   configureConstructRuntime: async (request) => {
+    mockRuntimeLoadEvent = {
+      status: "configured",
+      modelId: request.modelId || "active Artifact base model",
+      device: request.mode === "simulated" ? "none" : request.device,
+      durationSeconds: 0,
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      failureReason: null,
+    };
     const nextRuntime = {
       mode: request.mode,
       status: request.mode === "simulated" ? "fallback" : "configured",
@@ -1043,12 +1062,22 @@ export const mockFoundryRepository: FoundryRepository = {
     return mockConstructRuntime;
   },
   loadConstructRuntime: async (request) => {
+    const startedAt = new Date();
     const nextRuntime = {
       ...mockConstructRuntime,
       modelId: request.modelId || mockConstructRuntime.modelId,
       status: "loaded",
       loaded: true,
       device: mockConstructRuntime.device === "auto" ? "mps" : mockConstructRuntime.device,
+    };
+    mockRuntimeLoadEvent = {
+      status: "loaded",
+      modelId: nextRuntime.modelId,
+      device: nextRuntime.device,
+      durationSeconds: 0.18,
+      startedAt: startedAt.toISOString(),
+      finishedAt: new Date(startedAt.getTime() + 180).toISOString(),
+      failureReason: null,
     };
     mockConstructRuntime = {
       ...nextRuntime,
@@ -1114,6 +1143,15 @@ export const mockFoundryRepository: FoundryRepository = {
     },
   }),
   unloadConstructRuntime: async () => {
+    mockRuntimeLoadEvent = {
+      status: "unloaded",
+      modelId: mockConstructRuntime.modelId,
+      device: mockConstructRuntime.device,
+      durationSeconds: 0,
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      failureReason: null,
+    };
     const nextRuntime = {
       ...mockConstructRuntime,
       status: mockConstructRuntime.mode === "simulated" ? "fallback" : "configured",

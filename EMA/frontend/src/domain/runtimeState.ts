@@ -13,6 +13,16 @@ export interface LoadedModelSnapshot {
   cacheSize?: number;
 }
 
+export interface RuntimeLoadEventSnapshot {
+  status?: string;
+  modelId?: string;
+  device?: string;
+  durationSeconds?: number | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  failureReason?: string | null;
+}
+
 export const getRuntimeMemory = (runtime?: ConstructRuntime | null): RuntimeMemorySnapshot => {
   const memory = runtime?.diagnostics?.memory;
   return memory && typeof memory === "object" ? (memory as RuntimeMemorySnapshot) : {};
@@ -32,12 +42,46 @@ export const getLoadedModelSnapshot = (
   };
 };
 
+export const getRuntimeLoadEvent = (
+  runtime?: ConstructRuntime | null
+): RuntimeLoadEventSnapshot => {
+  const loadEvent = runtime?.diagnostics?.loadEvent;
+  return loadEvent && typeof loadEvent === "object"
+    ? (loadEvent as RuntimeLoadEventSnapshot)
+    : {};
+};
+
 export const formatRuntimeMemory = (memory: RuntimeMemorySnapshot): string => {
   if (memory.percentUsed === undefined) {
     return "n/a";
   }
   const available = memory.availableGb !== undefined ? `${memory.availableGb} GB free` : "available unknown";
   return `${Math.round(memory.percentUsed)}% used, ${available}`;
+};
+
+export const formatLoadDuration = (durationSeconds?: number | null): string => {
+  if (durationSeconds === undefined || durationSeconds === null) {
+    return "n/a";
+  }
+  if (durationSeconds < 1) {
+    return `${Math.round(durationSeconds * 1000)} ms`;
+  }
+  return `${durationSeconds.toFixed(durationSeconds >= 10 ? 1 : 2)} s`;
+};
+
+export const formatRuntimeTimestamp = (value?: string | null): string => {
+  if (!value) {
+    return "not recorded";
+  }
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    return value;
+  }
+  return timestamp.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 };
 
 export const shortModelId = (modelId?: string): string => {
