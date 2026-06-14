@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -45,6 +45,24 @@ interface ResponseInspection {
 
 type RuntimeLoadPhase = "idle" | "configuring" | "loading" | "ready" | "failed";
 type RuntimeSmokeStatus = "idle" | "loading" | "streaming" | "passed" | "failed";
+type RuntimeTimelineEventType =
+  | "handoff"
+  | "preflight"
+  | "configure"
+  | "load"
+  | "unload"
+  | "probe"
+  | "smoke";
+type RuntimeTimelineEventStatus = "running" | "passed" | "warning" | "failed" | "info";
+
+interface RuntimeTimelineEvent {
+  id: string;
+  type: RuntimeTimelineEventType;
+  status: RuntimeTimelineEventStatus;
+  title: string;
+  detail: string;
+  timestamp: string;
+}
 
 interface ConstructWorkbenchProps {
   artifact: Artifact;
@@ -96,6 +114,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [preflightResult, setPreflightResult] = useState<ConstructRuntimePreflightResult | null>(null);
   const [readinessGateMessage, setReadinessGateMessage] = useState<string | null>(null);
   const [confirmedCautionTarget, setConfirmedCautionTarget] = useState<string | null>(null);
+  const [runtimeTimeline, setRuntimeTimeline] = useState<RuntimeTimelineEvent[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [lastInspection, setLastInspection] = useState<ResponseInspection | null>(null);
   const [trialVerdict, setTrialVerdict] = useState<TrialVerdict | null>(null);
@@ -103,6 +122,22 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [isSavingTrial, setIsSavingTrial] = useState(false);
   const [trialError, setTrialError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const addRuntimeTimelineEvent = useCallback(
+    (event: Omit<RuntimeTimelineEvent, "id" | "timestamp">) => {
+      setRuntimeTimeline((current) =>
+        [
+          {
+            ...event,
+            id: `runtime-event-${Date.now()}-${current.length}`,
+            timestamp: new Date().toISOString(),
+          },
+          ...current,
+        ].slice(0, 10)
+      );
+    },
+    []
+  );
 
   useEffect(() => {
     setActiveConstruct(construct);
@@ -131,6 +166,16 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setReadinessGateMessage(null);
     setConfirmedCautionTarget(null);
     setProbeResult(null);
+    setRuntimeTimeline([
+      {
+        id: `runtime-event-reset-${Date.now()}`,
+        type: "handoff",
+        status: "info",
+        title: "Construct session ready",
+        detail: `Runtime target set to ${settings.constructModelId || artifact.baseModel}.`,
+        timestamp: new Date().toISOString(),
+      },
+    ]);
   }, [artifact, construct, settings.constructModelId]);
 
   useEffect(() => {
@@ -176,6 +221,12 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setIsPreflightingRuntime(true);
     setRuntimeLoadTarget(targetModel);
     setError(null);
+    addRuntimeTimelineEvent({
+      type: "preflight",
+      status: "running",
+      title: "Preflight started",
+      detail: `Checking ${shortModelId(targetModel)} on ${settings.constructDevice}.`,
+    });
     try {
       const result = await repository.preflightConstructRuntime({
         modelId: targetModel,
@@ -183,10 +234,30 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       });
       setPreflightResult(result);
       setReadinessGateMessage(null);
+      const readiness = buildRuntimeReadinessSummary(result);
+      addRuntimeTimelineEvent({
+        type: "preflight",
+        status:
+          readiness.status === "ready"
+            ? "passed"
+            : readiness.status === "caution"
+            ? "warning"
+            : "failed",
+        title: readiness.title,
+        detail: readiness.summary,
+      });
       return result;
     } catch (runtimeError: unknown) {
       setPreflightResult(null);
-      setError(runtimeError instanceof Error ? runtimeError.message : "Could not preflight runtime.");
+      const message =
+        runtimeError instanceof Error ? runtimeError.message : "Could not preflight runtime.";
+      addRuntimeTimelineEvent({
+        type: "preflight",
+        status: "failed",
+        title: "Preflight failed",
+        detail: message,
+      });
+      setError(message);
       throw runtimeError;
     } finally {
       setIsPreflightingRuntime(false);
@@ -207,6 +278,12 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setReadinessGateMessage(null);
     setConfirmedCautionTarget(null);
     setProbeResult(null);
+    addRuntimeTimelineEvent({
+      type: "handoff",
+      status: "info",
+      title: "Archive handoff received",
+      detail: `${label} is ready for Construct preflight.`,
+    });
     if (handoff.preflightOnOpen) {
       void runRuntimePreflight(handoff.modelId);
     }
@@ -220,6 +297,12 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setRuntimeLoadPhase("configuring");
     setRuntimeLoadTarget(targetModel);
     setError(null);
+    addRuntimeTimelineEvent({
+      type: "configure",
+      status: "running",
+      title: "Configuring runtime",
+      detail: `${settings.constructRuntimeMode} runtime targeting ${shortModelId(targetModel)}.`,
+    });
     try {
       const runtimeStatus = await repository.configureConstructRuntime({
         mode: settings.constructRuntimeMode,
@@ -231,8 +314,22 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       setRuntimeDetail(runtimeStatus.detail);
       onRuntimeChanged?.(runtimeStatus);
       setRuntimeLoadPhase("ready");
+      addRuntimeTimelineEvent({
+        type: "configure",
+        status: "passed",
+        title: "Runtime configured",
+        detail: `${runtimeStatus.mode} is ready on ${runtimeStatus.device}.`,
+      });
     } catch (runtimeError: unknown) {
-      setError(runtimeError instanceof Error ? runtimeError.message : "Could not configure runtime.");
+      const message =
+        runtimeError instanceof Error ? runtimeError.message : "Could not configure runtime.";
+      addRuntimeTimelineEvent({
+        type: "configure",
+        status: "failed",
+        title: "Configure failed",
+        detail: message,
+      });
+      setError(message);
       setRuntimeLoadPhase("failed");
     } finally {
       setIsRuntimeBusy(false);
@@ -245,12 +342,24 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     const readiness = buildRuntimeReadinessSummary(preflight);
     if (!readiness.canLoad) {
       setRuntimeLoadPhase("failed");
+      addRuntimeTimelineEvent({
+        type: "load",
+        status: "failed",
+        title: "Load blocked",
+        detail: readiness.nextAction,
+      });
       throw new Error("Readiness check blocked loading. Fix the failed checks and preflight again.");
     }
     const cautionAlreadyConfirmed = confirmedCautionTarget === targetModel;
     if (readiness.requiresConfirmation && !options?.confirmCaution && !cautionAlreadyConfirmed) {
       setRuntimeLoadPhase("idle");
       setReadinessGateMessage("Caution review required. Choose Load Anyway to continue.");
+      addRuntimeTimelineEvent({
+        type: "load",
+        status: "warning",
+        title: "Load waiting for confirmation",
+        detail: readiness.nextAction,
+      });
       throw new Error("Caution review required before loading this model.");
     }
     if (readiness.requiresConfirmation && options?.confirmCaution) {
@@ -263,6 +372,12 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setRuntimeLoadPhase("configuring");
     setRuntimeLoadTarget(targetModel);
     setError(null);
+    addRuntimeTimelineEvent({
+      type: "configure",
+      status: "running",
+      title: "Runtime configure started",
+      detail: `Preparing transformers runtime for ${shortModelId(targetModel)}.`,
+    });
     const configured = await repository.configureConstructRuntime({
       mode: "transformers",
       modelId: targetModel,
@@ -271,7 +386,19 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setRuntime(configured);
     setRuntimeMode(configured.mode);
     setRuntimeDetail(configured.detail);
+    addRuntimeTimelineEvent({
+      type: "configure",
+      status: "passed",
+      title: "Runtime configure passed",
+      detail: `${configured.mode} selected on ${configured.device}.`,
+    });
     setRuntimeLoadPhase("loading");
+    addRuntimeTimelineEvent({
+      type: "load",
+      status: "running",
+      title: "Model load started",
+      detail: `Loading ${shortModelId(targetModel)} into the local runtime.`,
+    });
     const runtimeStatus = await repository.loadConstructRuntime({
       modelId: targetModel,
     });
@@ -280,6 +407,15 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setRuntimeDetail(runtimeStatus.detail);
     onRuntimeChanged?.(runtimeStatus);
     setRuntimeLoadPhase("ready");
+    const completedLoadEvent = getRuntimeLoadEvent(runtimeStatus);
+    addRuntimeTimelineEvent({
+      type: "load",
+      status: "passed",
+      title: "Model loaded",
+      detail: `${shortModelId(targetModel)} loaded on ${runtimeStatus.device} in ${formatLoadDuration(
+        completedLoadEvent.durationSeconds
+      )}.`,
+    });
     return runtimeStatus;
   };
 
@@ -288,7 +424,14 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     try {
       await loadCurrentRuntime(options);
     } catch (runtimeError: unknown) {
-      setError(runtimeError instanceof Error ? runtimeError.message : "Could not load runtime.");
+      const message = runtimeError instanceof Error ? runtimeError.message : "Could not load runtime.";
+      addRuntimeTimelineEvent({
+        type: "load",
+        status: message.includes("Caution review") ? "warning" : "failed",
+        title: message.includes("Caution review") ? "Load paused" : "Load failed",
+        detail: message,
+      });
+      setError(message);
       setRuntimeLoadPhase("failed");
     } finally {
       setIsRuntimeBusy(false);
@@ -299,14 +442,33 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setIsRuntimeBusy(true);
     setRuntimeLoadPhase("idle");
     setError(null);
+    addRuntimeTimelineEvent({
+      type: "unload",
+      status: "running",
+      title: "Unload requested",
+      detail: `Releasing ${shortModelId(runtime?.modelId || runtimeLoadTarget)} from Construct.`,
+    });
     try {
       const runtimeStatus = await repository.unloadConstructRuntime();
       setRuntime(runtimeStatus);
       setRuntimeMode(runtimeStatus.mode);
       setRuntimeDetail(runtimeStatus.detail);
       onRuntimeChanged?.(runtimeStatus);
+      addRuntimeTimelineEvent({
+        type: "unload",
+        status: "passed",
+        title: "Runtime unloaded",
+        detail: "Construct returned to a cold local runtime state.",
+      });
     } catch (runtimeError: unknown) {
-      setError(runtimeError instanceof Error ? runtimeError.message : "Could not unload runtime.");
+      const message = runtimeError instanceof Error ? runtimeError.message : "Could not unload runtime.";
+      addRuntimeTimelineEvent({
+        type: "unload",
+        status: "failed",
+        title: "Unload failed",
+        detail: message,
+      });
+      setError(message);
     } finally {
       setIsRuntimeBusy(false);
     }
@@ -316,6 +478,12 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setIsProbingRuntime(true);
     setError(null);
     setProbeResult(null);
+    addRuntimeTimelineEvent({
+      type: "probe",
+      status: "running",
+      title: "Small model probe started",
+      detail: `Testing ${shortModelId(probeModelId.trim() || "sshleifer/tiny-gpt2")}.`,
+    });
     try {
       const result = await repository.probeConstructRuntime({
         modelId: probeModelId.trim() || "sshleifer/tiny-gpt2",
@@ -328,8 +496,23 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         setRuntimeMode("transformers");
         setRuntimeDetail(`Probe completed on ${result.device} in ${result.totalSeconds}s.`);
       }
+      addRuntimeTimelineEvent({
+        type: "probe",
+        status: result.ok ? "passed" : "failed",
+        title: result.ok ? "Small model probe passed" : "Small model probe failed",
+        detail: result.ok
+          ? `${shortModelId(result.modelId)} answered on ${result.device} in ${result.totalSeconds}s.`
+          : result.error || "Probe did not return a usable response.",
+      });
     } catch (runtimeError: unknown) {
-      setError(runtimeError instanceof Error ? runtimeError.message : "Could not probe runtime.");
+      const message = runtimeError instanceof Error ? runtimeError.message : "Could not probe runtime.";
+      addRuntimeTimelineEvent({
+        type: "probe",
+        status: "failed",
+        title: "Small model probe failed",
+        detail: message,
+      });
+      setError(message);
     } finally {
       setIsProbingRuntime(false);
     }
@@ -436,12 +619,26 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
             setRuntimeSmokeMessage(
               `Smoke test passed on ${eventRuntime?.device || runtime?.device || settings.constructDevice}.`
             );
+            addRuntimeTimelineEvent({
+              type: "smoke",
+              status: "passed",
+              title: "Smoke test passed",
+              detail: `Reply streamed with ${event.totalTokens} tokens on ${
+                eventRuntime?.device || runtime?.device || settings.constructDevice
+              }.`,
+            });
           }
           return;
         }
         if (options?.smokeTest) {
           setRuntimeSmokeStatus("failed");
           setRuntimeSmokeMessage(event.message);
+          addRuntimeTimelineEvent({
+            type: "smoke",
+            status: "failed",
+            title: "Smoke stream failed",
+            detail: event.message,
+          });
         }
         setError(event.message);
       });
@@ -451,6 +648,12 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         setRuntimeSmokeMessage(
           chatError instanceof Error ? chatError.message : "Runtime smoke test failed."
         );
+        addRuntimeTimelineEvent({
+          type: "smoke",
+          status: "failed",
+          title: "Smoke test failed",
+          detail: chatError instanceof Error ? chatError.message : "Runtime smoke test failed.",
+        });
       }
       setError(chatError instanceof Error ? chatError.message : "Could not talk to Construct.");
     } finally {
@@ -463,6 +666,12 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setRuntimeSmokeStatus("loading");
     setRuntimeSmokeMessage("Loading the current model into the Construct runtime.");
     setError(null);
+    addRuntimeTimelineEvent({
+      type: "smoke",
+      status: "running",
+      title: "Smoke test started",
+      detail: "Construct will load the model and stream a short verification reply.",
+    });
     try {
       await loadCurrentRuntime();
       setIsRuntimeBusy(false);
@@ -554,6 +763,12 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     : readinessNeedsConfirmation
     ? "Review Caution"
     : "Load Current Model";
+  const formatTimelineTime = (value: string) =>
+    new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(new Date(value));
 
   return (
     <section className="construct-workbench" aria-label="Local model construct">
@@ -1030,6 +1245,42 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
             {loadEvent.failureReason && (
               <p className="save-state error-state">Load failed: {loadEvent.failureReason}</p>
             )}
+          </article>
+
+          <article className="construct-inspector-card panel-glass runtime-timeline-card">
+            <p className="panel-kicker">Runtime Timeline</p>
+            <h2>Load Sequence</h2>
+            <div className="runtime-timeline-list" aria-label="Construct runtime event timeline">
+              {runtimeTimeline.map((event) => (
+                <div
+                  className={`runtime-timeline-event is-${event.status} event-${event.type}`}
+                  key={event.id}
+                >
+                  <span className="runtime-timeline-dot" aria-hidden="true">
+                    <i
+                      className={`fas ${
+                        event.status === "passed"
+                          ? "fa-check"
+                          : event.status === "failed"
+                          ? "fa-xmark"
+                          : event.status === "warning"
+                          ? "fa-triangle-exclamation"
+                          : event.status === "running"
+                          ? "fa-spinner"
+                          : "fa-circle-info"
+                      }`}
+                    />
+                  </span>
+                  <div>
+                    <div className="runtime-timeline-title">
+                      <strong>{event.title}</strong>
+                      <time dateTime={event.timestamp}>{formatTimelineTime(event.timestamp)}</time>
+                    </div>
+                    <p>{event.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </article>
 
           <article className="construct-inspector-card panel-glass">

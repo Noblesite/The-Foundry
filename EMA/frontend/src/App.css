@@ -1735,6 +1735,106 @@ input[type="checkbox"] {
   font-size: 1rem;
 }
 
+.runtime-timeline-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.runtime-timeline-card::before {
+  content: "";
+  position: absolute;
+  inset: 0.85rem auto 0.85rem 1.52rem;
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 212, 255, 0.32),
+    rgba(212, 160, 23, 0.18),
+    rgba(119, 140, 152, 0.04)
+  );
+  pointer-events: none;
+}
+
+.runtime-timeline-list {
+  display: grid;
+  gap: 0.58rem;
+}
+
+.runtime-timeline-event {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.62rem;
+  align-items: start;
+  border: 1px solid rgba(119, 140, 152, 0.16);
+  border-radius: 8px;
+  padding: 0.58rem;
+  background:
+    linear-gradient(135deg, rgba(0, 212, 255, 0.04), rgba(255, 138, 0, 0.02)),
+    rgba(13, 17, 23, 0.64);
+}
+
+.runtime-timeline-dot {
+  display: grid;
+  place-items: center;
+  width: 1.48rem;
+  height: 1.48rem;
+  border: 1px solid rgba(119, 140, 152, 0.28);
+  border-radius: 999px;
+  background: rgba(13, 17, 23, 0.92);
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+}
+
+.runtime-timeline-event.is-running .runtime-timeline-dot {
+  border-color: rgba(212, 160, 23, 0.42);
+  color: var(--brass);
+  box-shadow: 0 0 12px rgba(212, 160, 23, 0.14);
+}
+
+.runtime-timeline-event.is-passed .runtime-timeline-dot {
+  border-color: rgba(0, 212, 255, 0.48);
+  color: var(--arc-blue);
+  box-shadow: var(--shadow-blue);
+}
+
+.runtime-timeline-event.is-warning .runtime-timeline-dot {
+  border-color: rgba(212, 160, 23, 0.48);
+  color: var(--brass);
+}
+
+.runtime-timeline-event.is-failed .runtime-timeline-dot {
+  border-color: rgba(255, 138, 0, 0.54);
+  color: var(--forge-orange);
+  box-shadow: var(--shadow-orange);
+}
+
+.runtime-timeline-title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: start;
+}
+
+.runtime-timeline-title strong {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+}
+
+.runtime-timeline-title time {
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.runtime-timeline-event p {
+  margin: 0.18rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
 .construct-inspector-grid {
   display: grid;
   grid-template-columns: minmax(5.8rem, 0.46fr) minmax(0, 1fr);
