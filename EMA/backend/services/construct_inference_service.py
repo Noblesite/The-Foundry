@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from threading import Thread
 from typing import Any, AsyncIterator, Dict, Optional
+from uuid import uuid4
 
 
 @dataclass
@@ -45,6 +46,7 @@ class ConstructInferenceService:
             "finishedAt": None,
             "failureReason": None,
         }
+        self._runtime_events: list[Dict[str, Any]] = []
         self._load_lock = asyncio.Lock()
 
     def describe_runtime(self) -> InferenceRuntime:
@@ -96,6 +98,50 @@ class ConstructInferenceService:
             "diagnostics": diagnostics,
         }
 
+    def list_runtime_events(self) -> list[Dict[str, Any]]:
+        return list(self._runtime_events)
+
+    def record_runtime_event(
+        self,
+        *,
+        event_type: str,
+        status: str,
+        title: str,
+        detail: str,
+        timestamp: Optional[str] = None,
+        construct_id: Optional[str] = None,
+        artifact_id: Optional[str] = None,
+        model_id: Optional[str] = None,
+        runtime_status: Optional[str] = None,
+        source: str = "backend",
+    ) -> Dict[str, Any]:
+        allowed_types = {"handoff", "preflight", "configure", "load", "unload", "probe", "smoke"}
+        allowed_statuses = {"running", "passed", "warning", "failed", "info"}
+        allowed_sources = {"frontend", "mock", "backend"}
+        if event_type not in allowed_types:
+            raise ValueError("Runtime event type is not supported.")
+        if status not in allowed_statuses:
+            raise ValueError("Runtime event status is not supported.")
+        if source not in allowed_sources:
+            raise ValueError("Runtime event source is not supported.")
+
+        runtime = self.describe_runtime()
+        event = {
+            "id": f"runtime-event-{uuid4()}",
+            "type": event_type,
+            "status": status,
+            "title": title.strip() or "Runtime event",
+            "detail": detail.strip() or "No detail recorded.",
+            "timestamp": timestamp or self._utc_now(),
+            "constructId": construct_id,
+            "artifactId": artifact_id,
+            "modelId": model_id or runtime.modelId,
+            "runtimeStatus": runtime_status or runtime.status,
+            "source": source,
+        }
+        self._runtime_events = [event, *self._runtime_events][:50]
+        return event
+
     async def configure(
         self,
         mode: str,
@@ -111,7 +157,17 @@ class ConstructInferenceService:
             self.model_id = model_id.strip()
         if device is not None:
             self.device_preference = device.strip().lower() or "auto"
-        return self.runtime_payload()
+        runtime = self.runtime_payload()
+        self.record_runtime_event(
+            event_type="configure",
+            status="passed",
+            title="Runtime configured",
+            detail=f"{runtime['mode']} runtime configured for {runtime['modelId']} on {runtime['device']}.",
+            model_id=runtime["modelId"],
+            runtime_status=runtime["status"],
+            source="backend",
+        )
+        return runtime
 
     async def load(self, model_id: Optional[str] = None) -> Dict[str, Any]:
         if model_id:
@@ -124,7 +180,17 @@ class ConstructInferenceService:
                 duration_seconds=0,
                 failure_reason="Runtime is using simulated token streaming.",
             )
-            return self.runtime_payload()
+            runtime = self.runtime_payload()
+            self.record_runtime_event(
+                event_type="load",
+                status="warning",
+                title="Model load skipped",
+                detail="Runtime is using simulated token streaming, so no local model was loaded.",
+                model_id=runtime["modelId"],
+                runtime_status=runtime["status"],
+                source="backend",
+            )
+            return runtime
 
         target_model = self.model_id
         if not target_model:
@@ -150,6 +216,15 @@ class ConstructInferenceService:
                 duration_seconds=round(time.perf_counter() - started_at, 3),
                 started_at=event_started_at,
             )
+            self.record_runtime_event(
+                event_type="load",
+                status="passed",
+                title="Model loaded",
+                detail=f"{target_model} loaded on {self._device_for_model(model)}.",
+                model_id=target_model,
+                runtime_status="loaded",
+                source="backend",
+            )
         except Exception as error:
             self._active_loaded_model_id = ""
             self._record_load_event(
@@ -159,6 +234,15 @@ class ConstructInferenceService:
                 duration_seconds=round(time.perf_counter() - started_at, 3),
                 started_at=event_started_at,
                 failure_reason=str(error),
+            )
+            self.record_runtime_event(
+                event_type="load",
+                status="failed",
+                title="Model load failed",
+                detail=str(error),
+                model_id=target_model,
+                runtime_status="failed",
+                source="backend",
             )
             raise
         return self.runtime_payload()
@@ -171,7 +255,29 @@ class ConstructInferenceService:
         previous_device = self.device_preference
         self.device_preference = (device or "auto").strip().lower()
         try:
-            return await asyncio.to_thread(self._preflight_model_sync, target_model)
+            result = await asyncio.to_thread(self._preflight_model_sync, target_model)
+            if result["ok"]:
+                status = "passed"
+                title = "Preflight passed"
+                detail = "The model passed compatibility checks."
+            elif result["fitStatus"] in {"tight", "unknown"}:
+                status = "warning"
+                title = "Preflight needs review"
+                detail = "The model may load, but runtime constraints need review."
+            else:
+                status = "failed"
+                title = "Preflight blocked"
+                detail = "The model did not pass compatibility checks."
+            self.record_runtime_event(
+                event_type="preflight",
+                status=status,
+                title=title,
+                detail=detail,
+                model_id=target_model,
+                runtime_status=self.describe_runtime().status,
+                source="backend",
+            )
+            return result
         finally:
             self.device_preference = previous_device
 
@@ -183,6 +289,15 @@ class ConstructInferenceService:
             model_id=self.model_id or "",
             device=self.device_preference,
             duration_seconds=0,
+        )
+        self.record_runtime_event(
+            event_type="unload",
+            status="passed",
+            title="Runtime unloaded",
+            detail="Construct released cached local model state.",
+            model_id=self.model_id or "",
+            runtime_status="configured" if self.mode == "transformers" else "fallback",
+            source="backend",
         )
         try:
             import torch
@@ -224,8 +339,7 @@ class ConstructInferenceService:
             )
             total_seconds = round(time.perf_counter() - started_at, 3)
             resolved_device = str(next(model.parameters()).device)
-
-            return {
+            result = {
                 "ok": True,
                 "modelId": safe_model_id,
                 "prompt": safe_prompt,
@@ -237,8 +351,18 @@ class ConstructInferenceService:
                 "maxNewTokens": safe_tokens,
                 "diagnostics": self._runtime_diagnostics(diagnostics),
             }
+            self.record_runtime_event(
+                event_type="probe",
+                status="passed",
+                title="Small model probe passed",
+                detail=f"{safe_model_id} answered on {resolved_device} in {total_seconds}s.",
+                model_id=safe_model_id,
+                runtime_status=self.describe_runtime().status,
+                source="backend",
+            )
+            return result
         except Exception as error:
-            return {
+            result = {
                 "ok": False,
                 "modelId": safe_model_id,
                 "prompt": safe_prompt,
@@ -251,6 +375,16 @@ class ConstructInferenceService:
                 "error": str(error),
                 "diagnostics": self._runtime_diagnostics(diagnostics),
             }
+            self.record_runtime_event(
+                event_type="probe",
+                status="failed",
+                title="Small model probe failed",
+                detail=str(error),
+                model_id=safe_model_id,
+                runtime_status=self.describe_runtime().status,
+                source="backend",
+            )
+            return result
         finally:
             self.device_preference = previous_device
 

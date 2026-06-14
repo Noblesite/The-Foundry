@@ -200,6 +200,44 @@ def run_trial_contract_check() -> int:
     return 0
 
 
+def run_construct_runtime_event_contract_check() -> int:
+    api_server = PACKAGE_ROOT / "backend" / "api_server.py"
+    construct_service = PACKAGE_ROOT / "backend" / "services" / "construct_inference_service.py"
+    api_source = api_server.read_text(encoding="utf-8")
+    service_source = construct_service.read_text(encoding="utf-8")
+
+    required_api_patterns = (
+        "ConstructRuntimeEventInput",
+        "/api/v1/constructs/runtime/events",
+        "foundry_construct_runtime_events_endpoint",
+        "record_foundry_construct_runtime_event_endpoint",
+    )
+    missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
+    if missing_api:
+        return fail("Construct runtime event API boundary is missing: " + ", ".join(missing_api))
+
+    required_service_patterns = (
+        "_runtime_events",
+        "list_runtime_events",
+        "record_runtime_event",
+        "\"source\": source",
+        "event_type=\"preflight\"",
+        "event_type=\"load\"",
+        "event_type=\"probe\"",
+    )
+    missing_service = [
+        pattern for pattern in required_service_patterns if pattern not in service_source
+    ]
+    if missing_service:
+        return fail(
+            "ConstructInferenceService event contract is missing: "
+            + ", ".join(missing_service)
+        )
+
+    print("OK: Construct runtime event contract is present.")
+    return 0
+
+
 def run_chat_service_fake_engine_check() -> int:
     if str(PACKAGE_ROOT) not in sys.path:
         sys.path.insert(0, str(PACKAGE_ROOT))
@@ -258,6 +296,7 @@ def main() -> int:
         run_api_transport_boundary_check,
         run_forge_adapter_boundary_check,
         run_trial_contract_check,
+        run_construct_runtime_event_contract_check,
         run_chat_service_fake_engine_check,
     )
     failures = sum(check() for check in checks)

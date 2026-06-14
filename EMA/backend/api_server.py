@@ -104,6 +104,18 @@ class ConstructRuntimeProbeInput(BaseModel):
     maxNewTokens: int = 24
     device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
 
+class ConstructRuntimeEventInput(BaseModel):
+    type: Literal["handoff", "preflight", "configure", "load", "unload", "probe", "smoke"]
+    status: Literal["running", "passed", "warning", "failed", "info"]
+    title: str
+    detail: str
+    timestamp: str | None = None
+    constructId: str | None = None
+    artifactId: str | None = None
+    modelId: str | None = None
+    runtimeStatus: str | None = None
+    source: Literal["frontend", "mock", "backend"] = "frontend"
+
 class SearchArchiveModelsInput(BaseModel):
     query: str = ""
     pipelineTag: str = "text-generation"
@@ -167,6 +179,32 @@ def sse_event(event_type: str, payload: dict[str, Any]) -> str:
 @app.get("/api/v1/constructs/runtime")
 async def foundry_construct_runtime_endpoint():
     return api_envelope(construct_inference_service.runtime_payload())
+
+
+@app.get("/api/v1/constructs/runtime/events")
+async def foundry_construct_runtime_events_endpoint():
+    return api_envelope(construct_inference_service.list_runtime_events())
+
+
+@app.post("/api/v1/constructs/runtime/events")
+async def record_foundry_construct_runtime_event_endpoint(data: ConstructRuntimeEventInput):
+    try:
+        return api_envelope(
+            construct_inference_service.record_runtime_event(
+                event_type=data.type,
+                status=data.status,
+                title=data.title,
+                detail=data.detail,
+                timestamp=data.timestamp,
+                construct_id=data.constructId,
+                artifact_id=data.artifactId,
+                model_id=data.modelId,
+                runtime_status=data.runtimeStatus,
+                source=data.source,
+            )
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.get("/api/v1/forges/runtime")
