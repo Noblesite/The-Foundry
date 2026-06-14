@@ -1555,6 +1555,23 @@ input[type="checkbox"] {
   line-height: 1.4;
 }
 
+.runtime-readiness-gate {
+  margin: 0;
+  border: 1px solid rgba(212, 160, 23, 0.34);
+  border-radius: 8px;
+  padding: 0.58rem;
+  color: var(--brass);
+  background: rgba(212, 160, 23, 0.08);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.runtime-readiness-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .runtime-smoke-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

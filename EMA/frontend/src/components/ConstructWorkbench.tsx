@@ -49,6 +49,9 @@ interface RuntimeReadinessSummary {
   title: string;
   summary: string;
   nextAction: string;
+  loadButtonLabel: string;
+  canLoad: boolean;
+  requiresConfirmation: boolean;
   items: RuntimeReadinessItem[];
   warnings: string[];
 }
@@ -113,14 +116,23 @@ const buildRuntimeReadinessSummary = (
     status === "ready"
       ? "Click Load Current Model, then run the smoke test."
       : status === "caution"
-      ? "Reduce context or output settings if needed, then load and smoke test."
+      ? "Review the warnings, then choose Load Anyway if you want to continue."
       : "Fix the failed checks, preflight again, then load.";
+  const loadButtonLabel =
+    status === "ready"
+      ? "Load Current Model"
+      : status === "caution"
+      ? "Load Anyway"
+      : "Blocked";
 
   return {
     status,
     title,
     summary,
     nextAction,
+    loadButtonLabel,
+    canLoad: status !== "blocked",
+    requiresConfirmation: status === "caution",
     items: preflightResult.checks.map((check) => ({
       ...check,
       guidance:
@@ -170,6 +182,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [isProbingRuntime, setIsProbingRuntime] = useState(false);
   const [isPreflightingRuntime, setIsPreflightingRuntime] = useState(false);
   const [preflightResult, setPreflightResult] = useState<ConstructRuntimePreflightResult | null>(null);
+  const [readinessGateMessage, setReadinessGateMessage] = useState<string | null>(null);
+  const [confirmedCautionTarget, setConfirmedCautionTarget] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [lastInspection, setLastInspection] = useState<ResponseInspection | null>(null);
   const [trialVerdict, setTrialVerdict] = useState<TrialVerdict | null>(null);
@@ -202,6 +216,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     );
     setHandoffNotice(null);
     setPreflightResult(null);
+    setReadinessGateMessage(null);
+    setConfirmedCautionTarget(null);
     setProbeResult(null);
   }, [artifact, construct, settings.constructModelId]);
 
@@ -254,6 +270,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         device: settings.constructDevice,
       });
       setPreflightResult(result);
+      setReadinessGateMessage(null);
       return result;
     } catch (runtimeError: unknown) {
       setPreflightResult(null);
@@ -275,6 +292,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setRuntimeSmokeMessage("Archive handoff received. Run the smoke test when preflight is clear.");
     setHandoffNotice(`${label} arrived from Archive.`);
     setPreflightResult(null);
+    setReadinessGateMessage(null);
+    setConfirmedCautionTarget(null);
     setProbeResult(null);
     if (handoff.preflightOnOpen) {
       void runRuntimePreflight(handoff.modelId);
@@ -308,12 +327,26 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     }
   };
 
-  const loadCurrentRuntime = async () => {
+  const loadCurrentRuntime = async (options?: { confirmCaution?: boolean }) => {
     const targetModel = settings.constructModelId || runtimeLoadTarget || activeArtifact.baseModel;
     const preflight = await runRuntimePreflight(targetModel);
-    if (!preflight.ok) {
+    const readiness = buildRuntimeReadinessSummary(preflight);
+    if (!readiness.canLoad) {
       setRuntimeLoadPhase("failed");
-      throw new Error("Model preflight failed. Review compatibility checks before loading.");
+      throw new Error("Readiness check blocked loading. Fix the failed checks and preflight again.");
+    }
+    const cautionAlreadyConfirmed = confirmedCautionTarget === targetModel;
+    if (readiness.requiresConfirmation && !options?.confirmCaution && !cautionAlreadyConfirmed) {
+      setRuntimeLoadPhase("idle");
+      setReadinessGateMessage("Caution review required. Choose Load Anyway to continue.");
+      throw new Error("Caution review required before loading this model.");
+    }
+    if (readiness.requiresConfirmation && options?.confirmCaution) {
+      setConfirmedCautionTarget(targetModel);
+      setReadinessGateMessage(null);
+    }
+    if (!readiness.requiresConfirmation) {
+      setConfirmedCautionTarget(null);
     }
     setRuntimeLoadPhase("configuring");
     setRuntimeLoadTarget(targetModel);
@@ -338,10 +371,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     return runtimeStatus;
   };
 
-  const loadRuntime = async () => {
+  const loadRuntime = async (options?: { confirmCaution?: boolean }) => {
     setIsRuntimeBusy(true);
     try {
-      await loadCurrentRuntime();
+      await loadCurrentRuntime(options);
     } catch (runtimeError: unknown) {
       setError(runtimeError instanceof Error ? runtimeError.message : "Could not load runtime.");
       setRuntimeLoadPhase("failed");
@@ -594,6 +627,22 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     () => (preflightResult ? buildRuntimeReadinessSummary(preflightResult) : null),
     [preflightResult]
   );
+  const readinessBlocksLoad = readinessSummary?.status === "blocked";
+  const currentReadinessTarget = preflightResult?.modelId || runtimeLoadTarget;
+  const readinessNeedsConfirmation =
+    readinessSummary?.requiresConfirmation === true &&
+    confirmedCautionTarget !== currentReadinessTarget;
+  const loadButtonDisabled =
+    isRuntimeBusy || isPreflightingRuntime || isSending || readinessBlocksLoad || readinessNeedsConfirmation;
+  const smokeButtonDisabled =
+    isRuntimeBusy || isSending || isPreflightingRuntime || readinessBlocksLoad || readinessNeedsConfirmation;
+  const loadButtonLabel = isRuntimeBusy
+    ? runtimePhaseLabel
+    : readinessBlocksLoad
+    ? "Blocked"
+    : readinessNeedsConfirmation
+    ? "Review Caution"
+    : "Load Current Model";
 
   return (
     <section className="construct-workbench" aria-label="Local model construct">
@@ -751,12 +800,19 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 </button>
                 <button
                   className="button-secondary button-compact"
-                  disabled={isRuntimeBusy}
-                  onClick={loadRuntime}
+                  disabled={loadButtonDisabled}
+                  onClick={() => void loadRuntime()}
+                  title={
+                    readinessBlocksLoad
+                      ? "Readiness checks blocked loading."
+                      : readinessNeedsConfirmation
+                      ? "Review the caution checklist and choose Load Anyway."
+                      : "Load the current model into the Construct runtime."
+                  }
                   type="button"
                 >
                   <i className="fas fa-download" aria-hidden="true" />
-                  {isRuntimeBusy ? runtimePhaseLabel : "Load Current Model"}
+                  {loadButtonLabel}
                 </button>
                 <button
                   className="button-secondary button-compact"
@@ -855,6 +911,22 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                     <span>Next step</span>
                     <strong>{readinessSummary.nextAction}</strong>
                   </div>
+                  {readinessGateMessage && (
+                    <p className="runtime-readiness-gate">{readinessGateMessage}</p>
+                  )}
+                  {readinessSummary.requiresConfirmation && (
+                    <div className="runtime-readiness-actions">
+                      <button
+                        className="button-primary button-compact"
+                        disabled={isRuntimeBusy || isPreflightingRuntime || isSending}
+                        onClick={() => void loadRuntime({ confirmCaution: true })}
+                        type="button"
+                      >
+                        <i className="fas fa-triangle-exclamation" aria-hidden="true" />
+                        {readinessSummary.loadButtonLabel}
+                      </button>
+                    </div>
+                  )}
                 </article>
               )}
               <div className={`runtime-smoke-card smoke-${runtimeSmokeStatus}`}>
@@ -864,8 +936,15 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 </div>
                 <button
                   className="button-primary button-compact"
-                  disabled={isRuntimeBusy || isSending}
+                  disabled={smokeButtonDisabled}
                   onClick={() => void runRuntimeSmokeTest()}
+                  title={
+                    readinessBlocksLoad
+                      ? "Readiness checks blocked loading."
+                      : readinessNeedsConfirmation
+                      ? "Load with caution must be confirmed before smoke testing."
+                      : "Load the runtime and stream a smoke-test prompt."
+                  }
                   type="button"
                 >
                   <i className="fas fa-bolt" aria-hidden="true" />
