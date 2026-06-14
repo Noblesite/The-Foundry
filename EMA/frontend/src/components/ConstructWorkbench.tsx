@@ -5,6 +5,7 @@ import {
   Artifact,
   Construct,
   ConstructMessage,
+  ConstructModelHandoff,
   ConstructRuntime,
   ConstructRuntimePreflightResult,
   ConstructRuntimeProbeResult,
@@ -38,6 +39,7 @@ type RuntimeSmokeStatus = "idle" | "loading" | "streaming" | "passed" | "failed"
 interface ConstructWorkbenchProps {
   artifact: Artifact;
   construct: Construct;
+  handoff?: ConstructModelHandoff | null;
   repository: FoundryRepository;
   settings: WorkspaceSettings;
   onRuntimeChanged?: (runtime: ConstructRuntime) => void;
@@ -46,6 +48,7 @@ interface ConstructWorkbenchProps {
 const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   artifact,
   construct,
+  handoff,
   repository,
   settings,
   onRuntimeChanged,
@@ -77,6 +80,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [runtimeSmokeMessage, setRuntimeSmokeMessage] = useState(
     "Load the current model, stream a short reply, and inspect the runtime contract."
   );
+  const [handoffNotice, setHandoffNotice] = useState<string | null>(null);
   const [isProbingRuntime, setIsProbingRuntime] = useState(false);
   const [isPreflightingRuntime, setIsPreflightingRuntime] = useState(false);
   const [preflightResult, setPreflightResult] = useState<ConstructRuntimePreflightResult | null>(null);
@@ -110,6 +114,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setRuntimeSmokeMessage(
       "Load the current model, stream a short reply, and inspect the runtime contract."
     );
+    setHandoffNotice(null);
     setPreflightResult(null);
     setProbeResult(null);
   }, [artifact, construct, settings.constructModelId]);
@@ -152,8 +157,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     return `${Math.max(1, Math.round(mb))} MB`;
   };
 
-  const runRuntimePreflight = async () => {
-    const targetModel = settings.constructModelId || activeArtifact.baseModel;
+  const runRuntimePreflight = async (modelOverride?: string) => {
+    const targetModel = modelOverride || settings.constructModelId || activeArtifact.baseModel;
     setIsPreflightingRuntime(true);
     setRuntimeLoadTarget(targetModel);
     setError(null);
@@ -173,15 +178,35 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     }
   };
 
+  useEffect(() => {
+    if (!handoff?.modelId) {
+      return;
+    }
+
+    const label = handoff.label || handoff.modelId;
+    setRuntimeLoadTarget(handoff.modelId);
+    setRuntimeSmokeStatus("idle");
+    setRuntimeSmokeMessage("Archive handoff received. Run the smoke test when preflight is clear.");
+    setHandoffNotice(`${label} arrived from Archive.`);
+    setPreflightResult(null);
+    setProbeResult(null);
+    if (handoff.preflightOnOpen) {
+      void runRuntimePreflight(handoff.modelId);
+    }
+    // The handoff timestamp is the command boundary; settings and artifact may settle in the same render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handoff?.requestedAt]);
+
   const configureRuntime = async () => {
+    const targetModel = settings.constructModelId || runtimeLoadTarget || activeArtifact.baseModel;
     setIsRuntimeBusy(true);
     setRuntimeLoadPhase("configuring");
-    setRuntimeLoadTarget(settings.constructModelId || activeArtifact.baseModel);
+    setRuntimeLoadTarget(targetModel);
     setError(null);
     try {
       const runtimeStatus = await repository.configureConstructRuntime({
         mode: settings.constructRuntimeMode,
-        modelId: settings.constructModelId || activeArtifact.baseModel,
+        modelId: targetModel,
         device: settings.constructDevice,
       });
       setRuntime(runtimeStatus);
@@ -198,8 +223,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   };
 
   const loadCurrentRuntime = async () => {
-    const targetModel = settings.constructModelId || activeArtifact.baseModel;
-    const preflight = await runRuntimePreflight();
+    const targetModel = settings.constructModelId || runtimeLoadTarget || activeArtifact.baseModel;
+    const preflight = await runRuntimePreflight(targetModel);
     if (!preflight.ok) {
       setRuntimeLoadPhase("failed");
       throw new Error("Model preflight failed. Review compatibility checks before loading.");
@@ -546,6 +571,35 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 </span>
               </div>
               <span>{runtimeLoadTarget}</span>
+              {handoffNotice && (
+                <article className="runtime-handoff-banner">
+                  <div>
+                    <span>Archive handoff</span>
+                    <strong>{handoffNotice}</strong>
+                    <p>
+                      Construct is checking compatibility now. Load stays manual so you can review
+                      memory fit before starting inference.
+                    </p>
+                  </div>
+                  <span
+                    className={`status-badge ${
+                      preflightResult
+                        ? preflightResult.ok
+                          ? "fit-fits"
+                          : `fit-${preflightResult.fitStatus}`
+                        : "runtime-phase-configuring"
+                    }`}
+                  >
+                    {isPreflightingRuntime
+                      ? "checking"
+                      : preflightResult
+                      ? preflightResult.ok
+                        ? "preflight ready"
+                        : "review"
+                      : "queued"}
+                  </span>
+                </article>
+              )}
               <div className="runtime-control-grid">
                 <span className="status-badge">{runtime?.status || runtimeMode}</span>
                 <span className="status-badge">{runtime?.loaded ? "loaded" : "not loaded"}</span>

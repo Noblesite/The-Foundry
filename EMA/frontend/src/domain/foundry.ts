@@ -360,6 +360,14 @@ export interface ConstructRuntimePreflightResult {
   diagnostics: Record<string, unknown>;
 }
 
+export interface ConstructModelHandoff {
+  modelId: string;
+  label?: string;
+  source: "archive" | "settings" | "artifact";
+  requestedAt: number;
+  preflightOnOpen: boolean;
+}
+
 export interface ModelPlatformProfile {
   os: string;
   machine: string;

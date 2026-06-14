@@ -21,6 +21,7 @@ import {
 import {
   Artifact,
   Construct,
+  ConstructModelHandoff,
   ConstructRuntime,
   NavigationSection,
   RuntimeMetric,
@@ -129,6 +130,7 @@ const App: React.FC = () => {
   const [isCreatingWorkshop, setIsCreatingWorkshop] = useState(false);
   const [forgePreset, setForgePreset] = useState<StartForgeRequest | null>(null);
   const [academyFocusConceptId, setAcademyFocusConceptId] = useState<string | null>(null);
+  const [constructHandoff, setConstructHandoff] = useState<ConstructModelHandoff | null>(null);
   const [constructRuntime, setConstructRuntime] = useState<ConstructRuntime | null>(null);
   const [workshops, setWorkshops] = useState<Workshop[]>([mockDashboardSummary.workshop]);
   const [foundryData, setFoundryData] = useState<FoundryBootstrap>({
@@ -264,13 +266,6 @@ const App: React.FC = () => {
     setActiveSection("construct");
   };
 
-  const refreshConstructRuntime = () => {
-    repository
-      .getConstructRuntime()
-      .then(setConstructRuntime)
-      .catch((error: unknown) => console.error("[Construct Runtime]", error));
-  };
-
   const handleOpenForgePreset = (preset: StartForgeRequest) => {
     setForgePreset(preset);
     setActiveSection("forge");
@@ -282,6 +277,22 @@ const App: React.FC = () => {
       modelName: modelId,
       constructModelId: modelId,
     });
+  };
+
+  const handleOpenConstructWithModel = (modelId: string, label?: string) => {
+    persistSettings({
+      ...settings,
+      modelName: modelId,
+      constructModelId: modelId,
+    });
+    setConstructHandoff({
+      modelId,
+      label,
+      source: "archive",
+      requestedAt: Date.now(),
+      preflightOnOpen: true,
+    });
+    setActiveSection("construct");
   };
 
   const handleOpenAcademy = (conceptId?: string) => {
@@ -364,6 +375,7 @@ const App: React.FC = () => {
         <ConstructWorkbench
           artifact={activeArtifact}
           construct={activeConstruct}
+          handoff={constructHandoff}
           repository={repository}
           settings={settings}
           onRuntimeChanged={setConstructRuntime}
@@ -423,7 +435,7 @@ const App: React.FC = () => {
           academyAction={getAcademyAction(ACADEMY_ACTION_IDS.artifactsOpenPromotion)}
           onConstructLoaded={handleConstructLoaded}
           onBaseModelSelected={handleBaseModelSelected}
-          onRuntimeLoaded={refreshConstructRuntime}
+          onOpenConstructWithModel={handleOpenConstructWithModel}
           onOpenAcademy={() =>
             handleOpenAcademyAction(ACADEMY_ACTION_IDS.artifactsOpenPromotion)
           }

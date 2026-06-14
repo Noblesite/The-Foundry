@@ -19,7 +19,7 @@ interface ArtifactsWorkbenchProps {
   academyAction?: AcademyAction;
   onConstructLoaded: (construct: Construct, artifact: Artifact) => void;
   onBaseModelSelected: (modelId: string) => void;
-  onRuntimeLoaded?: () => void;
+  onOpenConstructWithModel: (modelId: string, label?: string) => void;
   onOpenAcademy: () => void;
 }
 
@@ -31,7 +31,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   academyAction,
   onConstructLoaded,
   onBaseModelSelected,
-  onRuntimeLoaded,
+  onOpenConstructWithModel,
   onOpenAcademy,
 }) => {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
@@ -44,7 +44,6 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   const [isSearchingModels, setIsSearchingModels] = useState(false);
   const [isRegisteringModel, setIsRegisteringModel] = useState(false);
   const [isDownloadingModel, setIsDownloadingModel] = useState(false);
-  const [isLoadingModelRuntime, setIsLoadingModelRuntime] = useState(false);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -225,32 +224,14 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     }
   };
 
-  const loadCachedModelRuntime = async () => {
+  const openCachedModelInConstruct = () => {
     if (!selectedArchiveEntry?.localPath) {
       return;
     }
-
-    setIsLoadingModelRuntime(true);
     setStatusText(null);
     setError(null);
-
-    try {
-      await repository.configureConstructRuntime({
-        mode: "transformers",
-        modelId: selectedArchiveEntry.localPath,
-        device: "auto",
-      });
-      const runtime = await repository.loadConstructRuntime({
-        modelId: selectedArchiveEntry.localPath,
-      });
-      onBaseModelSelected(selectedArchiveEntry.localPath);
-      onRuntimeLoaded?.();
-      setStatusText(`${selectedArchiveEntry.repoId} loaded into ${runtime.device}.`);
-    } catch (runtimeError: unknown) {
-      setError(runtimeError instanceof Error ? runtimeError.message : "Could not load cached model.");
-    } finally {
-      setIsLoadingModelRuntime(false);
-    }
+    onOpenConstructWithModel(selectedArchiveEntry.localPath, selectedArchiveEntry.repoId);
+    setStatusText(`${selectedArchiveEntry.repoId} handed off to Construct for preflight.`);
   };
 
   const selectModelForRuntime = () => {
@@ -502,12 +483,12 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                   </button>
                   <button
                     className="button-secondary"
-                    disabled={!selectedArchiveEntry?.localPath || isLoadingModelRuntime}
-                    onClick={() => void loadCachedModelRuntime()}
+                    disabled={!selectedArchiveEntry?.localPath}
+                    onClick={openCachedModelInConstruct}
                     type="button"
                   >
                     <i className="fas fa-play" aria-hidden="true" />
-                    {isLoadingModelRuntime ? "Loading" : "Load Cached Construct"}
+                    Open in Construct
                   </button>
                   <button className="button-secondary" onClick={selectModelForRuntime} type="button">
                     <i className="fas fa-sliders" aria-hidden="true" />
