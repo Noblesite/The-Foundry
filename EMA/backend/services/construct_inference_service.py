@@ -34,12 +34,18 @@ class ConstructInferenceService:
         self.model_id = os.getenv("FOUNDRY_CONSTRUCT_MODEL_ID", "").strip()
         self.device_preference = os.getenv("FOUNDRY_CONSTRUCT_DEVICE", "auto").strip().lower()
         self._model_cache: Dict[str, Any] = {}
+        self._active_loaded_model_id = ""
         self._load_lock = asyncio.Lock()
 
     def describe_runtime(self) -> InferenceRuntime:
-        model_id = self.model_id or "active Artifact base model"
-        loaded = self.mode == "simulated" or bool(self._model_cache)
-        loaded_device = self._loaded_device(model_id) if self._model_cache else self.device_preference
+        active_loaded_model_id = (
+            self._active_loaded_model_id
+            if self._active_loaded_model_id in self._model_cache
+            else ""
+        )
+        model_id = active_loaded_model_id or self.model_id or "active Artifact base model"
+        loaded = self.mode == "simulated" or bool(active_loaded_model_id)
+        loaded_device = self._loaded_device(model_id) if active_loaded_model_id else self.device_preference
         if self.mode == "transformers":
             return InferenceRuntime(
                 mode="transformers",
@@ -62,6 +68,13 @@ class ConstructInferenceService:
 
     def runtime_payload(self) -> Dict[str, Any]:
         runtime = self.describe_runtime()
+        diagnostics = dict(runtime.diagnostics)
+        diagnostics["loadedModel"] = {
+            "modelId": runtime.modelId,
+            "device": runtime.device,
+            "loaded": runtime.loaded,
+            "cacheSize": len(self._model_cache),
+        }
         return {
             "mode": runtime.mode,
             "status": runtime.status,
@@ -69,7 +82,7 @@ class ConstructInferenceService:
             "modelId": runtime.modelId,
             "device": runtime.device,
             "loaded": runtime.loaded,
-            "diagnostics": runtime.diagnostics,
+            "diagnostics": diagnostics,
         }
 
     async def configure(
@@ -99,6 +112,7 @@ class ConstructInferenceService:
         if not target_model:
             raise ValueError("Set a model id before loading the Transformers runtime.")
         await self._load_transformers_model(target_model)
+        self._active_loaded_model_id = target_model
         return self.runtime_payload()
 
     async def preflight_model(self, model_id: Optional[str], device: str) -> Dict[str, Any]:
@@ -115,6 +129,7 @@ class ConstructInferenceService:
 
     async def unload(self) -> Dict[str, Any]:
         self._model_cache.clear()
+        self._active_loaded_model_id = ""
         try:
             import torch
 
@@ -212,9 +227,9 @@ class ConstructInferenceService:
         system_prompt: Optional[str],
     ) -> AsyncIterator[str]:
         try:
-            tokenizer, model = await self._load_transformers_model(
-                self.model_id or prepared_response["artifact"]["baseModel"]
-            )
+            target_model = self.model_id or prepared_response["artifact"]["baseModel"]
+            tokenizer, model = await self._load_transformers_model(target_model)
+            self._active_loaded_model_id = target_model
         except Exception as error:
             fallback = (
                 "Local Transformers inference could not start, so The Foundry "

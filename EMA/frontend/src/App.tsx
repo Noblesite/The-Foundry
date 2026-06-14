@@ -38,6 +38,7 @@ import {
   getFoundryRepository,
   loadFoundryBootstrap,
 } from "./services/foundryRepository";
+import { getRuntimeMemory } from "./domain/runtimeState";
 import "./App.css";
 
 const loadWorkspaceSettings = (): WorkspaceSettings => {
@@ -61,9 +62,7 @@ const deriveRuntimeMetrics = (
   contextWindow: number
 ): RuntimeMetric[] => {
   const diagnostics = runtime?.diagnostics || {};
-  const memory = diagnostics.memory as
-    | { percentUsed?: number; totalGb?: number; availableGb?: number }
-    | undefined;
+  const memory = getRuntimeMemory(runtime);
   const isLoaded = Boolean(runtime?.loaded);
   const isMps = runtime?.device === "mps" || diagnostics.mpsAvailable === true;
   const isCuda = runtime?.device === "cuda" || diagnostics.cudaAvailable === true;
@@ -88,7 +87,7 @@ const deriveRuntimeMetrics = (
         value: isLoaded && acceleratorReady ? 36 : acceleratorReady ? 6 : 0,
         state: isLoaded && acceleratorReady ? "active" : "idle",
         description: acceleratorReady
-          ? "Accelerator is available for local model inference."
+          ? `${runtime?.device || "Accelerator"} is available for local model inference.`
           : "No GPU/MPS accelerator is reported by the runtime.",
       };
     }
@@ -96,8 +95,17 @@ const deriveRuntimeMetrics = (
     if (metric.id === "gpu-memory") {
       return {
         ...metric,
-        value: isLoaded ? 42 : isMps || isCuda ? 10 : 0,
+        value: isLoaded && typeof memory.percentUsed === "number"
+          ? clampPercent(memory.percentUsed)
+          : isLoaded
+          ? 42
+          : isMps || isCuda
+          ? 10
+          : 0,
         state: isLoaded ? "active" : "idle",
+        description: isLoaded
+          ? `Loaded model ${runtime?.modelId || "unknown"} on ${runtime?.device || "runtime device"}.`
+          : metric.description,
       };
     }
 
@@ -387,6 +395,7 @@ const App: React.FC = () => {
       return (
         <Dashboard
           summary={dashboardSummary}
+          runtime={constructRuntime}
           onCreateWorkshop={openWorkshopModal}
           onRunConstruct={() => setActiveSection("construct")}
           onViewQueue={() => setActiveSection("forge")}

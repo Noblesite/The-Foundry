@@ -1,5 +1,11 @@
 import React from "react";
-import { AcademyAction, DashboardSummary } from "../domain/foundry";
+import { AcademyAction, ConstructRuntime, DashboardSummary } from "../domain/foundry";
+import {
+  formatRuntimeMemory,
+  getLoadedModelSnapshot,
+  getRuntimeMemory,
+  shortModelId,
+} from "../domain/runtimeState";
 import {
   AcademyActionTooltip,
   LearningAction,
@@ -14,6 +20,7 @@ interface DashboardProps {
   onRunConstruct: () => void;
   onViewQueue: () => void;
   academyAction?: AcademyAction;
+  runtime?: ConstructRuntime | null;
   onResumeLesson: () => void;
 }
 
@@ -23,9 +30,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   onRunConstruct,
   onViewQueue,
   academyAction,
+  runtime,
   onResumeLesson,
 }) => {
   const { workshop, currentArtifact, forgeQueue, academyLesson } = summary;
+  const loadedModel = getLoadedModelSnapshot(runtime);
+  const runtimeMemory = getRuntimeMemory(runtime);
+  const runtimeStatus = runtime?.loaded ? "Runtime loaded" : "Runtime idle";
 
   return (
     <section className="dashboard-page" aria-label="Workshop dashboard">
@@ -69,6 +80,23 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
           <div className="artifact-core" aria-hidden="true">
             <i className="fas fa-cube" />
+          </div>
+          <div className="dashboard-runtime-strip">
+            <span className={`status-badge ${runtime?.loaded ? "is-active" : ""}`}>
+              {runtimeStatus}
+            </span>
+            <div>
+              <span>Model</span>
+              <strong>{shortModelId(loadedModel.modelId)}</strong>
+            </div>
+            <div>
+              <span>Device</span>
+              <strong>{loadedModel.device || runtime?.device || "none"}</strong>
+            </div>
+            <div>
+              <span>Memory</span>
+              <strong>{formatRuntimeMemory(runtimeMemory)}</strong>
+            </div>
           </div>
           <button className="button-secondary" onClick={onRunConstruct}>
             <i className="fas fa-play" aria-hidden="true" />

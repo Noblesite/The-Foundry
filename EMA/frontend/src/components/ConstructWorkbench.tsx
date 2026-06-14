@@ -13,6 +13,12 @@ import {
   TrialVerdict,
 } from "../domain/foundry";
 import { buildRuntimeReadinessSummary } from "../domain/constructReadiness";
+import {
+  formatRuntimeMemory,
+  getLoadedModelSnapshot,
+  getRuntimeMemory,
+  shortModelId,
+} from "../domain/runtimeState";
 import { FoundryRepository } from "../services/foundryRepository";
 import { LearningCard, TrainingMetricExplainer } from "./LearningComponents";
 import { WorkspaceSettings } from "./SettingsOverlay";
@@ -515,10 +521,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     "Give a short refusal if the question is outside your source Material.",
   ];
 
-  const runtimeDiagnostics = runtime?.diagnostics || {};
-  const runtimeMemory = runtimeDiagnostics.memory as
-    | { totalGb?: number; availableGb?: number; percentUsed?: number }
-    | undefined;
+  const runtimeMemory = getRuntimeMemory(runtime);
+  const loadedModel = getLoadedModelSnapshot(runtime);
   const runtimePhaseLabel = {
     idle: "Idle",
     configuring: "Configuring",
@@ -662,6 +666,14 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
               </div>
               <div className="runtime-diagnostics-grid">
                 <div>
+                  <span>Loaded model</span>
+                  <strong>{shortModelId(loadedModel.modelId)}</strong>
+                </div>
+                <div>
+                  <span>Device</span>
+                  <strong>{loadedModel.device || runtime?.device || settings.constructDevice}</strong>
+                </div>
+                <div>
                   <span>Memory</span>
                   <strong>
                     {runtimeMemory?.percentUsed !== undefined
@@ -678,8 +690,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                   </strong>
                 </div>
                 <div>
-                  <span>MPS</span>
-                  <strong>{runtimeDiagnostics.mpsAvailable ? "yes" : "no"}</strong>
+                  <span>Cache</span>
+                  <strong>{loadedModel.cacheSize !== undefined ? loadedModel.cacheSize : "n/a"}</strong>
                 </div>
               </div>
               <div className="runtime-action-row">
@@ -981,6 +993,14 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
               <strong>{activeArtifact.adapterPath || "not registered"}</strong>
               <span>Runtime</span>
               <strong>{runtimeMode}</strong>
+              <span>Runtime status</span>
+              <strong>{runtime?.status || "offline"}</strong>
+              <span>Loaded model</span>
+              <strong>{shortModelId(loadedModel.modelId)}</strong>
+              <span>Device</span>
+              <strong>{loadedModel.device || runtime?.device || "none"}</strong>
+              <span>Memory</span>
+              <strong>{formatRuntimeMemory(runtimeMemory)}</strong>
               <span>Library</span>
               <strong>{includeLibraryContext ? "included" : "off"}</strong>
             </div>

@@ -1,5 +1,11 @@
 import React from "react";
 import { ConstructRuntime, RuntimeMetric } from "../domain/foundry";
+import {
+  formatRuntimeMemory,
+  getLoadedModelSnapshot,
+  getRuntimeMemory,
+  shortModelId,
+} from "../domain/runtimeState";
 
 interface MetricsProps {
   contextWindow: number;
@@ -17,7 +23,9 @@ const Metrics: React.FC<MetricsProps> = ({
   trainingMethod,
 }) => {
   const runtimeStatus = runtime?.loaded ? "Active" : "Idle";
-  const runtimeModel = runtime?.modelId || "No model loaded";
+  const loadedModel = getLoadedModelSnapshot(runtime);
+  const runtimeMemory = getRuntimeMemory(runtime);
+  const runtimeModel = shortModelId(loadedModel.modelId);
 
   return (
     <section className="metrics-panel" aria-label="Runtime metrics">
@@ -55,6 +63,22 @@ const Metrics: React.FC<MetricsProps> = ({
       </div>
 
       <div className="runtime-summary">
+        <div>
+          <span>Status</span>
+          <strong>{runtime?.status || "offline"}</strong>
+        </div>
+        <div>
+          <span>Mode</span>
+          <strong>{runtime?.mode || "simulated"}</strong>
+        </div>
+        <div>
+          <span>Device</span>
+          <strong>{loadedModel.device || runtime?.device || "none"}</strong>
+        </div>
+        <div>
+          <span>Memory</span>
+          <strong>{formatRuntimeMemory(runtimeMemory)}</strong>
+        </div>
         <div>
           <span>Context</span>
           <strong>{contextWindow.toLocaleString()}</strong>

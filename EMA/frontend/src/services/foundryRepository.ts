@@ -302,6 +302,23 @@ const mockArchiveModels: ModelSearchResult[] = [
   },
 ];
 let mockConstruct: Construct = mockDashboardSummary.construct;
+const mockRuntimeDiagnostics = (runtime?: Partial<ConstructRuntime>): Record<string, unknown> => ({
+  torchVersion: "mock",
+  cudaAvailable: false,
+  mpsBuilt: true,
+  mpsAvailable: true,
+  memory: {
+    totalGb: 36,
+    availableGb: runtime?.loaded ? 21 : 24,
+    percentUsed: runtime?.loaded ? 42 : 33,
+  },
+  loadedModel: {
+    modelId: runtime?.modelId || "active Artifact base model",
+    device: runtime?.device || "none",
+    loaded: runtime?.loaded ?? false,
+    cacheSize: runtime?.loaded ? 1 : 0,
+  },
+});
 let mockConstructRuntime: ConstructRuntime = {
   mode: "simulated",
   status: "fallback",
@@ -309,6 +326,11 @@ let mockConstructRuntime: ConstructRuntime = {
   modelId: "active Artifact base model",
   device: "none",
   loaded: true,
+  diagnostics: mockRuntimeDiagnostics({
+    modelId: "active Artifact base model",
+    device: "none",
+    loaded: true,
+  }),
 };
 let mockForgeRuntime: ForgeRuntime = {
   mode: "simulated",
@@ -997,12 +1019,13 @@ export const mockFoundryRepository: FoundryRepository = {
         modelId: mockConstructRuntime.modelId,
         device: mockConstructRuntime.device,
         loaded: mockConstructRuntime.loaded,
+        diagnostics: mockConstructRuntime.diagnostics,
       },
     });
   },
   getConstructRuntime: async () => mockConstructRuntime,
   configureConstructRuntime: async (request) => {
-    mockConstructRuntime = {
+    const nextRuntime = {
       mode: request.mode,
       status: request.mode === "simulated" ? "fallback" : "configured",
       detail:
@@ -1013,14 +1036,23 @@ export const mockFoundryRepository: FoundryRepository = {
       device: request.mode === "simulated" ? "none" : request.device,
       loaded: request.mode === "simulated",
     };
+    mockConstructRuntime = {
+      ...nextRuntime,
+      diagnostics: mockRuntimeDiagnostics(nextRuntime),
+    };
     return mockConstructRuntime;
   },
   loadConstructRuntime: async (request) => {
-    mockConstructRuntime = {
+    const nextRuntime = {
       ...mockConstructRuntime,
       modelId: request.modelId || mockConstructRuntime.modelId,
       status: "loaded",
       loaded: true,
+      device: mockConstructRuntime.device === "auto" ? "mps" : mockConstructRuntime.device,
+    };
+    mockConstructRuntime = {
+      ...nextRuntime,
+      diagnostics: mockRuntimeDiagnostics(nextRuntime),
     };
     return mockConstructRuntime;
   },
@@ -1057,7 +1089,7 @@ export const mockFoundryRepository: FoundryRepository = {
       },
     ],
     warnings: [],
-    diagnostics: mockConstructRuntime.diagnostics || {},
+    diagnostics: mockRuntimeDiagnostics(mockConstructRuntime),
   }),
   probeConstructRuntime: async (request) => ({
     ok: true,
@@ -1082,10 +1114,14 @@ export const mockFoundryRepository: FoundryRepository = {
     },
   }),
   unloadConstructRuntime: async () => {
-    mockConstructRuntime = {
+    const nextRuntime = {
       ...mockConstructRuntime,
       status: mockConstructRuntime.mode === "simulated" ? "fallback" : "configured",
       loaded: mockConstructRuntime.mode === "simulated",
+    };
+    mockConstructRuntime = {
+      ...nextRuntime,
+      diagnostics: mockRuntimeDiagnostics(nextRuntime),
     };
     return mockConstructRuntime;
   },
