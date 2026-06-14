@@ -1265,6 +1265,44 @@ input[type="checkbox"] {
   width: auto;
 }
 
+.runtime-smoke-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  align-items: center;
+  border: 1px solid rgba(0, 212, 255, 0.16);
+  border-radius: 8px;
+  padding: 0.72rem;
+  background: rgba(13, 17, 23, 0.5);
+}
+
+.runtime-smoke-card strong,
+.runtime-smoke-card span {
+  display: block;
+}
+
+.runtime-smoke-card span {
+  margin-top: 0.18rem;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.runtime-smoke-card.smoke-loading,
+.runtime-smoke-card.smoke-streaming {
+  border-color: rgba(212, 160, 23, 0.42);
+}
+
+.runtime-smoke-card.smoke-passed {
+  border-color: rgba(0, 212, 255, 0.42);
+  box-shadow: var(--shadow-blue);
+}
+
+.runtime-smoke-card.smoke-failed {
+  border-color: rgba(255, 138, 0, 0.5);
+  box-shadow: var(--shadow-orange);
+}
+
 .runtime-probe-grid {
   display: grid;
   gap: 0.45rem;

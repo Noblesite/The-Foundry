@@ -32,6 +32,7 @@ interface ResponseInspection {
 }
 
 type RuntimeLoadPhase = "idle" | "configuring" | "loading" | "ready" | "failed";
+type RuntimeSmokeStatus = "idle" | "loading" | "streaming" | "passed" | "failed";
 
 interface ConstructWorkbenchProps {
   artifact: Artifact;
@@ -71,6 +72,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [runtimeLoadTarget, setRuntimeLoadTarget] = useState(
     settings.constructModelId || artifact.baseModel
   );
+  const [runtimeSmokeStatus, setRuntimeSmokeStatus] = useState<RuntimeSmokeStatus>("idle");
+  const [runtimeSmokeMessage, setRuntimeSmokeMessage] = useState(
+    "Load the current model, stream a short reply, and inspect the runtime contract."
+  );
   const [isProbingRuntime, setIsProbingRuntime] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [lastInspection, setLastInspection] = useState<ResponseInspection | null>(null);
@@ -98,6 +103,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setRuntimeDetail("Using deterministic simulated token streaming.");
     setRuntimeLoadPhase("idle");
     setRuntimeLoadTarget(settings.constructModelId || artifact.baseModel);
+    setRuntimeSmokeStatus("idle");
+    setRuntimeSmokeMessage(
+      "Load the current model, stream a short reply, and inspect the runtime contract."
+    );
     setProbeResult(null);
   }, [artifact, construct, settings.constructModelId]);
 
@@ -151,30 +160,35 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     }
   };
 
-  const loadRuntime = async () => {
+  const loadCurrentRuntime = async () => {
     const targetModel = settings.constructModelId || activeArtifact.baseModel;
-    setIsRuntimeBusy(true);
     setRuntimeLoadPhase("configuring");
     setRuntimeLoadTarget(targetModel);
     setError(null);
+    const configured = await repository.configureConstructRuntime({
+      mode: "transformers",
+      modelId: targetModel,
+      device: settings.constructDevice,
+    });
+    setRuntime(configured);
+    setRuntimeMode(configured.mode);
+    setRuntimeDetail(configured.detail);
+    setRuntimeLoadPhase("loading");
+    const runtimeStatus = await repository.loadConstructRuntime({
+      modelId: targetModel,
+    });
+    setRuntime(runtimeStatus);
+    setRuntimeMode(runtimeStatus.mode);
+    setRuntimeDetail(runtimeStatus.detail);
+    onRuntimeChanged?.(runtimeStatus);
+    setRuntimeLoadPhase("ready");
+    return runtimeStatus;
+  };
+
+  const loadRuntime = async () => {
+    setIsRuntimeBusy(true);
     try {
-      const configured = await repository.configureConstructRuntime({
-        mode: "transformers",
-        modelId: targetModel,
-        device: settings.constructDevice,
-      });
-      setRuntime(configured);
-      setRuntimeMode(configured.mode);
-      setRuntimeDetail(configured.detail);
-      setRuntimeLoadPhase("loading");
-      const runtimeStatus = await repository.loadConstructRuntime({
-        modelId: targetModel,
-      });
-      setRuntime(runtimeStatus);
-      setRuntimeMode(runtimeStatus.mode);
-      setRuntimeDetail(runtimeStatus.detail);
-      onRuntimeChanged?.(runtimeStatus);
-      setRuntimeLoadPhase("ready");
+      await loadCurrentRuntime();
     } catch (runtimeError: unknown) {
       setError(runtimeError instanceof Error ? runtimeError.message : "Could not load runtime.");
       setRuntimeLoadPhase("failed");
@@ -223,7 +237,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     }
   };
 
-  const sendMessage = async (presetText?: string) => {
+  const sendMessage = async (presetText?: string, options?: { smokeTest?: boolean }) => {
     const messageText = (presetText ?? input).trim();
     if (!messageText) {
       return;
@@ -245,6 +259,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setError(null);
 
     try {
+      if (options?.smokeTest) {
+        setRuntimeSmokeStatus("streaming");
+        setRuntimeSmokeMessage("Runtime loaded. Streaming the smoke prompt now.");
+      }
       const assistantMessageId = `assistant-${Date.now()}`;
       let assistantText = "";
       setMessages((current) => [
@@ -315,14 +333,53 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
             artifactId: event.artifact.id,
             constructId: event.construct.id,
           });
+          if (options?.smokeTest) {
+            setRuntimeSmokeStatus("passed");
+            setRuntimeSmokeMessage(
+              `Smoke test passed on ${eventRuntime?.device || runtime?.device || settings.constructDevice}.`
+            );
+          }
           return;
+        }
+        if (options?.smokeTest) {
+          setRuntimeSmokeStatus("failed");
+          setRuntimeSmokeMessage(event.message);
         }
         setError(event.message);
       });
     } catch (chatError: unknown) {
+      if (options?.smokeTest) {
+        setRuntimeSmokeStatus("failed");
+        setRuntimeSmokeMessage(
+          chatError instanceof Error ? chatError.message : "Runtime smoke test failed."
+        );
+      }
       setError(chatError instanceof Error ? chatError.message : "Could not talk to Construct.");
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const runRuntimeSmokeTest = async () => {
+    setIsRuntimeBusy(true);
+    setRuntimeSmokeStatus("loading");
+    setRuntimeSmokeMessage("Loading the current model into the Construct runtime.");
+    setError(null);
+    try {
+      await loadCurrentRuntime();
+      setIsRuntimeBusy(false);
+      await sendMessage(
+        "Runtime smoke test: reply with one short sentence from The Foundry.",
+        { smokeTest: true }
+      );
+    } catch (runtimeError: unknown) {
+      setRuntimeSmokeStatus("failed");
+      setRuntimeLoadPhase("failed");
+      setRuntimeSmokeMessage(
+        runtimeError instanceof Error ? runtimeError.message : "Runtime smoke test failed."
+      );
+      setError(runtimeError instanceof Error ? runtimeError.message : "Runtime smoke test failed.");
+      setIsRuntimeBusy(false);
     }
   };
 
@@ -514,6 +571,25 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 >
                   <i className="fas fa-power-off" aria-hidden="true" />
                   Unload
+                </button>
+              </div>
+              <div className={`runtime-smoke-card smoke-${runtimeSmokeStatus}`}>
+                <div>
+                  <strong>Runtime Smoke Test</strong>
+                  <span>{runtimeSmokeMessage}</span>
+                </div>
+                <button
+                  className="button-primary button-compact"
+                  disabled={isRuntimeBusy || isSending}
+                  onClick={() => void runRuntimeSmokeTest()}
+                  type="button"
+                >
+                  <i className="fas fa-bolt" aria-hidden="true" />
+                  {runtimeSmokeStatus === "loading"
+                    ? "Loading"
+                    : runtimeSmokeStatus === "streaming"
+                    ? "Streaming"
+                    : "Run Smoke Test"}
                 </button>
               </div>
               <div className="runtime-probe-grid">
