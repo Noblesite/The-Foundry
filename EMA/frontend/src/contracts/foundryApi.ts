@@ -70,6 +70,7 @@ export const foundryApiRoutes = {
   preflightConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/preflight`,
   probeConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/probe`,
   unloadConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/unload`,
+  constructRuntimeEvents: `${FOUNDRY_API_VERSION}/constructs/runtime/events`,
   modelArchive: `${FOUNDRY_API_VERSION}/archive/models`,
   searchArchiveModels: `${FOUNDRY_API_VERSION}/archive/models/search`,
   inspectArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/inspect`,

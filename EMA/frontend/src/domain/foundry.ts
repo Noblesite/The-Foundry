@@ -27,6 +27,20 @@ export type ArtifactStatus = "draft" | "trial" | "ready" | "archived";
 export type ConstructStatus = "offline" | "warming" | "streaming" | "paused";
 export type ConstructRuntimeMode = "simulated" | "transformers";
 export type ConstructRuntimeDevice = "auto" | "cpu" | "cuda" | "mps";
+export type ConstructRuntimeEventType =
+  | "handoff"
+  | "preflight"
+  | "configure"
+  | "load"
+  | "unload"
+  | "probe"
+  | "smoke";
+export type ConstructRuntimeEventStatus =
+  | "running"
+  | "passed"
+  | "warning"
+  | "failed"
+  | "info";
 export type ForgeRuntimeMode = "simulated" | "local";
 export type ModelArchiveStatus = "remote" | "cached" | "ready" | "failed";
 export type ModelFitStatus = "fits" | "tight" | "too-large" | "unknown";
@@ -321,6 +335,28 @@ export interface ConstructRuntime {
   loaded: boolean;
   diagnostics?: Record<string, unknown>;
 }
+
+export interface ConstructRuntimeEvent {
+  id: string;
+  type: ConstructRuntimeEventType;
+  status: ConstructRuntimeEventStatus;
+  title: string;
+  detail: string;
+  timestamp: string;
+  constructId?: string;
+  artifactId?: string;
+  modelId?: string;
+  runtimeStatus?: string;
+  source: "frontend" | "mock" | "backend";
+}
+
+export type CreateConstructRuntimeEventRequest = Omit<
+  ConstructRuntimeEvent,
+  "id" | "timestamp" | "source"
+> & {
+  timestamp?: string;
+  source?: ConstructRuntimeEvent["source"];
+};
 
 export interface ConstructRuntimeProbeResult {
   ok: boolean;

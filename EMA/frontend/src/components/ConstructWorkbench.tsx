@@ -7,8 +7,10 @@ import {
   ConstructMessage,
   ConstructModelHandoff,
   ConstructRuntime,
+  ConstructRuntimeEvent,
   ConstructRuntimePreflightResult,
   ConstructRuntimeProbeResult,
+  CreateConstructRuntimeEventRequest,
   Trial,
   TrialVerdict,
 } from "../domain/foundry";
@@ -45,24 +47,6 @@ interface ResponseInspection {
 
 type RuntimeLoadPhase = "idle" | "configuring" | "loading" | "ready" | "failed";
 type RuntimeSmokeStatus = "idle" | "loading" | "streaming" | "passed" | "failed";
-type RuntimeTimelineEventType =
-  | "handoff"
-  | "preflight"
-  | "configure"
-  | "load"
-  | "unload"
-  | "probe"
-  | "smoke";
-type RuntimeTimelineEventStatus = "running" | "passed" | "warning" | "failed" | "info";
-
-interface RuntimeTimelineEvent {
-  id: string;
-  type: RuntimeTimelineEventType;
-  status: RuntimeTimelineEventStatus;
-  title: string;
-  detail: string;
-  timestamp: string;
-}
 
 interface ConstructWorkbenchProps {
   artifact: Artifact;
@@ -114,7 +98,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [preflightResult, setPreflightResult] = useState<ConstructRuntimePreflightResult | null>(null);
   const [readinessGateMessage, setReadinessGateMessage] = useState<string | null>(null);
   const [confirmedCautionTarget, setConfirmedCautionTarget] = useState<string | null>(null);
-  const [runtimeTimeline, setRuntimeTimeline] = useState<RuntimeTimelineEvent[]>([]);
+  const [runtimeTimeline, setRuntimeTimeline] = useState<ConstructRuntimeEvent[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [lastInspection, setLastInspection] = useState<ResponseInspection | null>(null);
   const [trialVerdict, setTrialVerdict] = useState<TrialVerdict | null>(null);
@@ -124,22 +108,42 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   const addRuntimeTimelineEvent = useCallback(
-    (event: Omit<RuntimeTimelineEvent, "id" | "timestamp">) => {
-      setRuntimeTimeline((current) =>
-        [
-          {
-            ...event,
-            id: `runtime-event-${Date.now()}-${current.length}`,
-            timestamp: new Date().toISOString(),
-          },
-          ...current,
-        ].slice(0, 10)
-      );
+    (event: Omit<CreateConstructRuntimeEventRequest, "constructId" | "artifactId" | "runtimeStatus">) => {
+      void repository
+        .recordConstructRuntimeEvent({
+          ...event,
+          constructId: activeConstruct.id,
+          artifactId: activeArtifact.id,
+          runtimeStatus: runtime?.status,
+          source: "frontend",
+        })
+        .then((recordedEvent) => {
+          setRuntimeTimeline((current) =>
+            [recordedEvent, ...current.filter((item) => item.id !== recordedEvent.id)].slice(0, 10)
+          );
+        })
+        .catch(() => {
+          setRuntimeTimeline((current) =>
+            [
+              {
+                ...event,
+                id: `runtime-event-local-${Date.now()}-${current.length}`,
+                timestamp: new Date().toISOString(),
+                constructId: activeConstruct.id,
+                artifactId: activeArtifact.id,
+                runtimeStatus: runtime?.status,
+                source: "frontend" as const,
+              } satisfies ConstructRuntimeEvent,
+              ...current,
+            ].slice(0, 10)
+          );
+        });
     },
-    []
+    [activeArtifact.id, activeConstruct.id, repository, runtime?.status]
   );
 
   useEffect(() => {
+    let isCurrent = true;
     setActiveConstruct(construct);
     setActiveArtifact(artifact);
     setMessages([
@@ -166,17 +170,56 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setReadinessGateMessage(null);
     setConfirmedCautionTarget(null);
     setProbeResult(null);
-    setRuntimeTimeline([
-      {
-        id: `runtime-event-reset-${Date.now()}`,
-        type: "handoff",
-        status: "info",
-        title: "Construct session ready",
-        detail: `Runtime target set to ${settings.constructModelId || artifact.baseModel}.`,
-        timestamp: new Date().toISOString(),
-      },
-    ]);
-  }, [artifact, construct, settings.constructModelId]);
+    setRuntimeTimeline([]);
+    repository
+      .listConstructRuntimeEvents()
+      .then((events) => {
+        if (!isCurrent) {
+          return;
+        }
+        if (events.length > 0) {
+          setRuntimeTimeline(events.slice(0, 10));
+          return;
+        }
+        void repository
+          .recordConstructRuntimeEvent({
+            type: "handoff",
+            status: "info",
+            title: "Construct session ready",
+            detail: `Runtime target set to ${settings.constructModelId || artifact.baseModel}.`,
+            constructId: construct.id,
+            artifactId: artifact.id,
+            modelId: settings.constructModelId || artifact.baseModel,
+            source: "frontend",
+          })
+          .then((event) => {
+            if (isCurrent) {
+              setRuntimeTimeline([event]);
+            }
+          });
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setRuntimeTimeline([
+            {
+              id: `runtime-event-local-${Date.now()}`,
+              type: "handoff",
+              status: "info",
+              title: "Construct session ready",
+              detail: `Runtime target set to ${settings.constructModelId || artifact.baseModel}.`,
+              timestamp: new Date().toISOString(),
+              constructId: construct.id,
+              artifactId: artifact.id,
+              modelId: settings.constructModelId || artifact.baseModel,
+              source: "frontend",
+            },
+          ]);
+        }
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, [artifact, construct, repository, settings.constructModelId]);
 
   useEffect(() => {
     let isCurrent = true;

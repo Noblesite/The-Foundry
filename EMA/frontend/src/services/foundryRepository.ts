@@ -47,9 +47,11 @@ import {
   Construct,
   ConstructChatResponse,
   ConstructChatStreamEvent,
+  ConstructRuntimeEvent,
   ConstructRuntime,
   ConstructRuntimePreflightResult,
   ConstructRuntimeProbeResult,
+  CreateConstructRuntimeEventRequest,
   DashboardSummary,
   FoundryNavigationItem,
   ForgeEvaluationReport,
@@ -156,6 +158,10 @@ export interface FoundryRepository {
     onEvent: (event: ConstructChatStreamEvent) => void
   ) => Promise<void>;
   getConstructRuntime: () => Promise<ConstructRuntime>;
+  listConstructRuntimeEvents: () => Promise<ConstructRuntimeEvent[]>;
+  recordConstructRuntimeEvent: (
+    request: CreateConstructRuntimeEventRequest
+  ) => Promise<ConstructRuntimeEvent>;
   configureConstructRuntime: (
     request: ConfigureConstructRuntimeRequest
   ) => Promise<ConstructRuntime>;
@@ -302,6 +308,7 @@ const mockArchiveModels: ModelSearchResult[] = [
   },
 ];
 let mockConstruct: Construct = mockDashboardSummary.construct;
+let mockConstructRuntimeEvents: ConstructRuntimeEvent[] = [];
 let mockRuntimeLoadEvent: Record<string, unknown> = {
   status: "idle",
   modelId: "active Artifact base model",
@@ -341,6 +348,19 @@ let mockConstructRuntime: ConstructRuntime = {
     device: "none",
     loaded: true,
   }),
+};
+
+const recordMockConstructRuntimeEvent = (
+  request: CreateConstructRuntimeEventRequest
+): ConstructRuntimeEvent => {
+  const event: ConstructRuntimeEvent = {
+    ...request,
+    id: `runtime-event-${Date.now()}-${mockConstructRuntimeEvents.length}`,
+    timestamp: request.timestamp || new Date().toISOString(),
+    source: request.source || "mock",
+  };
+  mockConstructRuntimeEvents = [event, ...mockConstructRuntimeEvents].slice(0, 25);
+  return event;
 };
 let mockForgeRuntime: ForgeRuntime = {
   mode: "simulated",
@@ -1034,6 +1054,8 @@ export const mockFoundryRepository: FoundryRepository = {
     });
   },
   getConstructRuntime: async () => mockConstructRuntime,
+  listConstructRuntimeEvents: async () => mockConstructRuntimeEvents,
+  recordConstructRuntimeEvent: async (request) => recordMockConstructRuntimeEvent(request),
   configureConstructRuntime: async (request) => {
     mockRuntimeLoadEvent = {
       status: "configured",
@@ -1059,6 +1081,18 @@ export const mockFoundryRepository: FoundryRepository = {
       ...nextRuntime,
       diagnostics: mockRuntimeDiagnostics(nextRuntime),
     };
+    recordMockConstructRuntimeEvent({
+      type: "configure",
+      status: "passed",
+      title: "Runtime contract configured",
+      detail:
+        request.mode === "simulated"
+          ? "Mock simulated runtime is ready for deterministic streaming."
+          : `Mock transformers runtime is configured for ${request.modelId || "active Artifact base model"}.`,
+      modelId: request.modelId,
+      runtimeStatus: mockConstructRuntime.status,
+      source: "mock",
+    });
     return mockConstructRuntime;
   },
   loadConstructRuntime: async (request) => {
@@ -1083,6 +1117,15 @@ export const mockFoundryRepository: FoundryRepository = {
       ...nextRuntime,
       diagnostics: mockRuntimeDiagnostics(nextRuntime),
     };
+    recordMockConstructRuntimeEvent({
+      type: "load",
+      status: "passed",
+      title: "Mock runtime loaded model",
+      detail: `${nextRuntime.modelId} is loaded on ${nextRuntime.device}.`,
+      modelId: nextRuntime.modelId,
+      runtimeStatus: mockConstructRuntime.status,
+      source: "mock",
+    });
     return mockConstructRuntime;
   },
   preflightConstructRuntime: async (request) => ({
@@ -1161,6 +1204,15 @@ export const mockFoundryRepository: FoundryRepository = {
       ...nextRuntime,
       diagnostics: mockRuntimeDiagnostics(nextRuntime),
     };
+    recordMockConstructRuntimeEvent({
+      type: "unload",
+      status: "passed",
+      title: "Mock runtime unloaded",
+      detail: "The mock Construct runtime returned to its configured state.",
+      modelId: nextRuntime.modelId,
+      runtimeStatus: mockConstructRuntime.status,
+      source: "mock",
+    });
     return mockConstructRuntime;
   },
   listModelArchiveEntries: async () => mockModelArchiveEntries,
@@ -1467,6 +1519,34 @@ export const apiFoundryRepository: FoundryRepository = {
   },
   getConstructRuntime: async () =>
     unwrap(await apiClient.get<ApiEnvelope<ConstructRuntime>>(foundryApiRoutes.constructRuntime)),
+  listConstructRuntimeEvents: async () => {
+    try {
+      return unwrap(
+        await apiClient.get<ApiEnvelope<ConstructRuntimeEvent[]>>(
+          foundryApiRoutes.constructRuntimeEvents
+        )
+      );
+    } catch {
+      return [];
+    }
+  },
+  recordConstructRuntimeEvent: async (request) => {
+    try {
+      return unwrap(
+        await apiClient.post<ApiEnvelope<ConstructRuntimeEvent>>(
+          foundryApiRoutes.constructRuntimeEvents,
+          request
+        )
+      );
+    } catch {
+      return {
+        ...request,
+        id: `runtime-event-local-${Date.now()}`,
+        timestamp: request.timestamp || new Date().toISOString(),
+        source: "frontend",
+      };
+    }
+  },
   configureConstructRuntime: async (request) =>
     unwrap(
       await apiClient.post<ApiEnvelope<ConstructRuntime>>(
