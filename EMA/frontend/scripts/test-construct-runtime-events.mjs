@@ -11,6 +11,10 @@ const files = {
     new URL("../src/components/ConstructWorkbench.tsx", import.meta.url),
     "utf8"
   ),
+  settings: await readFile(
+    new URL("../src/components/SettingsOverlay.tsx", import.meta.url),
+    "utf8"
+  ),
 };
 
 const assertIncludes = (source, expected, message) => {
@@ -73,6 +77,21 @@ assertIncludes(
   files.construct,
   "window.setInterval(pollTimeline",
   "Construct timeline active polling"
+);
+assertIncludes(
+  files.construct,
+  "activeFoundryDataSource",
+  "Construct runtime source indicator"
+);
+assertIncludes(
+  files.settings,
+  "Runtime Source",
+  "Settings runtime source panel"
+);
+assertIncludes(
+  files.settings,
+  "activeFoundryDataSource",
+  "Settings data source mode"
 );
 assertIncludes(
   files.construct,

@@ -1249,6 +1249,46 @@ input[type="checkbox"] {
   color: var(--forge-orange);
 }
 
+.status-badge.source-mock {
+  border-color: rgba(119, 140, 152, 0.42);
+  color: var(--text-secondary);
+}
+
+.status-badge.source-construct-api {
+  border-color: rgba(212, 160, 23, 0.58);
+  color: var(--brass);
+  box-shadow: 0 0 12px rgba(212, 160, 23, 0.12);
+}
+
+.status-badge.source-api {
+  border-color: rgba(0, 212, 255, 0.58);
+  color: var(--arc-blue);
+  box-shadow: var(--shadow-blue);
+}
+
+.runtime-source-strip {
+  display: grid;
+  gap: 0.18rem;
+  border: 1px solid rgba(0, 212, 255, 0.12);
+  border-radius: 8px;
+  padding: 0.54rem 0.62rem;
+  background: rgba(13, 17, 23, 0.42);
+}
+
+.runtime-source-strip span {
+  color: var(--arc-blue);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.runtime-source-strip strong {
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
 .runtime-load-meter {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3150,6 +3190,64 @@ input[type="checkbox"] {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.runtime-source-panel {
+  border-color: rgba(0, 212, 255, 0.22);
+  background:
+    linear-gradient(135deg, rgba(0, 212, 255, 0.07), rgba(255, 138, 0, 0.03)),
+    var(--panel);
+}
+
+.runtime-source-readout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.runtime-source-readout strong,
+.runtime-source-readout p {
+  display: block;
+}
+
+.runtime-source-readout strong {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.runtime-source-readout p {
+  margin: 0.25rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.runtime-source-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.runtime-source-grid div {
+  display: grid;
+  gap: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem;
+  background: rgba(13, 17, 23, 0.45);
+}
+
+.runtime-source-grid span {
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.runtime-source-grid strong {
+  color: var(--text-primary);
+  font-size: 0.82rem;
 }
 
 .settings-grid {

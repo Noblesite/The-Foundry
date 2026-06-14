@@ -15,6 +15,7 @@ import {
   TrialVerdict,
 } from "../domain/foundry";
 import { buildRuntimeReadinessSummary } from "../domain/constructReadiness";
+import { activeFoundryDataSource } from "../domain/dataSourceMode";
 import {
   formatLoadDuration,
   formatRuntimeMemory,
@@ -975,9 +976,19 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 </article>
               )}
               <div className="runtime-control-grid">
+                <span
+                  className={`status-badge source-${activeFoundryDataSource.mode}`}
+                  title={activeFoundryDataSource.detail}
+                >
+                  {activeFoundryDataSource.liveConstruct ? "live Construct" : "mock Construct"}
+                </span>
                 <span className="status-badge">{runtime?.status || runtimeMode}</span>
                 <span className="status-badge">{runtime?.loaded ? "loaded" : "not loaded"}</span>
                 <span className="status-badge">{runtime?.device || settings.constructDevice}</span>
+              </div>
+              <div className="runtime-source-strip">
+                <span>{activeFoundryDataSource.label}</span>
+                <strong>{activeFoundryDataSource.detail}</strong>
               </div>
               <div className="runtime-load-meter" aria-label={`Runtime load ${runtimePhaseLabel}`}>
                 {(["configuring", "loading", "ready"] as RuntimeLoadPhase[]).map((phase) => (

@@ -5,6 +5,7 @@ import {
   TrainingMethod,
   WorkspaceSettings,
 } from "../domain/foundry";
+import { activeFoundryDataSource } from "../domain/dataSourceMode";
 
 export type { WorkspaceSettings };
 
@@ -54,6 +55,30 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave }) => {
       </div>
 
       <div className="settings-scroll">
+        <fieldset className="settings-group runtime-source-panel">
+          <legend>Runtime Source</legend>
+          <div className="runtime-source-readout">
+            <div>
+              <span className="panel-kicker">Data mode</span>
+              <strong>{activeFoundryDataSource.label}</strong>
+              <p>{activeFoundryDataSource.detail}</p>
+            </div>
+            <span className={`status-badge source-${activeFoundryDataSource.mode}`}>
+              {activeFoundryDataSource.badge}
+            </span>
+          </div>
+          <div className="runtime-source-grid">
+            <div>
+              <span>Construct</span>
+              <strong>{activeFoundryDataSource.liveConstruct ? "FastAPI" : "Mock"}</strong>
+            </div>
+            <div>
+              <span>Catalog</span>
+              <strong>{activeFoundryDataSource.liveCatalog ? "FastAPI" : "Mock"}</strong>
+            </div>
+          </div>
+        </fieldset>
+
         <fieldset className="settings-group">
           <legend>Provider</legend>
           <label className="field-label" htmlFor="hf-token">
