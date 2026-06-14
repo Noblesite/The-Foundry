@@ -23,6 +23,7 @@ import {
   Construct,
   ConstructModelHandoff,
   ConstructRuntime,
+  FoundryRuntimeStatus,
   NavigationSection,
   RuntimeMetric,
   Workshop,
@@ -140,6 +141,7 @@ const App: React.FC = () => {
   const [academyFocusConceptId, setAcademyFocusConceptId] = useState<string | null>(null);
   const [constructHandoff, setConstructHandoff] = useState<ConstructModelHandoff | null>(null);
   const [constructRuntime, setConstructRuntime] = useState<ConstructRuntime | null>(null);
+  const [foundryStatus, setFoundryStatus] = useState<FoundryRuntimeStatus | null>(null);
   const [workshops, setWorkshops] = useState<Workshop[]>([mockDashboardSummary.workshop]);
   const [foundryData, setFoundryData] = useState<FoundryBootstrap>({
     dashboard: mockDashboardSummary,
@@ -156,12 +158,14 @@ const App: React.FC = () => {
       loadFoundryBootstrap(repository),
       repository.listWorkshops(),
       repository.getConstructRuntime(),
+      repository.getFoundryStatus(),
     ])
-      .then(([bootstrap, savedWorkshops, runtime]) => {
+      .then(([bootstrap, savedWorkshops, runtime, status]) => {
         if (isCurrent) {
           setFoundryData(bootstrap);
           setWorkshops(savedWorkshops.length ? savedWorkshops : [bootstrap.dashboard.workshop]);
           setConstructRuntime(runtime);
+          setFoundryStatus(status);
         }
       })
       .catch((error: unknown) => {
@@ -179,13 +183,26 @@ const App: React.FC = () => {
   };
 
   const refreshFoundryData = async () => {
-    const [bootstrap, savedWorkshops] = await Promise.all([
+    const [bootstrap, savedWorkshops, status] = await Promise.all([
       loadFoundryBootstrap(repository),
       repository.listWorkshops(),
+      repository.getFoundryStatus(),
     ]);
     setFoundryData(bootstrap);
     setWorkshops(savedWorkshops.length ? savedWorkshops : [bootstrap.dashboard.workshop]);
+    setFoundryStatus(status);
     return bootstrap;
+  };
+
+  const refreshFoundryStatus = async () => {
+    const status = await repository.getFoundryStatus();
+    setFoundryStatus(status);
+    return status;
+  };
+
+  const handleConstructRuntimeChanged = (runtime: ConstructRuntime) => {
+    setConstructRuntime(runtime);
+    void refreshFoundryStatus();
   };
 
   const openWorkshopModal = () => {
@@ -375,7 +392,13 @@ const App: React.FC = () => {
 
   const renderMain = () => {
     if (activeSection === "settings") {
-      return <SettingsPanel settings={settings} onSave={persistSettings} />;
+      return (
+        <SettingsPanel
+          settings={settings}
+          sourceStatus={foundryStatus}
+          onSave={persistSettings}
+        />
+      );
     }
 
     if (activeSection === "construct") {
@@ -386,7 +409,8 @@ const App: React.FC = () => {
           handoff={constructHandoff}
           repository={repository}
           settings={settings}
-          onRuntimeChanged={setConstructRuntime}
+          sourceStatus={foundryStatus}
+          onRuntimeChanged={handleConstructRuntimeChanged}
         />
       );
     }

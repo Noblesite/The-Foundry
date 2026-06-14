@@ -11,6 +11,7 @@ from urllib.request import urlopen
 
 BASE_URL = "http://127.0.0.1:8000"
 ENDPOINTS = (
+    "/api/v1/foundry/status",
     "/api/v1/foundry/bootstrap",
     "/api/v1/constructs/runtime",
 )

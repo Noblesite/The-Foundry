@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import {
   ConstructRuntimeDevice,
   ConstructRuntimeMode,
+  FoundryRuntimeStatus,
   TrainingMethod,
   WorkspaceSettings,
 } from "../domain/foundry";
@@ -11,6 +12,7 @@ export type { WorkspaceSettings };
 
 interface SettingsPanelProps {
   settings: WorkspaceSettings;
+  sourceStatus?: FoundryRuntimeStatus | null;
   onSave: (settings: WorkspaceSettings) => void;
 }
 
@@ -25,9 +27,19 @@ const HelpTooltip: React.FC<HelpTooltipProps> = ({ text }) => (
   </span>
 );
 
-const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave }) => {
+const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, sourceStatus, onSave }) => {
   const [draft, setDraft] = useState<WorkspaceSettings>(settings);
   const [saved, setSaved] = useState(false);
+  const apiReachable = Boolean(sourceStatus?.api.reachable);
+  const constructReachable = Boolean(sourceStatus?.construct.reachable);
+  const catalogReachable = Boolean(sourceStatus?.catalog.reachable);
+  const sourceBadge = sourceStatus
+    ? apiReachable
+      ? "Reachable"
+      : activeFoundryDataSource.liveConstruct
+        ? "Unreachable"
+        : activeFoundryDataSource.badge
+    : activeFoundryDataSource.badge;
 
   const updateDraft = <K extends keyof WorkspaceSettings>(
     key: K,
@@ -61,20 +73,48 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave }) => {
             <div>
               <span className="panel-kicker">Data mode</span>
               <strong>{activeFoundryDataSource.label}</strong>
-              <p>{activeFoundryDataSource.detail}</p>
+              <p>{sourceStatus?.api.detail || activeFoundryDataSource.detail}</p>
             </div>
             <span className={`status-badge source-${activeFoundryDataSource.mode}`}>
-              {activeFoundryDataSource.badge}
+              {sourceBadge}
             </span>
           </div>
           <div className="runtime-source-grid">
             <div>
               <span>Construct</span>
-              <strong>{activeFoundryDataSource.liveConstruct ? "FastAPI" : "Mock"}</strong>
+              <strong>
+                {sourceStatus
+                  ? constructReachable
+                    ? `${sourceStatus.construct.mode || "runtime"} ${sourceStatus.construct.modelLoaded ? "loaded" : "ready"}`
+                    : "Unavailable"
+                  : activeFoundryDataSource.liveConstruct
+                    ? "FastAPI"
+                    : "Mock"}
+              </strong>
             </div>
             <div>
               <span>Catalog</span>
-              <strong>{activeFoundryDataSource.liveCatalog ? "FastAPI" : "Mock"}</strong>
+              <strong>
+                {sourceStatus
+                  ? catalogReachable
+                    ? sourceStatus.catalog.status
+                    : "Unavailable"
+                  : activeFoundryDataSource.liveCatalog
+                    ? "FastAPI"
+                    : "Mock"}
+              </strong>
+            </div>
+            <div>
+              <span>FastAPI</span>
+              <strong>{apiReachable ? "Reachable" : "Offline"}</strong>
+            </div>
+            <div>
+              <span>Model</span>
+              <strong>
+                {sourceStatus?.construct.modelLoaded
+                  ? sourceStatus.construct.modelId || "Loaded"
+                  : "Not loaded"}
+              </strong>
             </div>
           </div>
         </fieldset>

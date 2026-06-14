@@ -11,6 +11,7 @@ import {
   ConstructRuntimePreflightResult,
   ConstructRuntimeProbeResult,
   CreateConstructRuntimeEventRequest,
+  FoundryRuntimeStatus,
   Trial,
   TrialVerdict,
 } from "../domain/foundry";
@@ -68,6 +69,7 @@ interface ConstructWorkbenchProps {
   handoff?: ConstructModelHandoff | null;
   repository: FoundryRepository;
   settings: WorkspaceSettings;
+  sourceStatus?: FoundryRuntimeStatus | null;
   onRuntimeChanged?: (runtime: ConstructRuntime) => void;
 }
 
@@ -77,6 +79,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   handoff,
   repository,
   settings,
+  sourceStatus,
   onRuntimeChanged,
 }) => {
   const conversationId = `construct-${construct.id}`;
@@ -845,6 +848,18 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
 
   const runtimeMemory = getRuntimeMemory(runtime);
   const loadedModel = getLoadedModelSnapshot(runtime);
+  const apiReachable = Boolean(sourceStatus?.api.reachable);
+  const constructReachable = Boolean(sourceStatus?.construct.reachable);
+  const sourceReachabilityLabel = sourceStatus
+    ? apiReachable
+      ? "API reachable"
+      : activeFoundryDataSource.liveConstruct
+        ? "API offline"
+        : "Mock mode"
+    : activeFoundryDataSource.liveConstruct
+      ? "Checking API"
+      : "Mock mode";
+  const sourceRuntimeDetail = sourceStatus?.construct.detail || activeFoundryDataSource.detail;
   const loadEvent = getRuntimeLoadEvent(runtime);
   const runtimePhaseLabel = {
     idle: "Idle",
@@ -980,15 +995,18 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                   className={`status-badge source-${activeFoundryDataSource.mode}`}
                   title={activeFoundryDataSource.detail}
                 >
-                  {activeFoundryDataSource.liveConstruct ? "live Construct" : "mock Construct"}
+                  {sourceReachabilityLabel}
                 </span>
                 <span className="status-badge">{runtime?.status || runtimeMode}</span>
                 <span className="status-badge">{runtime?.loaded ? "loaded" : "not loaded"}</span>
                 <span className="status-badge">{runtime?.device || settings.constructDevice}</span>
               </div>
               <div className="runtime-source-strip">
-                <span>{activeFoundryDataSource.label}</span>
-                <strong>{activeFoundryDataSource.detail}</strong>
+                <span>
+                  {activeFoundryDataSource.label}
+                  {constructReachable ? " connected" : ""}
+                </span>
+                <strong>{sourceRuntimeDetail}</strong>
               </div>
               <div className="runtime-load-meter" aria-label={`Runtime load ${runtimePhaseLabel}`}>
                 {(["configuring", "loading", "ready"] as RuntimeLoadPhase[]).map((phase) => (

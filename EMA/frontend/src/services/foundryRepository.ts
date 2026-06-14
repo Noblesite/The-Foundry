@@ -60,6 +60,7 @@ import {
   ForgeWorkerState,
   ForgeRuntime,
   ForgeRun,
+  FoundryRuntimeStatus,
   MaterialChunk,
   MaterialSource,
   ModelArchiveEntry,
@@ -102,6 +103,7 @@ export interface FoundryBootstrap {
 }
 
 export interface FoundryRepository {
+  getFoundryStatus: () => Promise<FoundryRuntimeStatus>;
   createWorkshop: (request: CreateWorkshopRequest) => Promise<Workshop>;
   getDashboard: () => Promise<DashboardSummary>;
   getNavigationItems: () => Promise<FoundryNavigationItem[]>;
@@ -371,6 +373,43 @@ let mockForgeRuntime: ForgeRuntime = {
   supportsMethods: ["LoRA", "QLoRA"],
 };
 
+const buildMockFoundryStatus = (): FoundryRuntimeStatus => {
+  const checkedAt = new Date().toISOString();
+  return {
+    contractVersion: "foundry.status.v1",
+    api: {
+      reachable: false,
+      status: "mock",
+      detail: "FastAPI is not required in mock mode.",
+      checkedAt,
+    },
+    construct: {
+      reachable: true,
+      status: mockConstructRuntime.status,
+      detail: mockConstructRuntime.detail,
+      mode: mockConstructRuntime.mode,
+      modelLoaded: mockConstructRuntime.loaded,
+      modelId: mockConstructRuntime.modelId,
+      device: mockConstructRuntime.device,
+      checkedAt,
+    },
+    forge: {
+      reachable: true,
+      status: mockForgeRuntime.status,
+      detail: mockForgeRuntime.detail,
+      mode: mockForgeRuntime.mode,
+      ready: mockForgeRuntime.ready,
+      checkedAt,
+    },
+    catalog: {
+      reachable: true,
+      status: "mock",
+      detail: "Catalog reads from local mock data.",
+      checkedAt,
+    },
+  };
+};
+
 const buildMockEvaluationReport = (
   forgeRun: ForgeRun,
   material: MaterialSource | undefined,
@@ -437,7 +476,45 @@ const buildMockEvaluationReport = (
 
 const unwrap = <T>(response: { data: ApiEnvelope<T> }): T => response.data.data;
 
+const buildApiUnavailableStatus = (detail: string): FoundryRuntimeStatus => {
+  const checkedAt = new Date().toISOString();
+  return {
+    contractVersion: "foundry.status.v1",
+    api: {
+      reachable: false,
+      status: "unreachable",
+      detail,
+      checkedAt,
+    },
+    construct: {
+      reachable: false,
+      status: "unavailable",
+      detail: "Construct runtime status is unavailable until FastAPI responds.",
+      mode: null,
+      modelLoaded: false,
+      modelId: null,
+      device: null,
+      checkedAt,
+    },
+    forge: {
+      reachable: false,
+      status: "unavailable",
+      detail: "Forge runtime status is unavailable until FastAPI responds.",
+      mode: null,
+      ready: false,
+      checkedAt,
+    },
+    catalog: {
+      reachable: false,
+      status: "unavailable",
+      detail: "Catalog status is unavailable until FastAPI responds.",
+      checkedAt,
+    },
+  };
+};
+
 export const mockFoundryRepository: FoundryRepository = {
+  getFoundryStatus: async () => buildMockFoundryStatus(),
   createWorkshop: async (request) => ({
     id: `wrk-${request.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
     name: request.name,
@@ -1333,6 +1410,17 @@ export const mockFoundryRepository: FoundryRepository = {
 };
 
 export const apiFoundryRepository: FoundryRepository = {
+  getFoundryStatus: async () => {
+    try {
+      return unwrap(
+        await apiClient.get<ApiEnvelope<FoundryRuntimeStatus>>(foundryApiRoutes.status)
+      );
+    } catch (error) {
+      return buildApiUnavailableStatus(
+        error instanceof Error ? error.message : "FastAPI did not respond."
+      );
+    }
+  },
   createWorkshop: async (request) =>
     unwrap(await apiClient.post<ApiEnvelope<Workshop>>(foundryApiRoutes.workshops, request)),
   getDashboard: async () =>
@@ -1615,6 +1703,7 @@ export const apiFoundryRepository: FoundryRepository = {
 
 const constructApiOverrides: Pick<
   FoundryRepository,
+  | "getFoundryStatus"
   | "chatWithConstruct"
   | "streamConstructChat"
   | "getConstructRuntime"
@@ -1631,6 +1720,7 @@ const constructApiOverrides: Pick<
   | "registerArchiveModel"
   | "downloadArchiveModel"
 > = {
+  getFoundryStatus: apiFoundryRepository.getFoundryStatus,
   chatWithConstruct: apiFoundryRepository.chatWithConstruct,
   streamConstructChat: apiFoundryRepository.streamConstructChat,
   getConstructRuntime: apiFoundryRepository.getConstructRuntime,

@@ -238,6 +238,46 @@ def run_construct_runtime_event_contract_check() -> int:
     return 0
 
 
+def run_foundry_runtime_status_contract_check() -> int:
+    api_server = PACKAGE_ROOT / "backend" / "api_server.py"
+    frontend_contract = PACKAGE_ROOT / "frontend" / "src" / "contracts" / "foundryApi.ts"
+    frontend_repository = PACKAGE_ROOT / "frontend" / "src" / "services" / "foundryRepository.ts"
+    api_source = api_server.read_text(encoding="utf-8")
+    contract_source = frontend_contract.read_text(encoding="utf-8")
+    repository_source = frontend_repository.read_text(encoding="utf-8")
+
+    required_api_patterns = (
+        "foundry.status.v1",
+        "/api/v1/foundry/status",
+        "foundry_runtime_status_endpoint",
+        "construct_inference_service.runtime_payload()",
+        "forge_training_service.runtime_payload()",
+    )
+    missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
+    if missing_api:
+        return fail("Foundry runtime status API boundary is missing: " + ", ".join(missing_api))
+
+    required_frontend_patterns = (
+        "status: `${FOUNDRY_API_VERSION}/foundry/status`",
+        "getFoundryStatus",
+        "FoundryRuntimeStatus",
+        "buildApiUnavailableStatus",
+    )
+    missing_frontend = [
+        pattern
+        for pattern in required_frontend_patterns
+        if pattern not in contract_source and pattern not in repository_source
+    ]
+    if missing_frontend:
+        return fail(
+            "Foundry runtime status frontend contract is missing: "
+            + ", ".join(missing_frontend)
+        )
+
+    print("OK: Foundry runtime status contract is present.")
+    return 0
+
+
 def run_chat_service_fake_engine_check() -> int:
     if str(PACKAGE_ROOT) not in sys.path:
         sys.path.insert(0, str(PACKAGE_ROOT))
@@ -297,6 +337,7 @@ def main() -> int:
         run_forge_adapter_boundary_check,
         run_trial_contract_check,
         run_construct_runtime_event_contract_check,
+        run_foundry_runtime_status_contract_check,
         run_chat_service_fake_engine_check,
     )
     failures = sum(check() for check in checks)

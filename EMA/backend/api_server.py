@@ -2,6 +2,7 @@
 import json
 from typing import Any, Literal, Set
 from uuid import uuid4
+from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from utilities.logger import get_logger
@@ -174,6 +175,83 @@ def api_envelope(data: Any):
 
 def sse_event(event_type: str, payload: dict[str, Any]) -> str:
     return f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def build_foundry_runtime_status() -> dict[str, Any]:
+    checked_at = utc_now()
+    construct_status = {
+        "reachable": False,
+        "status": "unavailable",
+        "detail": "Construct runtime status could not be read.",
+        "mode": None,
+        "modelLoaded": False,
+        "modelId": None,
+        "device": None,
+        "checkedAt": checked_at,
+    }
+    forge_status = {
+        "reachable": False,
+        "status": "unavailable",
+        "detail": "Forge runtime status could not be read.",
+        "mode": None,
+        "ready": False,
+        "checkedAt": checked_at,
+    }
+
+    try:
+        runtime = construct_inference_service.runtime_payload()
+        construct_status = {
+            "reachable": True,
+            "status": runtime["status"],
+            "detail": runtime["detail"],
+            "mode": runtime["mode"],
+            "modelLoaded": runtime["loaded"],
+            "modelId": runtime["modelId"],
+            "device": runtime["device"],
+            "checkedAt": checked_at,
+        }
+    except Exception as error:
+        construct_status["detail"] = str(error)
+
+    try:
+        runtime = forge_training_service.runtime_payload()
+        forge_status = {
+            "reachable": True,
+            "status": runtime["status"],
+            "detail": runtime["detail"],
+            "mode": runtime["mode"],
+            "ready": runtime["ready"],
+            "checkedAt": checked_at,
+        }
+    except Exception as error:
+        forge_status["detail"] = str(error)
+
+    return {
+        "contractVersion": "foundry.status.v1",
+        "api": {
+            "reachable": True,
+            "status": "ready",
+            "detail": "FastAPI is serving Foundry v1 contracts.",
+            "checkedAt": checked_at,
+        },
+        "construct": construct_status,
+        "forge": forge_status,
+        "catalog": {
+            "reachable": True,
+            "status": "ready",
+            "detail": "SQLite Foundry catalog service is initialized.",
+            "checkedAt": checked_at,
+        },
+    }
+
+
+@app.get("/api/v1/foundry/status")
+async def foundry_runtime_status_endpoint():
+    return api_envelope(build_foundry_runtime_status())
 
 
 @app.get("/api/v1/constructs/runtime")

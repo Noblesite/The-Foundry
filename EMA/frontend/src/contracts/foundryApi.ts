@@ -30,6 +30,7 @@ import {
 export const FOUNDRY_API_VERSION = "/api/v1";
 
 export const foundryApiRoutes = {
+  status: `${FOUNDRY_API_VERSION}/foundry/status`,
   bootstrap: `${FOUNDRY_API_VERSION}/foundry/bootstrap`,
   dashboard: `${FOUNDRY_API_VERSION}/foundry/dashboard`,
   navigation: `${FOUNDRY_API_VERSION}/foundry/navigation`,

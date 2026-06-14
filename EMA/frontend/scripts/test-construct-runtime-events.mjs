@@ -64,6 +64,26 @@ assertIncludes(
   "Runtime event API route"
 );
 assertIncludes(
+  files.contracts,
+  "status: `${FOUNDRY_API_VERSION}/foundry/status`",
+  "Foundry status API route"
+);
+assertIncludes(
+  files.domain,
+  "export interface FoundryRuntimeStatus",
+  "Foundry status domain contract"
+);
+assertIncludes(
+  files.repository,
+  "getFoundryStatus:",
+  "Repository status method"
+);
+assertIncludes(
+  files.repository,
+  "buildApiUnavailableStatus",
+  "Repository status fallback"
+);
+assertIncludes(
   files.construct,
   ".listConstructRuntimeEvents()",
   "Construct timeline hydration"
@@ -92,6 +112,16 @@ assertIncludes(
   files.settings,
   "activeFoundryDataSource",
   "Settings data source mode"
+);
+assertIncludes(
+  files.settings,
+  "sourceStatus",
+  "Settings live source status"
+);
+assertIncludes(
+  files.construct,
+  "sourceReachabilityLabel",
+  "Construct live source status"
 );
 assertIncludes(
   files.construct,

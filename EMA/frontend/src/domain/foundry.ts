@@ -336,6 +336,33 @@ export interface ConstructRuntime {
   diagnostics?: Record<string, unknown>;
 }
 
+export interface FoundryServiceStatus {
+  reachable: boolean;
+  status: string;
+  detail: string;
+  checkedAt: string;
+}
+
+export interface FoundryConstructServiceStatus extends FoundryServiceStatus {
+  mode: ConstructRuntimeMode | null;
+  modelLoaded: boolean;
+  modelId: string | null;
+  device: string | null;
+}
+
+export interface FoundryForgeServiceStatus extends FoundryServiceStatus {
+  mode: ForgeRuntimeMode | null;
+  ready: boolean;
+}
+
+export interface FoundryRuntimeStatus {
+  contractVersion: "foundry.status.v1";
+  api: FoundryServiceStatus;
+  construct: FoundryConstructServiceStatus;
+  forge: FoundryForgeServiceStatus;
+  catalog: FoundryServiceStatus;
+}
+
 export interface ConstructRuntimeEvent {
   id: string;
   type: ConstructRuntimeEventType;
