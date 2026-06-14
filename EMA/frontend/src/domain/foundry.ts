@@ -336,6 +336,30 @@ export interface ConstructRuntimeProbeResult {
   diagnostics: Record<string, unknown>;
 }
 
+export interface ConstructRuntimePreflightCheck {
+  id: string;
+  label: string;
+  status: "pass" | "warn" | "fail";
+  detail: string;
+}
+
+export interface ConstructRuntimePreflightResult {
+  ok: boolean;
+  modelId: string;
+  device: string;
+  localFilesOnly: boolean;
+  modelType?: string | null;
+  architectures: string[];
+  contextWindow?: number | null;
+  parameterCountEstimate?: number | null;
+  estimatedLoadBytes: number;
+  availableBytes: number;
+  fitStatus: ModelFitStatus;
+  checks: ConstructRuntimePreflightCheck[];
+  warnings: string[];
+  diagnostics: Record<string, unknown>;
+}
+
 export interface ModelPlatformProfile {
   os: string;
   machine: string;

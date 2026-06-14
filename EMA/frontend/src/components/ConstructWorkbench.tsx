@@ -6,6 +6,7 @@ import {
   Construct,
   ConstructMessage,
   ConstructRuntime,
+  ConstructRuntimePreflightResult,
   ConstructRuntimeProbeResult,
   Trial,
   TrialVerdict,
@@ -77,6 +78,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     "Load the current model, stream a short reply, and inspect the runtime contract."
   );
   const [isProbingRuntime, setIsProbingRuntime] = useState(false);
+  const [isPreflightingRuntime, setIsPreflightingRuntime] = useState(false);
+  const [preflightResult, setPreflightResult] = useState<ConstructRuntimePreflightResult | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [lastInspection, setLastInspection] = useState<ResponseInspection | null>(null);
   const [trialVerdict, setTrialVerdict] = useState<TrialVerdict | null>(null);
@@ -107,6 +110,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setRuntimeSmokeMessage(
       "Load the current model, stream a short reply, and inspect the runtime contract."
     );
+    setPreflightResult(null);
     setProbeResult(null);
   }, [artifact, construct, settings.constructModelId]);
 
@@ -136,6 +140,39 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     };
   }, [onRuntimeChanged, repository]);
 
+  const formatBytes = (bytes: number) => {
+    if (!bytes) {
+      return "Unknown";
+    }
+    const gb = bytes / 1024 ** 3;
+    if (gb >= 1) {
+      return `${gb.toFixed(gb >= 10 ? 0 : 1)} GB`;
+    }
+    const mb = bytes / 1024 ** 2;
+    return `${Math.max(1, Math.round(mb))} MB`;
+  };
+
+  const runRuntimePreflight = async () => {
+    const targetModel = settings.constructModelId || activeArtifact.baseModel;
+    setIsPreflightingRuntime(true);
+    setRuntimeLoadTarget(targetModel);
+    setError(null);
+    try {
+      const result = await repository.preflightConstructRuntime({
+        modelId: targetModel,
+        device: settings.constructDevice,
+      });
+      setPreflightResult(result);
+      return result;
+    } catch (runtimeError: unknown) {
+      setPreflightResult(null);
+      setError(runtimeError instanceof Error ? runtimeError.message : "Could not preflight runtime.");
+      throw runtimeError;
+    } finally {
+      setIsPreflightingRuntime(false);
+    }
+  };
+
   const configureRuntime = async () => {
     setIsRuntimeBusy(true);
     setRuntimeLoadPhase("configuring");
@@ -162,6 +199,11 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
 
   const loadCurrentRuntime = async () => {
     const targetModel = settings.constructModelId || activeArtifact.baseModel;
+    const preflight = await runRuntimePreflight();
+    if (!preflight.ok) {
+      setRuntimeLoadPhase("failed");
+      throw new Error("Model preflight failed. Review compatibility checks before loading.");
+    }
     setRuntimeLoadPhase("configuring");
     setRuntimeLoadTarget(targetModel);
     setError(null);
@@ -547,6 +589,15 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
               <div className="runtime-action-row">
                 <button
                   className="button-secondary button-compact"
+                  disabled={isPreflightingRuntime || isRuntimeBusy || isSending}
+                  onClick={() => void runRuntimePreflight()}
+                  type="button"
+                >
+                  <i className="fas fa-clipboard-check" aria-hidden="true" />
+                  {isPreflightingRuntime ? "Checking" : "Preflight"}
+                </button>
+                <button
+                  className="button-secondary button-compact"
                   disabled={isRuntimeBusy}
                   onClick={configureRuntime}
                   type="button"
@@ -573,6 +624,49 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                   Unload
                 </button>
               </div>
+              {preflightResult && (
+                <article className={`runtime-preflight-card fit-${preflightResult.fitStatus}`}>
+                  <div className="runtime-preflight-header">
+                    <div>
+                      <strong>{preflightResult.ok ? "Preflight passed" : "Preflight needs review"}</strong>
+                      <span>{preflightResult.modelType || "unknown model"} · {preflightResult.device}</span>
+                    </div>
+                    <span className={`status-badge fit-${preflightResult.fitStatus}`}>
+                      {preflightResult.fitStatus}
+                    </span>
+                  </div>
+                  <div className="runtime-preflight-stats">
+                    <div>
+                      <span>Estimated load</span>
+                      <strong>{formatBytes(preflightResult.estimatedLoadBytes)}</strong>
+                    </div>
+                    <div>
+                      <span>Available</span>
+                      <strong>{formatBytes(preflightResult.availableBytes)}</strong>
+                    </div>
+                    <div>
+                      <span>Context</span>
+                      <strong>{preflightResult.contextWindow?.toLocaleString() || "n/a"}</strong>
+                    </div>
+                  </div>
+                  <div className="runtime-preflight-checks">
+                    {preflightResult.checks.map((check) => (
+                      <div className={`preflight-check is-${check.status}`} key={check.id}>
+                        <span>{check.label}</span>
+                        <strong>{check.status}</strong>
+                        <p>{check.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {preflightResult.warnings.length > 0 && (
+                    <ul className="runtime-preflight-warnings">
+                      {preflightResult.warnings.map((warning) => (
+                        <li key={warning}>{warning}</li>
+                      ))}
+                    </ul>
+                  )}
+                </article>
+              )}
               <div className={`runtime-smoke-card smoke-${runtimeSmokeStatus}`}>
                 <div>
                   <strong>Runtime Smoke Test</strong>

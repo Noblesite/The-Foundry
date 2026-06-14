@@ -94,6 +94,10 @@ class ConstructRuntimeInput(BaseModel):
 class ConstructRuntimeLoadInput(BaseModel):
     modelId: str | None = None
 
+class ConstructRuntimePreflightInput(BaseModel):
+    modelId: str
+    device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
+
 class ConstructRuntimeProbeInput(BaseModel):
     modelId: str = "sshleifer/tiny-gpt2"
     prompt: str = "The Foundry is"
@@ -204,6 +208,21 @@ async def load_foundry_construct_runtime_endpoint(data: ConstructRuntimeLoadInpu
         raise HTTPException(status_code=400, detail=str(error))
     except Exception as error:
         raise HTTPException(status_code=500, detail=f"Could not load runtime: {error}")
+
+
+@app.post("/api/v1/constructs/runtime/preflight")
+async def preflight_foundry_construct_runtime_endpoint(data: ConstructRuntimePreflightInput):
+    try:
+        return api_envelope(
+            await construct_inference_service.preflight_model(
+                model_id=data.modelId,
+                device=data.device,
+            )
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"Could not preflight runtime: {error}")
 
 
 @app.post("/api/v1/constructs/runtime/probe")

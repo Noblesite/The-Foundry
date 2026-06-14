@@ -8,6 +8,7 @@ import {
   ConstructChatDoneEvent,
   ConstructChatErrorEvent,
   ConstructChatStreamEvent,
+  ConstructRuntimePreflightResult,
   ForgeTrainingContract,
   ForgePurpose,
   ForgeWorkerReconcileResult,
@@ -66,6 +67,7 @@ export const foundryApiRoutes = {
   constructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime`,
   configureConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/configure`,
   loadConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/load`,
+  preflightConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/preflight`,
   probeConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/probe`,
   unloadConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/unload`,
   modelArchive: `${FOUNDRY_API_VERSION}/archive/models`,
@@ -345,6 +347,11 @@ export interface LoadConstructRuntimeRequest {
   modelId?: string;
 }
 
+export interface PreflightConstructRuntimeRequest {
+  modelId: string;
+  device: "auto" | "cpu" | "cuda" | "mps";
+}
+
 export interface ProbeConstructRuntimeRequest {
   modelId: string;
   prompt: string;
@@ -393,6 +400,7 @@ export interface ConstructChatRequest {
 }
 
 export type ConstructChatResponseDto = ConstructChatResponse;
+export type ConstructRuntimePreflightDto = ConstructRuntimePreflightResult;
 export type ConstructRuntimeProbeDto = ConstructRuntimeProbeResult;
 
 export type ConstructChatTokenEventDto = ConstructChatTokenEvent;

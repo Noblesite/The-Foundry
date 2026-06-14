@@ -13,6 +13,7 @@ import {
   ConstructDto,
   ConstructChatRequest,
   ConstructChatResponseDto,
+  ConstructRuntimePreflightDto,
   ConstructRuntimeProbeDto,
   CreateTrialRequest,
   CreateWorkshopRequest,
@@ -31,6 +32,7 @@ import {
   LoadConstructRuntimeRequest,
   MaterialChunkDto,
   QAPairDto,
+  PreflightConstructRuntimeRequest,
   ProbeConstructRuntimeRequest,
   SearchArchiveModelsRequest,
   StartAssemblyLineRequest,
@@ -46,6 +48,7 @@ import {
   ConstructChatResponse,
   ConstructChatStreamEvent,
   ConstructRuntime,
+  ConstructRuntimePreflightResult,
   ConstructRuntimeProbeResult,
   DashboardSummary,
   FoundryNavigationItem,
@@ -157,6 +160,9 @@ export interface FoundryRepository {
     request: ConfigureConstructRuntimeRequest
   ) => Promise<ConstructRuntime>;
   loadConstructRuntime: (request: LoadConstructRuntimeRequest) => Promise<ConstructRuntime>;
+  preflightConstructRuntime: (
+    request: PreflightConstructRuntimeRequest
+  ) => Promise<ConstructRuntimePreflightResult>;
   probeConstructRuntime: (
     request: ProbeConstructRuntimeRequest
   ) => Promise<ConstructRuntimeProbeResult>;
@@ -1018,6 +1024,41 @@ export const mockFoundryRepository: FoundryRepository = {
     };
     return mockConstructRuntime;
   },
+  preflightConstructRuntime: async (request) => ({
+    ok: true,
+    modelId: request.modelId,
+    device: request.device === "auto" ? "mps" : request.device,
+    localFilesOnly: request.modelId.startsWith("runtime/") || request.modelId.startsWith("/"),
+    modelType: "gpt2",
+    architectures: ["GPT2LMHeadModel"],
+    contextWindow: 1024,
+    parameterCountEstimate: 102714,
+    estimatedLoadBytes: 513570,
+    availableBytes: mockPlatformProfile.availableMemoryBytes,
+    fitStatus: "fits",
+    checks: [
+      {
+        id: "config",
+        label: "Model config",
+        status: "pass",
+        detail: "gpt2 config is readable.",
+      },
+      {
+        id: "tokenizer",
+        label: "Tokenizer",
+        status: "pass",
+        detail: "Tokenizer loaded with vocab size 50257.",
+      },
+      {
+        id: "memory",
+        label: "Memory fit",
+        status: "pass",
+        detail: "Estimated load fits with comfortable headroom.",
+      },
+    ],
+    warnings: [],
+    diagnostics: mockConstructRuntime.diagnostics || {},
+  }),
   probeConstructRuntime: async (request) => ({
     ok: true,
     modelId: request.modelId || "sshleifer/tiny-gpt2",
@@ -1363,6 +1404,13 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.post<ApiEnvelope<ConstructRuntime>>(
         foundryApiRoutes.loadConstructRuntime,
+        request
+      )
+    ),
+  preflightConstructRuntime: async (request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ConstructRuntimePreflightDto>>(
+        foundryApiRoutes.preflightConstructRuntime,
         request
       )
     ),

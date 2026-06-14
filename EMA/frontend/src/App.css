@@ -1265,6 +1265,98 @@ input[type="checkbox"] {
   width: auto;
 }
 
+.runtime-preflight-card {
+  display: grid;
+  gap: 0.68rem;
+  border: 1px solid rgba(0, 212, 255, 0.16);
+  border-radius: 8px;
+  padding: 0.72rem;
+  background: rgba(13, 17, 23, 0.5);
+}
+
+.runtime-preflight-card.fit-tight,
+.runtime-preflight-card.fit-unknown {
+  border-color: rgba(212, 160, 23, 0.4);
+}
+
+.runtime-preflight-card.fit-too-large {
+  border-color: rgba(255, 138, 0, 0.5);
+  box-shadow: var(--shadow-orange);
+}
+
+.runtime-preflight-header,
+.runtime-preflight-stats,
+.runtime-preflight-checks {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.runtime-preflight-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.runtime-preflight-header strong,
+.runtime-preflight-header span {
+  display: block;
+}
+
+.runtime-preflight-header span {
+  margin-top: 0.18rem;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+}
+
+.runtime-preflight-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.runtime-preflight-stats div,
+.preflight-check {
+  display: grid;
+  gap: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem;
+  background: rgba(13, 17, 23, 0.45);
+}
+
+.runtime-preflight-stats span,
+.preflight-check span {
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.preflight-check.is-pass {
+  border-color: rgba(0, 212, 255, 0.24);
+}
+
+.preflight-check.is-warn {
+  border-color: rgba(212, 160, 23, 0.34);
+}
+
+.preflight-check.is-fail {
+  border-color: rgba(255, 138, 0, 0.45);
+}
+
+.preflight-check p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.runtime-preflight-warnings {
+  display: grid;
+  gap: 0.32rem;
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--brass);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
 .runtime-smoke-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

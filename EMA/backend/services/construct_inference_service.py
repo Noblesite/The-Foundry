@@ -4,6 +4,7 @@ import asyncio
 import os
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from threading import Thread
 from typing import Any, AsyncIterator, Dict, Optional
 
@@ -99,6 +100,18 @@ class ConstructInferenceService:
             raise ValueError("Set a model id before loading the Transformers runtime.")
         await self._load_transformers_model(target_model)
         return self.runtime_payload()
+
+    async def preflight_model(self, model_id: Optional[str], device: str) -> Dict[str, Any]:
+        target_model = (model_id or self.model_id or "").strip()
+        if not target_model:
+            raise ValueError("Set a model id before running a compatibility preflight.")
+
+        previous_device = self.device_preference
+        self.device_preference = (device or "auto").strip().lower()
+        try:
+            return await asyncio.to_thread(self._preflight_model_sync, target_model)
+        finally:
+            self.device_preference = previous_device
 
     async def unload(self) -> Dict[str, Any]:
         self._model_cache.clear()
@@ -275,6 +288,103 @@ class ConstructInferenceService:
         model.eval()
         return tokenizer, model
 
+    def _preflight_model_sync(self, model_name: str) -> Dict[str, Any]:
+        from transformers import AutoConfig, AutoTokenizer
+
+        local_files_only = Path(model_name).exists()
+        diagnostics = self._runtime_diagnostics()
+        checks = []
+        warnings = []
+
+        config = None
+        tokenizer_ok = False
+        try:
+            config = AutoConfig.from_pretrained(
+                model_name,
+                local_files_only=local_files_only,
+                trust_remote_code=False,
+            )
+            checks.append(
+                {
+                    "id": "config",
+                    "label": "Model config",
+                    "status": "pass",
+                    "detail": f"{getattr(config, 'model_type', 'unknown')} config is readable.",
+                }
+            )
+        except Exception as error:
+            checks.append(
+                {
+                    "id": "config",
+                    "label": "Model config",
+                    "status": "fail",
+                    "detail": str(error),
+                }
+            )
+
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_name,
+                local_files_only=local_files_only,
+                trust_remote_code=False,
+            )
+            tokenizer_ok = True
+            checks.append(
+                {
+                    "id": "tokenizer",
+                    "label": "Tokenizer",
+                    "status": "pass",
+                    "detail": f"Tokenizer loaded with vocab size {getattr(tokenizer, 'vocab_size', 'unknown')}.",
+                }
+            )
+        except Exception as error:
+            checks.append(
+                {
+                    "id": "tokenizer",
+                    "label": "Tokenizer",
+                    "status": "fail",
+                    "detail": str(error),
+                }
+            )
+
+        parameter_count = self._estimate_parameter_count(config) if config else None
+        estimated_bytes = self._estimate_runtime_bytes(parameter_count)
+        available_bytes = self._available_runtime_bytes(diagnostics)
+        memory_status = self._fit_status(estimated_bytes, available_bytes)
+        if parameter_count is None:
+            warnings.append("Could not estimate parameter count from config; memory fit is approximate.")
+        if memory_status == "too-large":
+            warnings.append("Estimated load size exceeds the conservative runtime budget for this machine.")
+        elif memory_status == "tight":
+            warnings.append("Estimated load size may fit, but context and generation settings should stay conservative.")
+
+        checks.append(
+            {
+                "id": "memory",
+                "label": "Memory fit",
+                "status": "fail" if memory_status == "too-large" else "warn" if memory_status in {"tight", "unknown"} else "pass",
+                "detail": self._memory_fit_detail(memory_status, estimated_bytes, available_bytes),
+            }
+        )
+
+        ok = bool(config and tokenizer_ok and memory_status != "too-large")
+        return {
+            "ok": ok,
+            "modelId": model_name,
+            "device": self._resolve_device_for_preflight(diagnostics),
+            "localFilesOnly": local_files_only,
+            "modelType": getattr(config, "model_type", None) if config else None,
+            "architectures": list(getattr(config, "architectures", None) or []) if config else [],
+            "contextWindow": self._config_context_window(config) if config else None,
+            "parameterCountEstimate": parameter_count,
+            "estimatedLoadBytes": estimated_bytes,
+            "availableBytes": available_bytes,
+            "fitStatus": memory_status,
+            "checks": checks,
+            "warnings": warnings,
+            "diagnostics": diagnostics,
+        }
+
     def _generate_probe_text_sync(self, tokenizer, model, prompt: str, max_new_tokens: int) -> str:
         import torch
 
@@ -295,6 +405,94 @@ class ConstructInferenceService:
         if self.device_preference in {"cpu", "cuda", "mps"}:
             return self.device_preference
         return "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+
+    def _resolve_device_for_preflight(self, diagnostics: Dict[str, Any]) -> str:
+        if self.device_preference in {"cpu", "cuda", "mps"}:
+            return self.device_preference
+        if diagnostics.get("cudaAvailable"):
+            return "cuda"
+        if diagnostics.get("mpsAvailable"):
+            return "mps"
+        return "cpu"
+
+    def _estimate_parameter_count(self, config) -> Optional[int]:
+        if config is None:
+            return None
+        if getattr(config, "num_parameters", None):
+            try:
+                return int(config.num_parameters)
+            except Exception:
+                pass
+
+        hidden_size = self._first_config_int(config, "hidden_size", "n_embd", "d_model")
+        layers = self._first_config_int(config, "num_hidden_layers", "n_layer", "num_layers")
+        vocab_size = self._first_config_int(config, "vocab_size")
+        intermediate_size = self._first_config_int(config, "intermediate_size", "n_inner", "ffn_dim")
+        if not hidden_size or not layers or not vocab_size:
+            return None
+        if not intermediate_size:
+            intermediate_size = hidden_size * 4
+
+        embedding_params = vocab_size * hidden_size
+        attention_params = layers * 4 * hidden_size * hidden_size
+        mlp_params = layers * 2 * hidden_size * intermediate_size
+        norm_and_heads = layers * hidden_size * 6
+        return int((embedding_params + attention_params + mlp_params + norm_and_heads) * 1.08)
+
+    def _first_config_int(self, config, *names: str) -> Optional[int]:
+        for name in names:
+            value = getattr(config, name, None)
+            if isinstance(value, int) and value > 0:
+                return value
+        return None
+
+    def _config_context_window(self, config) -> Optional[int]:
+        return self._first_config_int(
+            config,
+            "max_position_embeddings",
+            "n_positions",
+            "seq_length",
+            "max_sequence_length",
+        )
+
+    def _estimate_runtime_bytes(self, parameter_count: Optional[int]) -> int:
+        if not parameter_count:
+            return 0
+        # Current local loader uses the model default dtype. Estimate fp32 plus
+        # runtime overhead so the warning errs toward protecting the machine.
+        return int(parameter_count * 4 * 1.25)
+
+    def _available_runtime_bytes(self, diagnostics: Dict[str, Any]) -> int:
+        try:
+            import psutil
+
+            memory = psutil.virtual_memory()
+            return int(memory.available)
+        except Exception:
+            memory = diagnostics.get("memory") or {}
+            available_gb = memory.get("availableGb") if isinstance(memory, dict) else None
+            return int(float(available_gb) * (1024**3)) if available_gb else 0
+
+    def _fit_status(self, estimated_bytes: int, available_bytes: int) -> str:
+        if not estimated_bytes or not available_bytes:
+            return "unknown"
+        usable = int(available_bytes * 0.78)
+        if estimated_bytes <= usable * 0.7:
+            return "fits"
+        if estimated_bytes <= usable:
+            return "tight"
+        return "too-large"
+
+    def _memory_fit_detail(self, status: str, estimated_bytes: int, available_bytes: int) -> str:
+        estimated = round(estimated_bytes / (1024**3), 2) if estimated_bytes else 0
+        available = round(available_bytes / (1024**3), 2) if available_bytes else 0
+        if status == "fits":
+            return f"Estimated load is {estimated}GB with {available}GB available."
+        if status == "tight":
+            return f"Estimated load is {estimated}GB against {available}GB available; expect limited headroom."
+        if status == "too-large":
+            return f"Estimated load is {estimated}GB and exceeds the conservative budget from {available}GB available."
+        return "Could not calculate a reliable memory estimate from config metadata."
 
     def _loaded_device(self, model_id: str) -> str:
         cached = self._model_cache.get(model_id)
