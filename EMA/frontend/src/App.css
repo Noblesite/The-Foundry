@@ -1397,6 +1397,164 @@ input[type="checkbox"] {
   line-height: 1.45;
 }
 
+.runtime-readiness-card {
+  display: grid;
+  gap: 0.72rem;
+  border: 1px solid rgba(0, 212, 255, 0.18);
+  border-radius: 8px;
+  padding: 0.78rem;
+  background:
+    linear-gradient(135deg, rgba(0, 212, 255, 0.07), rgba(13, 17, 23, 0.2)),
+    rgba(13, 17, 23, 0.54);
+}
+
+.runtime-readiness-card.readiness-ready {
+  border-color: rgba(0, 212, 255, 0.32);
+}
+
+.runtime-readiness-card.readiness-caution {
+  border-color: rgba(212, 160, 23, 0.42);
+}
+
+.runtime-readiness-card.readiness-blocked {
+  border-color: rgba(255, 138, 0, 0.5);
+  box-shadow: var(--shadow-orange);
+}
+
+.runtime-readiness-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  align-items: start;
+}
+
+.runtime-readiness-header p,
+.runtime-readiness-header strong,
+.runtime-readiness-header span {
+  display: block;
+}
+
+.runtime-readiness-header strong {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.runtime-readiness-header span {
+  margin-top: 0.22rem;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.status-badge.readiness-ready {
+  border-color: rgba(0, 212, 255, 0.56);
+  color: var(--arc-blue);
+}
+
+.status-badge.readiness-caution {
+  border-color: rgba(212, 160, 23, 0.56);
+  color: var(--brass);
+}
+
+.status-badge.readiness-blocked {
+  border-color: rgba(255, 138, 0, 0.56);
+  color: var(--forge-orange);
+}
+
+.runtime-readiness-items {
+  display: grid;
+  gap: 0.48rem;
+}
+
+.readiness-item {
+  display: grid;
+  grid-template-columns: 1.4rem minmax(0, 1fr);
+  gap: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.58rem;
+  background: rgba(13, 17, 23, 0.45);
+}
+
+.readiness-item i {
+  display: grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 999px;
+  background: rgba(119, 140, 152, 0.12);
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+}
+
+.readiness-item.is-pass i {
+  color: var(--arc-blue);
+}
+
+.readiness-item.is-warn i {
+  color: var(--brass);
+}
+
+.readiness-item.is-fail i {
+  color: var(--forge-orange);
+}
+
+.readiness-item strong,
+.readiness-item span,
+.readiness-item p,
+.runtime-readiness-next span,
+.runtime-readiness-next strong {
+  display: block;
+}
+
+.readiness-item strong {
+  color: var(--text-primary);
+  font-size: 0.8rem;
+}
+
+.readiness-item span,
+.readiness-item p {
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.readiness-item span {
+  margin-top: 0.12rem;
+}
+
+.readiness-item p {
+  margin: 0.25rem 0 0;
+}
+
+.runtime-readiness-warnings {
+  display: grid;
+  gap: 0.32rem;
+  color: var(--brass);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.runtime-readiness-next {
+  border-top: 1px solid var(--border);
+  padding-top: 0.58rem;
+}
+
+.runtime-readiness-next span {
+  color: var(--arc-blue);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.runtime-readiness-next strong {
+  margin-top: 0.2rem;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .runtime-smoke-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
