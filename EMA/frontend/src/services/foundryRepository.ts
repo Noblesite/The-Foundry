@@ -1613,10 +1613,55 @@ export const apiFoundryRepository: FoundryRepository = {
     ),
 };
 
+const constructApiOverrides: Pick<
+  FoundryRepository,
+  | "chatWithConstruct"
+  | "streamConstructChat"
+  | "getConstructRuntime"
+  | "listConstructRuntimeEvents"
+  | "recordConstructRuntimeEvent"
+  | "configureConstructRuntime"
+  | "loadConstructRuntime"
+  | "preflightConstructRuntime"
+  | "probeConstructRuntime"
+  | "unloadConstructRuntime"
+  | "listModelArchiveEntries"
+  | "searchArchiveModels"
+  | "inspectArchiveModel"
+  | "registerArchiveModel"
+  | "downloadArchiveModel"
+> = {
+  chatWithConstruct: apiFoundryRepository.chatWithConstruct,
+  streamConstructChat: apiFoundryRepository.streamConstructChat,
+  getConstructRuntime: apiFoundryRepository.getConstructRuntime,
+  listConstructRuntimeEvents: apiFoundryRepository.listConstructRuntimeEvents,
+  recordConstructRuntimeEvent: apiFoundryRepository.recordConstructRuntimeEvent,
+  configureConstructRuntime: apiFoundryRepository.configureConstructRuntime,
+  loadConstructRuntime: apiFoundryRepository.loadConstructRuntime,
+  preflightConstructRuntime: apiFoundryRepository.preflightConstructRuntime,
+  probeConstructRuntime: apiFoundryRepository.probeConstructRuntime,
+  unloadConstructRuntime: apiFoundryRepository.unloadConstructRuntime,
+  listModelArchiveEntries: apiFoundryRepository.listModelArchiveEntries,
+  searchArchiveModels: apiFoundryRepository.searchArchiveModels,
+  inspectArchiveModel: apiFoundryRepository.inspectArchiveModel,
+  registerArchiveModel: apiFoundryRepository.registerArchiveModel,
+  downloadArchiveModel: apiFoundryRepository.downloadArchiveModel,
+};
+
+export const constructApiFoundryRepository: FoundryRepository = {
+  ...mockFoundryRepository,
+  ...constructApiOverrides,
+};
+
 export const getFoundryRepository = (): FoundryRepository => {
-  return import.meta.env.VITE_FOUNDRY_DATA_SOURCE === "api"
-    ? apiFoundryRepository
-    : mockFoundryRepository;
+  const dataSource = import.meta.env.VITE_FOUNDRY_DATA_SOURCE;
+  if (dataSource === "api") {
+    return apiFoundryRepository;
+  }
+  if (dataSource === "construct-api") {
+    return constructApiFoundryRepository;
+  }
+  return mockFoundryRepository;
 };
 
 export const loadFoundryBootstrap = async (

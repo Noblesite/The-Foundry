@@ -45,6 +45,16 @@ assertIncludes(
   "Mock runtime event storage"
 );
 assertIncludes(
+  files.repository,
+  "constructApiFoundryRepository",
+  "Construct API hybrid repository"
+);
+assertIncludes(
+  files.repository,
+  "dataSource === \"construct-api\"",
+  "Construct API data source switch"
+);
+assertIncludes(
   files.contracts,
   "constructRuntimeEvents:",
   "Runtime event API route"

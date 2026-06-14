@@ -36,6 +36,7 @@ VITE_FOUNDRY_DATA_SOURCE=mock
 Options:
 
 - `mock`: offline UI work with local mock Foundry data.
+- `construct-api`: live Construct runtime/chat endpoints with mock catalog data.
 - `api`: hydrate from the FastAPI `/api/v1` backend.
 
 ## Checks

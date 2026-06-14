@@ -111,7 +111,9 @@ http://127.0.0.1:8000
 
 The frontend can run fully against mock data by setting
 `VITE_FOUNDRY_DATA_SOURCE=mock` in `EMA/frontend/.env`. Use
-`VITE_FOUNDRY_DATA_SOURCE=api` to hydrate the console from FastAPI.
+`VITE_FOUNDRY_DATA_SOURCE=construct-api` to keep mock catalog data while
+testing live Construct runtime/chat endpoints. Use `VITE_FOUNDRY_DATA_SOURCE=api`
+to hydrate the full console from FastAPI.
 
 ## Environment
 
@@ -131,7 +133,7 @@ Useful variables:
 - `FOUNDRY_CATALOG_DB_PATH`: optional SQLite catalog path override.
 - `FOUNDRY_CONSTRUCT_INFERENCE_MODE`: `simulated` or `transformers`.
 - `VITE_BACKEND_URL`: frontend API base URL.
-- `VITE_FOUNDRY_DATA_SOURCE`: `mock` or `api`.
+- `VITE_FOUNDRY_DATA_SOURCE`: `mock`, `construct-api`, or `api`.
 
 ## Common Commands
 
