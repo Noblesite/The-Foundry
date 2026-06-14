@@ -66,6 +66,16 @@ assertIncludes(
 );
 assertIncludes(
   files.construct,
+  "refreshRuntimeTimeline",
+  "Construct timeline backend refresh"
+);
+assertIncludes(
+  files.construct,
+  "window.setInterval(pollTimeline",
+  "Construct timeline active polling"
+);
+assertIncludes(
+  files.construct,
   ".recordConstructRuntimeEvent({",
   "Construct timeline persistence"
 );

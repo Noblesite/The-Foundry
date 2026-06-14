@@ -48,6 +48,19 @@ interface ResponseInspection {
 type RuntimeLoadPhase = "idle" | "configuring" | "loading" | "ready" | "failed";
 type RuntimeSmokeStatus = "idle" | "loading" | "streaming" | "passed" | "failed";
 
+const mergeRuntimeTimelineEvents = (
+  current: ConstructRuntimeEvent[],
+  incoming: ConstructRuntimeEvent[]
+) => {
+  const byId = new Map<string, ConstructRuntimeEvent>();
+  [...current, ...incoming].forEach((event) => {
+    byId.set(event.id, event);
+  });
+  return Array.from(byId.values())
+    .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
+    .slice(0, 10);
+};
+
 interface ConstructWorkbenchProps {
   artifact: Artifact;
   construct: Construct;
@@ -107,6 +120,18 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [trialError, setTrialError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const refreshRuntimeTimeline = useCallback(async () => {
+    try {
+      const events = await repository.listConstructRuntimeEvents();
+      if (events.length > 0) {
+        setRuntimeTimeline((current) => mergeRuntimeTimelineEvents(current, events));
+      }
+      return events;
+    } catch {
+      return [];
+    }
+  }, [repository]);
+
   const addRuntimeTimelineEvent = useCallback(
     (event: Omit<CreateConstructRuntimeEventRequest, "constructId" | "artifactId" | "runtimeStatus">) => {
       void repository
@@ -119,12 +144,13 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         })
         .then((recordedEvent) => {
           setRuntimeTimeline((current) =>
-            [recordedEvent, ...current.filter((item) => item.id !== recordedEvent.id)].slice(0, 10)
+            mergeRuntimeTimelineEvents(current, [recordedEvent])
           );
+          void refreshRuntimeTimeline();
         })
         .catch(() => {
           setRuntimeTimeline((current) =>
-            [
+            mergeRuntimeTimelineEvents(current, [
               {
                 ...event,
                 id: `runtime-event-local-${Date.now()}-${current.length}`,
@@ -134,12 +160,11 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 runtimeStatus: runtime?.status,
                 source: "frontend" as const,
               } satisfies ConstructRuntimeEvent,
-              ...current,
-            ].slice(0, 10)
+            ])
           );
         });
     },
-    [activeArtifact.id, activeConstruct.id, repository, runtime?.status]
+    [activeArtifact.id, activeConstruct.id, refreshRuntimeTimeline, repository, runtime?.status]
   );
 
   useEffect(() => {
@@ -247,6 +272,41 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     };
   }, [onRuntimeChanged, repository]);
 
+  useEffect(() => {
+    const shouldPollTimeline =
+      isRuntimeBusy ||
+      isPreflightingRuntime ||
+      isProbingRuntime ||
+      isSending ||
+      runtimeSmokeStatus === "loading" ||
+      runtimeSmokeStatus === "streaming";
+
+    if (!shouldPollTimeline) {
+      return;
+    }
+
+    let isCurrent = true;
+    const pollTimeline = () => {
+      if (isCurrent) {
+        void refreshRuntimeTimeline();
+      }
+    };
+
+    pollTimeline();
+    const interval = window.setInterval(pollTimeline, 1500);
+    return () => {
+      isCurrent = false;
+      window.clearInterval(interval);
+    };
+  }, [
+    isPreflightingRuntime,
+    isProbingRuntime,
+    isRuntimeBusy,
+    isSending,
+    refreshRuntimeTimeline,
+    runtimeSmokeStatus,
+  ]);
+
   const formatBytes = (bytes: number) => {
     if (!bytes) {
       return "Unknown";
@@ -275,6 +335,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         modelId: targetModel,
         device: settings.constructDevice,
       });
+      await refreshRuntimeTimeline();
       setPreflightResult(result);
       setReadinessGateMessage(null);
       const readiness = buildRuntimeReadinessSummary(result);
@@ -352,6 +413,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         modelId: targetModel,
         device: settings.constructDevice,
       });
+      await refreshRuntimeTimeline();
       setRuntime(runtimeStatus);
       setRuntimeMode(runtimeStatus.mode);
       setRuntimeDetail(runtimeStatus.detail);
@@ -426,6 +488,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       modelId: targetModel,
       device: settings.constructDevice,
     });
+    await refreshRuntimeTimeline();
     setRuntime(configured);
     setRuntimeMode(configured.mode);
     setRuntimeDetail(configured.detail);
@@ -445,6 +508,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     const runtimeStatus = await repository.loadConstructRuntime({
       modelId: targetModel,
     });
+    await refreshRuntimeTimeline();
     setRuntime(runtimeStatus);
     setRuntimeMode(runtimeStatus.mode);
     setRuntimeDetail(runtimeStatus.detail);
@@ -493,6 +557,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     });
     try {
       const runtimeStatus = await repository.unloadConstructRuntime();
+      await refreshRuntimeTimeline();
       setRuntime(runtimeStatus);
       setRuntimeMode(runtimeStatus.mode);
       setRuntimeDetail(runtimeStatus.detail);
@@ -534,6 +599,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         maxNewTokens: Math.min(48, Math.max(1, settings.maxNewTokens || 24)),
         device: settings.constructDevice,
       });
+      await refreshRuntimeTimeline();
       setProbeResult(result);
       if (result.ok) {
         setRuntimeMode("transformers");
