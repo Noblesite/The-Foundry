@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test": "npm run test:readiness",
+    "test:readiness": "node scripts/test-construct-readiness.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
