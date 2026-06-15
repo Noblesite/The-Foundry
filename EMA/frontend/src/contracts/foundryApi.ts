@@ -76,6 +76,7 @@ export const foundryApiRoutes = {
   modelArchive: `${FOUNDRY_API_VERSION}/archive/models`,
   testHuggingFaceAuth: `${FOUNDRY_API_VERSION}/archive/huggingface/auth/test`,
   searchArchiveModels: `${FOUNDRY_API_VERSION}/archive/models/search`,
+  preflightArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/preflight`,
   inspectArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/inspect`,
   registerArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/register`,
   downloadArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/download`,
@@ -406,6 +407,21 @@ export interface HuggingFaceAuthCheckDto {
 export interface ArchiveModelSearchDto {
   models: ModelSearchResult[];
   platform: ModelPlatformProfile;
+}
+
+export interface ArchiveModelPreflightDto {
+  ok: boolean;
+  canDownload: boolean;
+  visibility: "public" | "gated" | "private" | "unknown";
+  model: ModelSearchResult;
+  platform: ModelPlatformProfile;
+  fitEstimate: ModelSearchResult["fitEstimate"];
+  estimatedDownloadBytes: number;
+  auth: {
+    username?: string | null;
+    tokenPresent: boolean;
+  };
+  message: string;
 }
 
 export interface ArchiveModelInspectDto {

@@ -92,6 +92,51 @@ class HuggingFaceModelService:
             "platform": self.platform_profile(username=username, token=token),
         }
 
+    async def preflight_model(
+        self,
+        *,
+        repo_id: str,
+        revision: str,
+        username: Optional[str],
+        token: Optional[str],
+    ) -> Dict[str, Any]:
+        self._validate_auth_pair(username=username, token=token)
+        safe_repo_id = repo_id.strip()
+        if not safe_repo_id:
+            raise ValueError("Model repository id cannot be empty.")
+
+        model = await self._run_hf_query(
+            self._inspect_model_sync,
+            repo_id=safe_repo_id,
+            revision=revision.strip(),
+            token=self._effective_token(token),
+        )
+        visibility = self._model_visibility(model)
+        fit = model["fitEstimate"]
+        estimated_download_bytes = int(model.get("sizeBytes") or fit.get("estimatedBytes") or 0)
+        can_download = fit.get("status") != "too-large"
+        if visibility in {"gated", "private"} and not (token or "").strip():
+            can_download = False
+
+        return {
+            "ok": True,
+            "canDownload": can_download,
+            "visibility": visibility,
+            "model": model,
+            "platform": self.platform_profile(username=username, token=token),
+            "fitEstimate": fit,
+            "estimatedDownloadBytes": estimated_download_bytes,
+            "auth": {
+                "username": (username or "").strip() or None,
+                "tokenPresent": bool((token or "").strip()),
+            },
+            "message": self._preflight_message(
+                model=model,
+                visibility=visibility,
+                can_download=can_download,
+            ),
+        }
+
     async def register_remote_model(
         self,
         *,
@@ -608,6 +653,39 @@ class HuggingFaceModelService:
                 if role:
                     return str(role)
         return "authenticated"
+
+    def _model_visibility(self, model: Dict[str, Any]) -> str:
+        if model.get("private"):
+            return "private"
+        if model.get("gated"):
+            return "gated"
+        return "public"
+
+    def _preflight_message(
+        self,
+        *,
+        model: Dict[str, Any],
+        visibility: str,
+        can_download: bool,
+    ) -> str:
+        repo_id = str(model.get("repoId") or "Selected model")
+        fit_status = str(model.get("fitEstimate", {}).get("status") or "unknown")
+        if visibility in {"gated", "private"} and not can_download:
+            return (
+                f"{repo_id} is {visibility}. Save credentials for an account with access "
+                "before queueing the Archive download."
+            )
+        if fit_status == "too-large":
+            return (
+                f"{repo_id} is visible, but the memory estimate is too large for the current "
+                "runtime profile. Pick a smaller model or use stronger quantization."
+            )
+        if fit_status == "tight":
+            return (
+                f"{repo_id} is visible and downloadable, but the memory estimate is tight. "
+                "Expect slower inference or reduce context size."
+            )
+        return f"{repo_id} is visible, metadata loaded, and ready to queue for Archive download."
 
     def _model_summary_from_info(self, model_info) -> Dict[str, Any]:
         repo_id = getattr(model_info, "modelId", None) or getattr(model_info, "id", "")

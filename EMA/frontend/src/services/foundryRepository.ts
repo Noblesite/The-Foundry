@@ -6,6 +6,7 @@ import {
   ArchiveModelEvictDto,
   ArchiveModelInspectDto,
   ArchiveModelDownloadDto,
+  ArchiveModelPreflightDto,
   ArchiveModelRegisterDto,
   ArchiveModelSearchDto,
   ArtifactDto,
@@ -186,6 +187,9 @@ export interface FoundryRepository {
     request: TestHuggingFaceAuthRequest
   ) => Promise<HuggingFaceAuthCheckDto>;
   searchArchiveModels: (request: SearchArchiveModelsRequest) => Promise<ArchiveModelSearchDto>;
+  preflightArchiveModel: (
+    request: InspectArchiveModelRequest
+  ) => Promise<ArchiveModelPreflightDto>;
   inspectArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelInspectDto>;
   registerArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelRegisterDto>;
   downloadArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelDownloadDto>;
@@ -1485,6 +1489,34 @@ export const mockFoundryRepository: FoundryRepository = {
       platform: mockPlatformProfile,
     };
   },
+  preflightArchiveModel: async (request) => {
+    const inspection = await mockFoundryRepository.inspectArchiveModel(request);
+    const visibility = inspection.model.private
+      ? "private"
+      : inspection.model.gated
+        ? "gated"
+        : "public";
+    const canDownload =
+      inspection.model.fitEstimate.status !== "too-large" &&
+      !(visibility !== "public" && !request.token);
+    return {
+      ok: true,
+      canDownload,
+      visibility,
+      model: inspection.model,
+      platform: inspection.platform,
+      fitEstimate: inspection.model.fitEstimate,
+      estimatedDownloadBytes:
+        inspection.model.sizeBytes || inspection.model.fitEstimate.estimatedBytes,
+      auth: {
+        username: request.username || null,
+        tokenPresent: Boolean(request.token),
+      },
+      message: canDownload
+        ? `${inspection.model.repoId} is visible, metadata loaded, and ready to queue for Archive download.`
+        : `${inspection.model.repoId} needs Hugging Face access or a smaller runtime fit before download.`,
+    };
+  },
   registerArchiveModel: async (request) => {
     const inspection = await mockFoundryRepository.inspectArchiveModel(request);
     const existingEntry = mockModelArchiveEntries.find(
@@ -1956,6 +1988,14 @@ export const apiFoundryRepository: FoundryRepository = {
       ),
       "Could not search Hugging Face models."
     ),
+  preflightArchiveModel: async (request) =>
+    archiveRequest(
+      apiClient.post<ApiEnvelope<ArchiveModelPreflightDto>>(
+        foundryApiRoutes.preflightArchiveModel,
+        request
+      ),
+      "Could not preflight Hugging Face model."
+    ),
   inspectArchiveModel: async (request) =>
     archiveRequest(
       apiClient.post<ApiEnvelope<ArchiveModelInspectDto>>(
@@ -2039,6 +2079,7 @@ const constructApiOverrides: Pick<
   | "listModelArchiveEntries"
   | "testHuggingFaceAuth"
   | "searchArchiveModels"
+  | "preflightArchiveModel"
   | "inspectArchiveModel"
   | "registerArchiveModel"
   | "downloadArchiveModel"
@@ -2063,6 +2104,7 @@ const constructApiOverrides: Pick<
   listModelArchiveEntries: apiFoundryRepository.listModelArchiveEntries,
   testHuggingFaceAuth: apiFoundryRepository.testHuggingFaceAuth,
   searchArchiveModels: apiFoundryRepository.searchArchiveModels,
+  preflightArchiveModel: apiFoundryRepository.preflightArchiveModel,
   inspectArchiveModel: apiFoundryRepository.inspectArchiveModel,
   registerArchiveModel: apiFoundryRepository.registerArchiveModel,
   downloadArchiveModel: apiFoundryRepository.downloadArchiveModel,

@@ -416,6 +416,23 @@ async def inspect_foundry_archive_model_endpoint(data: InspectArchiveModelInput)
         raise HTTPException(status_code=502, detail=f"Hugging Face model inspection failed: {error}")
 
 
+@app.post("/api/v1/archive/models/preflight")
+async def preflight_foundry_archive_model_endpoint(data: InspectArchiveModelInput):
+    try:
+        return api_envelope(
+            await huggingface_model_service.preflight_model(
+                repo_id=data.repoId,
+                revision=data.revision or "",
+                username=data.username,
+                token=data.token,
+            )
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"Hugging Face model preflight failed: {error}")
+
+
 @app.post("/api/v1/archive/models/register")
 async def register_foundry_archive_model_endpoint(data: InspectArchiveModelInput):
     try:

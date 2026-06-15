@@ -10,6 +10,7 @@ import {
   Workshop,
   WorkspaceSettings,
 } from "../domain/foundry";
+import { ArchiveModelPreflightDto } from "../contracts/foundryApi";
 import { FoundryRepository } from "../services/foundryRepository";
 import { AcademyActionTooltip, ConceptTooltip, LearningCard } from "./LearningComponents";
 
@@ -70,8 +71,10 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   const [isSearchingModels, setIsSearchingModels] = useState(false);
   const [isRegisteringModel, setIsRegisteringModel] = useState(false);
   const [isDownloadingModel, setIsDownloadingModel] = useState(false);
+  const [isPreflightingModel, setIsPreflightingModel] = useState(false);
   const [isEvictingArchiveEntry, setIsEvictingArchiveEntry] = useState(false);
   const [selectedInventoryEntryId, setSelectedInventoryEntryId] = useState("");
+  const [modelPreflight, setModelPreflight] = useState<ArchiveModelPreflightDto | null>(null);
   const [defaultBaseModelTarget, setDefaultBaseModelTarget] = useState(defaultBaseModel);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -187,6 +190,10 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     },
     [archiveEntries, selectedModel]
   );
+
+  useEffect(() => {
+    setModelPreflight(null);
+  }, [selectedModel?.repoId, selectedModel?.revision]);
 
   const registeredModelIds = useMemo(
     () => new Set(archiveEntries.map((entry) => entry.repoId)),
@@ -409,6 +416,35 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
       setError(downloadError instanceof Error ? downloadError.message : "Could not download model.");
     } finally {
       setIsDownloadingModel(false);
+    }
+  };
+
+  const preflightSelectedModel = async () => {
+    if (!selectedModel) {
+      return;
+    }
+
+    setIsPreflightingModel(true);
+    setStatusText(null);
+    setError(null);
+
+    try {
+      const result = await repository.preflightArchiveModel({
+        repoId: selectedModel.repoId,
+        revision: selectedModel.revision,
+        ...huggingFaceAuth,
+      });
+      setModelPreflight(result);
+      setStatusText(result.message);
+    } catch (preflightError: unknown) {
+      setModelPreflight(null);
+      setError(
+        preflightError instanceof Error
+          ? preflightError.message
+          : "Could not preflight Hugging Face model."
+      );
+    } finally {
+      setIsPreflightingModel(false);
     }
   };
 
@@ -743,7 +779,51 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                     </dd>
                   </div>
                 </dl>
+                {modelPreflight && (
+                  <div className="model-preflight-card">
+                    <div>
+                      <span
+                        className={`status-badge ${
+                          modelPreflight.canDownload ? "cache-ready" : "cache-failed"
+                        }`}
+                      >
+                        {modelPreflight.canDownload ? "Preflight ready" : "Needs review"}
+                      </span>
+                      <span className={`status-badge visibility-${modelPreflight.visibility}`}>
+                        {modelPreflight.visibility}
+                      </span>
+                    </div>
+                    <p>{modelPreflight.message}</p>
+                    <dl className="model-stats">
+                      <div>
+                        <dt>Download</dt>
+                        <dd>{formatBytes(modelPreflight.estimatedDownloadBytes)}</dd>
+                      </div>
+                      <div>
+                        <dt>Fit</dt>
+                        <dd>{modelPreflight.fitEstimate.status}</dd>
+                      </div>
+                      <div>
+                        <dt>Runtime</dt>
+                        <dd>{modelPreflight.fitEstimate.recommendedRuntime.toUpperCase()}</dd>
+                      </div>
+                      <div>
+                        <dt>Auth</dt>
+                        <dd>{modelPreflight.auth.tokenPresent ? "Token" : "Public"}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                )}
                 <div className="model-actions">
+                  <button
+                    className="button-secondary"
+                    disabled={isPreflightingModel}
+                    onClick={() => void preflightSelectedModel()}
+                    type="button"
+                  >
+                    <i className="fas fa-list-check" aria-hidden="true" />
+                    {isPreflightingModel ? "Checking" : "Preflight Model"}
+                  </button>
                   <button
                     className="button-primary"
                     disabled={isRegisteringModel}

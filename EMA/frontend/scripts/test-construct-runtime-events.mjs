@@ -66,6 +66,16 @@ assertIncludes(
   "Frontend contract includes Hugging Face auth check result"
 );
 assertIncludes(
+  files.contracts,
+  "preflightArchiveModel:",
+  "Frontend contract exposes model access preflight route"
+);
+assertIncludes(
+  files.contracts,
+  "ArchiveModelPreflightDto",
+  "Frontend contract includes Archive model preflight result"
+);
+assertIncludes(
   files.settings,
   "Hugging Face username",
   "Settings captures Hugging Face username"
@@ -87,6 +97,16 @@ assertIncludes(
 );
 assertIncludes(
   files.artifacts,
+  "Preflight Model",
+  "Artifacts can preflight selected Hugging Face model"
+);
+assertIncludes(
+  files.artifacts,
+  "modelPreflight",
+  "Artifacts renders selected model preflight result"
+);
+assertIncludes(
+  files.artifacts,
   "Using anonymous Hugging Face access",
   "Artifacts identifies anonymous Hugging Face mode"
 );
@@ -104,6 +124,11 @@ assertIncludes(
   files.repository,
   "testHuggingFaceAuth:",
   "Repository tests Hugging Face credentials"
+);
+assertIncludes(
+  files.repository,
+  "preflightArchiveModel:",
+  "Repository preflights Hugging Face models"
 );
 assertIncludes(
   files.app,
