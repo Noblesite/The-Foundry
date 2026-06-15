@@ -29,6 +29,7 @@ import {
 import { FoundryRepository } from "../services/foundryRepository";
 import { LearningCard, TrainingMetricExplainer } from "./LearningComponents";
 import { WorkspaceSettings } from "./SettingsOverlay";
+import SystemReadinessPanel from "./SystemReadinessPanel";
 
 interface ResponseInspection {
   messageId: string;
@@ -1008,6 +1009,12 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 </span>
                 <strong>{sourceRuntimeDetail}</strong>
               </div>
+              <SystemReadinessPanel
+                compact
+                settings={settings}
+                sourceStatus={sourceStatus}
+                runtime={runtime}
+              />
               <div className="runtime-load-meter" aria-label={`Runtime load ${runtimePhaseLabel}`}>
                 {(["configuring", "loading", "ready"] as RuntimeLoadPhase[]).map((phase) => (
                   <span

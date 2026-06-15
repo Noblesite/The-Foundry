@@ -15,6 +15,14 @@ const files = {
     new URL("../src/components/SettingsOverlay.tsx", import.meta.url),
     "utf8"
   ),
+  systemReadiness: await readFile(
+    new URL("../src/components/SystemReadinessPanel.tsx", import.meta.url),
+    "utf8"
+  ),
+  systemReadinessDomain: await readFile(
+    new URL("../src/domain/systemReadiness.ts", import.meta.url),
+    "utf8"
+  ),
 };
 
 const assertIncludes = (source, expected, message) => {
@@ -122,6 +130,26 @@ assertIncludes(
   files.construct,
   "sourceReachabilityLabel",
   "Construct live source status"
+);
+assertIncludes(
+  files.systemReadinessDomain,
+  "buildSystemReadinessSummary",
+  "System readiness domain builder"
+);
+assertIncludes(
+  files.systemReadiness,
+  "System readiness",
+  "System readiness panel"
+);
+assertIncludes(
+  files.settings,
+  "<SystemReadinessPanel",
+  "Settings system readiness panel"
+);
+assertIncludes(
+  files.construct,
+  "<SystemReadinessPanel",
+  "Construct system readiness panel"
 );
 assertIncludes(
   files.construct,

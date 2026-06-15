@@ -396,6 +396,7 @@ const App: React.FC = () => {
         <SettingsPanel
           settings={settings}
           sourceStatus={foundryStatus}
+          runtime={constructRuntime}
           onSave={persistSettings}
         />
       );

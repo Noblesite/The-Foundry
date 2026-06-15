@@ -2,17 +2,20 @@ import React, { useState } from "react";
 import {
   ConstructRuntimeDevice,
   ConstructRuntimeMode,
+  ConstructRuntime,
   FoundryRuntimeStatus,
   TrainingMethod,
   WorkspaceSettings,
 } from "../domain/foundry";
 import { activeFoundryDataSource } from "../domain/dataSourceMode";
+import SystemReadinessPanel from "./SystemReadinessPanel";
 
 export type { WorkspaceSettings };
 
 interface SettingsPanelProps {
   settings: WorkspaceSettings;
   sourceStatus?: FoundryRuntimeStatus | null;
+  runtime?: ConstructRuntime | null;
   onSave: (settings: WorkspaceSettings) => void;
 }
 
@@ -27,7 +30,12 @@ const HelpTooltip: React.FC<HelpTooltipProps> = ({ text }) => (
   </span>
 );
 
-const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, sourceStatus, onSave }) => {
+const SettingsPanel: React.FC<SettingsPanelProps> = ({
+  settings,
+  sourceStatus,
+  runtime,
+  onSave,
+}) => {
   const [draft, setDraft] = useState<WorkspaceSettings>(settings);
   const [saved, setSaved] = useState(false);
   const apiReachable = Boolean(sourceStatus?.api.reachable);
@@ -118,6 +126,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, sourceStatus, o
             </div>
           </div>
         </fieldset>
+
+        <SystemReadinessPanel
+          settings={draft}
+          sourceStatus={sourceStatus}
+          runtime={runtime}
+        />
 
         <fieldset className="settings-group">
           <legend>Provider</legend>

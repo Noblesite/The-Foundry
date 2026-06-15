@@ -1289,6 +1289,105 @@ input[type="checkbox"] {
   line-height: 1.4;
 }
 
+.system-readiness-card {
+  display: grid;
+  gap: 0.8rem;
+  border: 1px solid rgba(0, 212, 255, 0.16);
+  border-radius: 8px;
+  padding: 0.75rem;
+  background:
+    linear-gradient(135deg, rgba(0, 212, 255, 0.06), rgba(13, 17, 23, 0.28)),
+    rgba(13, 17, 23, 0.42);
+}
+
+.system-readiness-card.readiness-ready {
+  border-color: rgba(0, 212, 255, 0.24);
+}
+
+.system-readiness-card.readiness-caution {
+  border-color: rgba(212, 160, 23, 0.32);
+}
+
+.system-readiness-card.readiness-blocked {
+  border-color: rgba(255, 138, 0, 0.36);
+}
+
+.system-readiness-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.system-readiness-header h3,
+.system-readiness-header p {
+  margin: 0;
+}
+
+.system-readiness-header h3 {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.system-readiness-header p:not(.panel-kicker) {
+  margin-top: 0.25rem;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.system-readiness-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.system-readiness-step {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: start;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem;
+  background: rgba(24, 33, 40, 0.38);
+}
+
+.system-readiness-step i {
+  margin-top: 0.12rem;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
+.system-readiness-step.is-ready i {
+  color: var(--arc-blue);
+}
+
+.system-readiness-step.is-caution i {
+  color: var(--brass);
+}
+
+.system-readiness-step.is-blocked i {
+  color: var(--forge-orange);
+}
+
+.system-readiness-step strong,
+.system-readiness-step span {
+  display: block;
+}
+
+.system-readiness-step strong {
+  color: var(--text-primary);
+  font-size: 0.76rem;
+}
+
+.system-readiness-step span {
+  margin-top: 0.12rem;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .runtime-load-meter {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
