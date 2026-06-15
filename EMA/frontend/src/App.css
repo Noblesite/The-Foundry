@@ -3125,6 +3125,121 @@ input[type="checkbox"] {
   gap: 0.55rem;
 }
 
+.archive-jobs-panel {
+  display: grid;
+  gap: 0.82rem;
+  border: 1px solid rgba(0, 212, 255, 0.14);
+  border-radius: 8px;
+  padding: 0.95rem;
+  background:
+    linear-gradient(135deg, rgba(24, 33, 40, 0.74), rgba(13, 17, 23, 0.7)),
+    radial-gradient(circle at top left, rgba(255, 138, 0, 0.09), transparent 32%);
+}
+
+.archive-jobs-panel h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.archive-job-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.archive-job-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.78rem;
+  background: rgba(13, 17, 23, 0.55);
+}
+
+.archive-job-main {
+  display: grid;
+  min-width: 0;
+  gap: 0.45rem;
+}
+
+.archive-job-main strong,
+.archive-job-main span,
+.archive-job-main p {
+  min-width: 0;
+}
+
+.archive-job-main strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archive-job-main > div:first-child span,
+.archive-job-main p,
+.archive-job-meta {
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+}
+
+.archive-job-main p {
+  overflow-wrap: anywhere;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.archive-job-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+  align-items: center;
+  text-transform: uppercase;
+}
+
+.archive-job-progress {
+  position: relative;
+  width: min(100%, 420px);
+  height: 0.38rem;
+  overflow: hidden;
+  border: 1px solid rgba(0, 212, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(24, 33, 40, 0.86);
+}
+
+.archive-job-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--arc-blue), var(--forge-orange));
+  box-shadow: 0 0 14px rgba(0, 212, 255, 0.34);
+  transition: width 180ms ease;
+}
+
+.archive-job-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+
+.status-badge.cache-queued,
+.status-badge.cache-running {
+  border-color: rgba(0, 212, 255, 0.56);
+  color: var(--arc-blue);
+}
+
+.status-badge.cache-completed {
+  border-color: rgba(72, 187, 120, 0.5);
+  color: #7ddf9f;
+}
+
+.status-badge.cache-canceled {
+  border-color: rgba(168, 181, 194, 0.38);
+  color: var(--text-secondary);
+}
+
 .forge-progress-track {
   position: relative;
   width: min(100%, 260px);
@@ -3842,6 +3957,7 @@ input[type="checkbox"] {
   .material-row,
   .artifact-row,
   .model-result-row,
+  .archive-job-row,
   .assembly-run-row,
   .assembly-review-grid,
   .trial-card-header,
@@ -3857,6 +3973,10 @@ input[type="checkbox"] {
   }
 
   .review-actions {
+    justify-content: flex-start;
+  }
+
+  .archive-job-actions {
     justify-content: flex-start;
   }
 

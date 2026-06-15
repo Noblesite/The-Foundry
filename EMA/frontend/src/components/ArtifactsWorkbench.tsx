@@ -4,6 +4,7 @@ import {
   Artifact,
   Construct,
   ModelArchiveEntry,
+  ModelDownloadJob,
   ModelSearchResult,
   SectionSummary,
   Workshop,
@@ -25,6 +26,22 @@ interface ArtifactsWorkbenchProps {
   onOpenAcademy: () => void;
 }
 
+const isActiveDownloadJob = (job: ModelDownloadJob) =>
+  job.status === "queued" || job.status === "running";
+
+const mergeDownloadJobs = (
+  currentJobs: ModelDownloadJob[],
+  incomingJobs: ModelDownloadJob[]
+) => {
+  const jobsById = new Map(currentJobs.map((job) => [job.id, job]));
+  incomingJobs.forEach((job) => jobsById.set(job.id, job));
+  return Array.from(jobsById.values()).sort((left, right) =>
+    (right.updatedAt || right.createdAt || right.id).localeCompare(
+      left.updatedAt || left.createdAt || left.id
+    )
+  );
+};
+
 const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   activeArtifactId,
   repository,
@@ -39,6 +56,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   onOpenAcademy,
 }) => {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [downloadJobs, setDownloadJobs] = useState<ModelDownloadJob[]>([]);
   const [modelResults, setModelResults] = useState<ModelSearchResult[]>([]);
   const [modelQuery, setModelQuery] = useState("tiny-gpt2");
   const [selectedModelId, setSelectedModelId] = useState("");
@@ -95,6 +113,27 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   }, [onArchiveEntriesChanged, repository]);
 
   useEffect(() => {
+    let isCurrent = true;
+
+    repository
+      .listModelDownloadJobs()
+      .then((jobs) => {
+        if (isCurrent) {
+          setDownloadJobs(jobs);
+        }
+      })
+      .catch((loadError: unknown) => {
+        if (isCurrent) {
+          setError(loadError instanceof Error ? loadError.message : "Could not load Archive jobs.");
+        }
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [repository]);
+
+  useEffect(() => {
     void searchModels();
     // Load an initial suggested model set once the repository is available.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -132,6 +171,61 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     [archiveEntries]
   );
 
+  const activeDownloadJobs = useMemo(
+    () => downloadJobs.filter(isActiveDownloadJob),
+    [downloadJobs]
+  );
+
+  useEffect(() => {
+    if (activeDownloadJobs.length === 0) {
+      return undefined;
+    }
+
+    let isCurrent = true;
+
+    const pollDownloadJobs = async () => {
+      try {
+        const updatedJobs = await Promise.all(
+          activeDownloadJobs.map((job) => repository.getModelDownloadJob(job.id))
+        );
+
+        if (!isCurrent) {
+          return;
+        }
+
+        setDownloadJobs((currentJobs) => mergeDownloadJobs(currentJobs, updatedJobs));
+
+        const completedEntries = updatedJobs
+          .map((job) => job.archiveEntry)
+          .filter((entry): entry is ModelArchiveEntry => Boolean(entry));
+
+        if (completedEntries.length > 0) {
+          const entriesByKey = new Map(
+            archiveEntries.map((entry) => [`${entry.repoId}:${entry.revision}`, entry])
+          );
+          completedEntries.forEach((entry) =>
+            entriesByKey.set(`${entry.repoId}:${entry.revision}`, entry)
+          );
+          onArchiveEntriesChanged(Array.from(entriesByKey.values()));
+        }
+      } catch (pollError: unknown) {
+        if (isCurrent) {
+          setError(pollError instanceof Error ? pollError.message : "Could not refresh Archive jobs.");
+        }
+      }
+    };
+
+    const timer = window.setInterval(() => {
+      void pollDownloadJobs();
+    }, 1200);
+    void pollDownloadJobs();
+
+    return () => {
+      isCurrent = false;
+      window.clearInterval(timer);
+    };
+  }, [activeDownloadJobs, archiveEntries, onArchiveEntriesChanged, repository]);
+
   const formatBytes = (bytes: number) => {
     if (!bytes) {
       return "Unknown";
@@ -143,6 +237,27 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     const mb = bytes / 1024 ** 2;
     return `${Math.max(1, Math.round(mb))} MB`;
   };
+
+  const formatJobTimestamp = (job: ModelDownloadJob) => {
+    const timestamp = job.updatedAt || job.createdAt;
+    if (!timestamp) {
+      return "Just now";
+    }
+    return new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date(timestamp));
+  };
+
+  const findCachedEntryForJob = (job: ModelDownloadJob) =>
+    job.archiveEntry?.localPath
+      ? job.archiveEntry
+      : archiveEntries.find(
+          (entry) =>
+            entry.repoId === job.repoId &&
+            entry.revision === job.revision &&
+            Boolean(entry.localPath)
+        );
 
   const searchModels = async () => {
     setIsSearchingModels(true);
@@ -205,28 +320,57 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     setError(null);
 
     try {
-      const result = await repository.downloadArchiveModel({
+      const job = await repository.startModelDownloadJob({
         repoId: selectedModel.repoId,
         revision: selectedModel.revision,
       });
-      const nextEntries = (() => {
-        const withoutDuplicate = archiveEntries.filter(
-          (entry) =>
-            !(
-              entry.repoId === result.archiveEntry.repoId &&
-              entry.revision === result.archiveEntry.revision
-            )
-        );
-        return [result.archiveEntry, ...withoutDuplicate];
-      })();
-      onArchiveEntriesChanged(nextEntries);
-      onBaseModelSelected(result.archiveEntry.localPath || result.archiveEntry.repoId);
-      setStatusText(`${result.archiveEntry.repoId} cached at ${result.archiveEntry.localPath}.`);
+      setDownloadJobs((currentJobs) => mergeDownloadJobs(currentJobs, [job]));
+      setStatusText(`${job.repoId} added to Archive Jobs.`);
     } catch (downloadError: unknown) {
       setError(downloadError instanceof Error ? downloadError.message : "Could not download model.");
     } finally {
       setIsDownloadingModel(false);
     }
+  };
+
+  const retryDownloadJob = async (job: ModelDownloadJob) => {
+    setStatusText(null);
+    setError(null);
+
+    try {
+      const nextJob = await repository.startModelDownloadJob({
+        repoId: job.repoId,
+        revision: job.revision,
+      });
+      setDownloadJobs((currentJobs) => mergeDownloadJobs(currentJobs, [nextJob]));
+      setStatusText(`${nextJob.repoId} queued again for Archive download.`);
+    } catch (retryError: unknown) {
+      setError(retryError instanceof Error ? retryError.message : "Could not retry Archive job.");
+    }
+  };
+
+  const cancelDownloadJob = async (job: ModelDownloadJob) => {
+    setStatusText(null);
+    setError(null);
+
+    try {
+      const canceledJob = await repository.cancelModelDownloadJob(job.id);
+      setDownloadJobs((currentJobs) => mergeDownloadJobs(currentJobs, [canceledJob]));
+      setStatusText(`${canceledJob.repoId} Archive job canceled.`);
+    } catch (cancelError: unknown) {
+      setError(cancelError instanceof Error ? cancelError.message : "Could not cancel Archive job.");
+    }
+  };
+
+  const openDownloadJobInConstruct = (job: ModelDownloadJob) => {
+    const cachedEntry = findCachedEntryForJob(job);
+    if (!cachedEntry?.localPath) {
+      return;
+    }
+    setStatusText(null);
+    setError(null);
+    onOpenConstructWithModel(cachedEntry.localPath, cachedEntry.repoId);
+    setStatusText(`${cachedEntry.repoId} handed off to Construct for preflight.`);
   };
 
   const openCachedModelInConstruct = () => {
@@ -481,7 +625,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                   >
                     <i className="fas fa-download" aria-hidden="true" />
                     {isDownloadingModel
-                      ? "Downloading"
+                      ? "Queueing"
                       : selectedArchiveEntry?.status === "cached"
                       ? "Refresh Cache"
                       : "Download to Archive"}
@@ -506,6 +650,83 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
             )}
           </aside>
         </div>
+
+        <section className="archive-jobs-panel" aria-label="Archive download jobs">
+          <div className="panel-heading">
+            <div>
+              <p className="panel-kicker">Download jobs</p>
+              <h3>Archive Jobs</h3>
+            </div>
+            <span className="status-badge">
+              {activeDownloadJobs.length > 0
+                ? `${activeDownloadJobs.length} active`
+                : `${downloadJobs.length} jobs`}
+            </span>
+          </div>
+
+          {downloadJobs.length === 0 ? (
+            <p className="empty-state">Queued downloads will appear here for retry, cancel, and Construct handoff.</p>
+          ) : (
+            <div className="archive-job-list">
+              {downloadJobs.slice(0, 5).map((job) => {
+                const cachedEntry = findCachedEntryForJob(job);
+                return (
+                  <article className="archive-job-row" key={job.id}>
+                    <div className="archive-job-main">
+                      <div>
+                        <strong>{job.repoId}</strong>
+                        <span>{job.revision || "default revision"}</span>
+                      </div>
+                      <div className="archive-job-meta">
+                        <span className={`status-badge cache-${job.status}`}>{job.status}</span>
+                        <span>{job.phase}</span>
+                        <span>{formatJobTimestamp(job)}</span>
+                      </div>
+                      <p>{job.error || job.detail}</p>
+                      <div className="archive-job-progress" aria-label={`${job.progress}% complete`}>
+                        <span style={{ width: `${Math.max(0, Math.min(100, job.progress))}%` }} />
+                      </div>
+                    </div>
+                    <div className="archive-job-actions">
+                      {isActiveDownloadJob(job) && (
+                        <button
+                          className="button-secondary button-compact"
+                          disabled={job.cancelRequested}
+                          onClick={() => void cancelDownloadJob(job)}
+                          type="button"
+                        >
+                          <i className="fas fa-ban" aria-hidden="true" />
+                          {job.cancelRequested ? "Canceling" : "Cancel"}
+                        </button>
+                      )}
+                      {(job.status === "failed" || job.status === "canceled") && (
+                        <button
+                          className="button-secondary button-compact"
+                          onClick={() => void retryDownloadJob(job)}
+                          type="button"
+                        >
+                          <i className="fas fa-rotate-right" aria-hidden="true" />
+                          Retry
+                        </button>
+                      )}
+                      {job.status === "completed" && (
+                        <button
+                          className="button-primary button-compact"
+                          disabled={!cachedEntry?.localPath}
+                          onClick={() => openDownloadJobInConstruct(job)}
+                          type="button"
+                        >
+                          <i className="fas fa-play" aria-hidden="true" />
+                          Open in Construct
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </section>
 
       <LearningCard

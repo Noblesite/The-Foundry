@@ -1434,7 +1434,7 @@ export const mockFoundryRepository: FoundryRepository = {
     if (!job) {
       throw new Error("Model download job was not found.");
     }
-    if (job.status === "completed" || job.status === "failed") {
+    if (job.status === "completed" || job.status === "failed" || job.status === "canceled") {
       return { ...job };
     }
     const nextProgress = Math.min(100, job.progress + 34);

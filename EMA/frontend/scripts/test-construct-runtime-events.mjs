@@ -19,6 +19,10 @@ const files = {
     new URL("../src/components/SystemReadinessPanel.tsx", import.meta.url),
     "utf8"
   ),
+  artifacts: await readFile(
+    new URL("../src/components/ArtifactsWorkbench.tsx", import.meta.url),
+    "utf8"
+  ),
   systemReadinessDomain: await readFile(
     new URL("../src/domain/systemReadiness.ts", import.meta.url),
     "utf8"
@@ -201,6 +205,41 @@ assertIncludes(
   files.systemReadiness,
   "archiveEntries",
   "System readiness archive entries prop"
+);
+assertIncludes(
+  files.artifacts,
+  "Archive Jobs",
+  "Artifacts Archive Jobs panel"
+);
+assertIncludes(
+  files.artifacts,
+  ".listModelDownloadJobs()",
+  "Artifacts hydrates Archive jobs"
+);
+assertIncludes(
+  files.artifacts,
+  "repository.getModelDownloadJob",
+  "Artifacts polls Archive jobs"
+);
+assertIncludes(
+  files.artifacts,
+  "repository.startModelDownloadJob",
+  "Artifacts queues Archive jobs"
+);
+assertIncludes(
+  files.artifacts,
+  "repository.cancelModelDownloadJob",
+  "Artifacts cancels Archive jobs"
+);
+assertIncludes(
+  files.artifacts,
+  "archive-job-row",
+  "Artifacts Archive job row UI"
+);
+assertIncludes(
+  files.artifacts,
+  "openDownloadJobInConstruct",
+  "Artifacts opens cached Archive jobs in Construct"
 );
 assertIncludes(
   files.app,
