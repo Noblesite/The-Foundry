@@ -92,6 +92,16 @@ assertIncludes(
 );
 assertIncludes(
   files.repository,
+  "clearMockArchiveState:",
+  "Repository clears mock Archive state"
+);
+assertIncludes(
+  files.repository,
+  "removeMockStorage",
+  "Repository removes mock Archive storage"
+);
+assertIncludes(
+  files.repository,
   "constructApiFoundryRepository",
   "Construct API hybrid repository"
 );
@@ -214,6 +224,21 @@ assertIncludes(
   files.settings,
   "updateDefaultBaseModel",
   "Settings keeps default base model synchronized"
+);
+assertIncludes(
+  files.settings,
+  "Archive Maintenance",
+  "Settings Archive maintenance panel"
+);
+assertIncludes(
+  files.settings,
+  "Clear Mock Archive",
+  "Settings clears mock Archive state"
+);
+assertIncludes(
+  files.settings,
+  "activeFoundryDataSource.mode !== \"mock\"",
+  "Settings protects live Archive from mock reset"
 );
 assertIncludes(
   files.construct,
@@ -359,6 +384,11 @@ assertIncludes(
   files.app,
   "defaultBaseModel: modelId",
   "App persists Archive-selected default base model"
+);
+assertIncludes(
+  files.app,
+  "handleClearMockArchiveState",
+  "App handles mock Archive maintenance reset"
 );
 assertIncludes(
   files.app,

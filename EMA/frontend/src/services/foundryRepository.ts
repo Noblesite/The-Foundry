@@ -184,6 +184,10 @@ export interface FoundryRepository {
   registerArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelRegisterDto>;
   downloadArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelDownloadDto>;
   evictArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelEvictDto>;
+  clearMockArchiveState: () => Promise<{
+    archiveEntries: ModelArchiveEntry[];
+    downloadJobs: ModelDownloadJob[];
+  }>;
   startModelDownloadJob: (request: InspectArchiveModelRequest) => Promise<ModelDownloadJob>;
   listModelDownloadJobs: () => Promise<ModelDownloadJob[]>;
   getModelDownloadJob: (jobId: string) => Promise<ModelDownloadJob>;
@@ -293,6 +297,18 @@ const writeMockStorage = (key: string, value: unknown) => {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // Mock persistence should never block the workbench if storage is unavailable.
+  }
+};
+
+const removeMockStorage = (key: string) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Mock maintenance should never block the workbench if storage is unavailable.
   }
 };
 
@@ -1480,6 +1496,18 @@ export const mockFoundryRepository: FoundryRepository = {
     persistMockArchiveEntries();
     return { archiveEntry };
   },
+  clearMockArchiveState: async () => {
+    mockModelArchiveEntries.splice(0, mockModelArchiveEntries.length);
+    Object.keys(mockModelDownloadJobs).forEach((jobId) => {
+      delete mockModelDownloadJobs[jobId];
+    });
+    removeMockStorage(MOCK_ARCHIVE_ENTRIES_STORAGE_KEY);
+    removeMockStorage(MOCK_DOWNLOAD_JOBS_STORAGE_KEY);
+    return {
+      archiveEntries: [],
+      downloadJobs: [],
+    };
+  },
   startModelDownloadJob: async (request) => {
     const job: ModelDownloadJob = {
       id: `mdl-download-${Date.now()}`,
@@ -1846,6 +1874,10 @@ export const apiFoundryRepository: FoundryRepository = {
         request
       )
     ),
+  clearMockArchiveState: async () => ({
+    archiveEntries: await apiFoundryRepository.listModelArchiveEntries(),
+    downloadJobs: await apiFoundryRepository.listModelDownloadJobs(),
+  }),
   startModelDownloadJob: async (request) =>
     unwrap(
       await apiClient.post<ApiEnvelope<ModelDownloadJobDto>>(
@@ -1892,6 +1924,7 @@ const constructApiOverrides: Pick<
   | "registerArchiveModel"
   | "downloadArchiveModel"
   | "evictArchiveModel"
+  | "clearMockArchiveState"
   | "startModelDownloadJob"
   | "listModelDownloadJobs"
   | "getModelDownloadJob"
@@ -1914,6 +1947,7 @@ const constructApiOverrides: Pick<
   registerArchiveModel: apiFoundryRepository.registerArchiveModel,
   downloadArchiveModel: apiFoundryRepository.downloadArchiveModel,
   evictArchiveModel: apiFoundryRepository.evictArchiveModel,
+  clearMockArchiveState: apiFoundryRepository.clearMockArchiveState,
   startModelDownloadJob: apiFoundryRepository.startModelDownloadJob,
   listModelDownloadJobs: apiFoundryRepository.listModelDownloadJobs,
   getModelDownloadJob: apiFoundryRepository.getModelDownloadJob,

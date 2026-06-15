@@ -378,6 +378,19 @@ const App: React.FC = () => {
     }
   };
 
+  const handleClearMockArchiveState = async () => {
+    const result = await repository.clearMockArchiveState();
+    setArchiveEntries(result.archiveEntries);
+    setActiveModelDownloadJobId(null);
+    updateModelPreparation({
+      state: "idle",
+      label: "Idle",
+      detail: "Mock Archive cache and jobs were cleared.",
+      progress: 0,
+    });
+    setStatusToast("Mock Archive cache and jobs cleared.");
+  };
+
   const handlePrepareModel = async (action: SystemReadinessModelAction) => {
     setCreateError(null);
     setStatusToast(null);
@@ -662,6 +675,7 @@ const App: React.FC = () => {
           preparationActivity={modelPreparationActivity}
           onPrepareModel={handlePrepareModel}
           onCancelPreparation={handleCancelPreparation}
+          onClearMockArchiveState={handleClearMockArchiveState}
           onSave={persistSettings}
         />
       );

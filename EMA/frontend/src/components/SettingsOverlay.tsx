@@ -26,6 +26,7 @@ interface SettingsPanelProps {
   preparationActivity?: ModelPreparationActivity;
   onPrepareModel?: (action: SystemReadinessModelAction) => void;
   onCancelPreparation?: () => void;
+  onClearMockArchiveState?: () => Promise<void>;
   onSave: (settings: WorkspaceSettings) => void;
 }
 
@@ -48,10 +49,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   preparationActivity,
   onPrepareModel,
   onCancelPreparation,
+  onClearMockArchiveState,
   onSave,
 }) => {
   const [draft, setDraft] = useState<WorkspaceSettings>(settings);
   const [saved, setSaved] = useState(false);
+  const [isClearingMockArchive, setIsClearingMockArchive] = useState(false);
+  const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null);
   const apiReachable = Boolean(sourceStatus?.api.reachable);
   const constructReachable = Boolean(sourceStatus?.construct.reachable);
   const catalogReachable = Boolean(sourceStatus?.catalog.reachable);
@@ -88,6 +92,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const saveSettings = () => {
     onSave(draft);
     setSaved(true);
+  };
+
+  const clearMockArchive = async () => {
+    if (!onClearMockArchiveState || activeFoundryDataSource.mode !== "mock") {
+      return;
+    }
+
+    setIsClearingMockArchive(true);
+    setMaintenanceMessage(null);
+    try {
+      await onClearMockArchiveState();
+      setMaintenanceMessage("Mock Archive cache and jobs cleared.");
+    } catch (error: unknown) {
+      setMaintenanceMessage(
+        error instanceof Error ? error.message : "Could not clear mock Archive state."
+      );
+    } finally {
+      setIsClearingMockArchive(false);
+    }
   };
 
   return (
@@ -164,6 +187,51 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           onPrepareModel={onPrepareModel}
           onCancelPreparation={onCancelPreparation}
         />
+
+        <fieldset className="settings-group archive-maintenance-panel">
+          <legend>Archive Maintenance</legend>
+          <div className="runtime-source-readout">
+            <div>
+              <span className="panel-kicker">Mock/dev tools</span>
+              <strong>Reset Archive state</strong>
+              <p>
+                Clear browser-stored mock Archive models and download jobs when you need a clean local test run.
+              </p>
+            </div>
+            <span className={`status-badge source-${activeFoundryDataSource.mode}`}>
+              {activeFoundryDataSource.mode === "mock" ? "Mock" : "Live-safe"}
+            </span>
+          </div>
+          <div className="runtime-source-grid">
+            <div>
+              <span>Archive entries</span>
+              <strong>{archiveEntries.length}</strong>
+            </div>
+            <div>
+              <span>Mode</span>
+              <strong>{activeFoundryDataSource.label}</strong>
+            </div>
+          </div>
+          <button
+            className="button-secondary"
+            disabled={
+              activeFoundryDataSource.mode !== "mock" ||
+              isClearingMockArchive ||
+              !onClearMockArchiveState
+            }
+            onClick={() => void clearMockArchive()}
+            type="button"
+          >
+            <i className="fas fa-broom" aria-hidden="true" />
+            {isClearingMockArchive ? "Clearing" : "Clear Mock Archive"}
+          </button>
+          {activeFoundryDataSource.mode !== "mock" && (
+            <p className="save-state">
+              Live Archive data is managed by the backend catalog. This control only clears mock browser state.
+            </p>
+          )}
+          {maintenanceMessage && <p className="save-state">{maintenanceMessage}</p>}
+        </fieldset>
 
         <fieldset className="settings-group">
           <legend>Provider</legend>
