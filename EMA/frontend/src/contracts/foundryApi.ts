@@ -74,6 +74,7 @@ export const foundryApiRoutes = {
   unloadConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/unload`,
   constructRuntimeEvents: `${FOUNDRY_API_VERSION}/constructs/runtime/events`,
   modelArchive: `${FOUNDRY_API_VERSION}/archive/models`,
+  testHuggingFaceAuth: `${FOUNDRY_API_VERSION}/archive/huggingface/auth/test`,
   searchArchiveModels: `${FOUNDRY_API_VERSION}/archive/models/search`,
   inspectArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/inspect`,
   registerArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/register`,
@@ -384,6 +385,22 @@ export interface InspectArchiveModelRequest {
   revision?: string;
   username?: string;
   token?: string;
+}
+
+export interface TestHuggingFaceAuthRequest {
+  username?: string;
+  token?: string;
+}
+
+export interface HuggingFaceAuthCheckDto {
+  ok: boolean;
+  provider: "huggingface" | string;
+  username?: string | null;
+  resolvedUsername?: string | null;
+  tokenPresent: boolean;
+  usernameMatches: boolean;
+  accessLevel: string;
+  message: string;
 }
 
 export interface ArchiveModelSearchDto {

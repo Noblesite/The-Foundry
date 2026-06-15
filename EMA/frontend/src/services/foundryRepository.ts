@@ -28,6 +28,7 @@ import {
   ForgeRunDto,
   ForgeWorkerReconcileDto,
   foundryApiRoutes,
+  HuggingFaceAuthCheckDto,
   IngestMaterialRequest,
   InspectArchiveModelRequest,
   LoadArtifactIntoConstructRequest,
@@ -40,6 +41,7 @@ import {
   SearchArchiveModelsRequest,
   StartAssemblyLineRequest,
   StartForgeRequest,
+  TestHuggingFaceAuthRequest,
   TrialDto,
 } from "../contracts/foundryApi";
 import {
@@ -180,6 +182,9 @@ export interface FoundryRepository {
   ) => Promise<ConstructRuntimeProbeResult>;
   unloadConstructRuntime: () => Promise<ConstructRuntime>;
   listModelArchiveEntries: () => Promise<ModelArchiveEntry[]>;
+  testHuggingFaceAuth: (
+    request: TestHuggingFaceAuthRequest
+  ) => Promise<HuggingFaceAuthCheckDto>;
   searchArchiveModels: (request: SearchArchiveModelsRequest) => Promise<ArchiveModelSearchDto>;
   inspectArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelInspectDto>;
   registerArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelRegisterDto>;
@@ -1424,6 +1429,34 @@ export const mockFoundryRepository: FoundryRepository = {
     return mockConstructRuntime;
   },
   listModelArchiveEntries: async () => mockModelArchiveEntries,
+  testHuggingFaceAuth: async (request) => {
+    const username = (request.username || "").trim();
+    const tokenPresent = Boolean((request.token || "").trim());
+    if (!tokenPresent) {
+      return {
+        ok: false,
+        provider: "huggingface",
+        username: username || null,
+        resolvedUsername: null,
+        tokenPresent: false,
+        usernameMatches: false,
+        accessLevel: "anonymous",
+        message:
+          "No Hugging Face token is saved. Public model search can still work, but gated/private models require a username and token.",
+      };
+    }
+
+    return {
+      ok: true,
+      provider: "huggingface",
+      username: username || "mock-engineer",
+      resolvedUsername: username || "mock-engineer",
+      tokenPresent,
+      usernameMatches: true,
+      accessLevel: "mock-authenticated",
+      message: `Mock Hugging Face credentials verified for ${username || "mock-engineer"}.`,
+    };
+  },
   searchArchiveModels: async (request) => {
     const query = (request.query || "").toLowerCase();
     return {
@@ -1907,6 +1940,14 @@ export const apiFoundryRepository: FoundryRepository = {
       apiClient.get<ApiEnvelope<ModelArchiveEntry[]>>(foundryApiRoutes.modelArchive),
       "Could not load Model Archive entries."
     ),
+  testHuggingFaceAuth: async (request) =>
+    archiveRequest(
+      apiClient.post<ApiEnvelope<HuggingFaceAuthCheckDto>>(
+        foundryApiRoutes.testHuggingFaceAuth,
+        request
+      ),
+      "Could not test Hugging Face credentials."
+    ),
   searchArchiveModels: async (request) =>
     archiveRequest(
       apiClient.post<ApiEnvelope<ArchiveModelSearchDto>>(
@@ -1996,6 +2037,7 @@ const constructApiOverrides: Pick<
   | "probeConstructRuntime"
   | "unloadConstructRuntime"
   | "listModelArchiveEntries"
+  | "testHuggingFaceAuth"
   | "searchArchiveModels"
   | "inspectArchiveModel"
   | "registerArchiveModel"
@@ -2019,6 +2061,7 @@ const constructApiOverrides: Pick<
   probeConstructRuntime: apiFoundryRepository.probeConstructRuntime,
   unloadConstructRuntime: apiFoundryRepository.unloadConstructRuntime,
   listModelArchiveEntries: apiFoundryRepository.listModelArchiveEntries,
+  testHuggingFaceAuth: apiFoundryRepository.testHuggingFaceAuth,
   searchArchiveModels: apiFoundryRepository.searchArchiveModels,
   inspectArchiveModel: apiFoundryRepository.inspectArchiveModel,
   registerArchiveModel: apiFoundryRepository.registerArchiveModel,

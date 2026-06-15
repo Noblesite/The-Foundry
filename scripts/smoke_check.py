@@ -355,6 +355,8 @@ def run_huggingface_auth_contract_check() -> int:
     required_api_patterns = (
         "username: str | None = None",
         "username=data.username",
+        "/api/v1/archive/huggingface/auth/test",
+        "test_foundry_huggingface_auth_endpoint",
     )
     missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
     if missing_api:
@@ -363,6 +365,8 @@ def run_huggingface_auth_contract_check() -> int:
     required_service_patterns = (
         "HuggingFaceAccessError",
         "_validate_auth_pair",
+        "test_auth",
+        "_whoami_sync",
         "_friendly_huggingface_error",
         "_redact_secret",
         "\"tokenPresent\": bool",

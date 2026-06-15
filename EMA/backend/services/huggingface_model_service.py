@@ -235,6 +235,66 @@ class HuggingFaceModelService:
         if (username or "").strip() and not (token or "").strip():
             raise ValueError("Hugging Face token is required when a username is provided.")
 
+    async def test_auth(self, *, username: Optional[str], token: Optional[str]) -> Dict[str, Any]:
+        safe_username = (username or "").strip()
+        safe_token = (token or "").strip()
+        if not safe_token:
+            return {
+                "ok": False,
+                "provider": "huggingface",
+                "username": safe_username or None,
+                "resolvedUsername": None,
+                "tokenPresent": False,
+                "usernameMatches": False,
+                "accessLevel": "anonymous",
+                "message": "No Hugging Face token is saved. Public model search can still work, but gated/private models require a username and token.",
+            }
+
+        try:
+            identity = await self._run_hf_query(self._whoami_sync, token=safe_token)
+        except Exception as error:
+            return {
+                "ok": False,
+                "provider": "huggingface",
+                "username": safe_username or None,
+                "resolvedUsername": None,
+                "tokenPresent": True,
+                "usernameMatches": False,
+                "accessLevel": "invalid",
+                "message": self._friendly_huggingface_error(error),
+            }
+
+        resolved_username = (
+            str(identity.get("name") or identity.get("fullname") or "").strip() or None
+        )
+        username_matches = not safe_username or (
+            bool(resolved_username) and safe_username.lower() == resolved_username.lower()
+        )
+        access_level = self._auth_access_level(identity)
+        if not username_matches:
+            return {
+                "ok": False,
+                "provider": "huggingface",
+                "username": safe_username or None,
+                "resolvedUsername": resolved_username,
+                "tokenPresent": True,
+                "usernameMatches": False,
+                "accessLevel": access_level,
+                "message": f"The token is valid, but it belongs to {resolved_username or 'a different Hugging Face account'}. Update the username in Settings or paste a token for {safe_username}.",
+            }
+
+        display_username = safe_username or resolved_username or "the saved account"
+        return {
+            "ok": True,
+            "provider": "huggingface",
+            "username": safe_username or resolved_username,
+            "resolvedUsername": resolved_username,
+            "tokenPresent": True,
+            "usernameMatches": True,
+            "accessLevel": access_level,
+            "message": f"Hugging Face credentials verified for {display_username}. Archive can use this token for models the account is allowed to access.",
+        }
+
     async def get_download_job(self, job_id: str) -> Dict[str, Any]:
         job = await self.catalog_service.get_model_download_job(job_id)
         if job is None:
@@ -531,6 +591,23 @@ class HuggingFaceModelService:
             token=token,
             local_dir=str(local_dir),
         )
+
+    def _whoami_sync(self, *, token: str) -> Dict[str, Any]:
+        from huggingface_hub import HfApi
+
+        api = HfApi(token=token)
+        identity = api.whoami(token=token)
+        return identity if isinstance(identity, dict) else {}
+
+    def _auth_access_level(self, identity: Dict[str, Any]) -> str:
+        auth = identity.get("auth")
+        if isinstance(auth, dict):
+            access_token = auth.get("accessToken")
+            if isinstance(access_token, dict):
+                role = access_token.get("role") or access_token.get("fineGrained")
+                if role:
+                    return str(role)
+        return "authenticated"
 
     def _model_summary_from_info(self, model_info) -> Dict[str, Any]:
         repo_id = getattr(model_info, "modelId", None) or getattr(model_info, "id", "")

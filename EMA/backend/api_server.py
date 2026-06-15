@@ -132,6 +132,10 @@ class InspectArchiveModelInput(BaseModel):
     username: str | None = None
     token: str | None = None
 
+class HuggingFaceAuthInput(BaseModel):
+    username: str | None = None
+    token: str | None = None
+
 class CreateTrialInput(BaseModel):
     artifactId: str
     constructId: str
@@ -363,6 +367,16 @@ async def unload_foundry_construct_runtime_endpoint():
 @app.get("/api/v1/archive/models")
 async def foundry_model_archive_endpoint():
     return api_envelope(await huggingface_model_service.list_archive_entries())
+
+
+@app.post("/api/v1/archive/huggingface/auth/test")
+async def test_foundry_huggingface_auth_endpoint(data: HuggingFaceAuthInput):
+    return api_envelope(
+        await huggingface_model_service.test_auth(
+            username=data.username,
+            token=data.token,
+        )
+    )
 
 
 @app.post("/api/v1/archive/models/search")

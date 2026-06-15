@@ -9,6 +9,7 @@ import {
   WorkspaceSettings,
   resolveDefaultBaseModel,
 } from "../domain/foundry";
+import { HuggingFaceAuthCheckDto } from "../contracts/foundryApi";
 import { activeFoundryDataSource } from "../domain/dataSourceMode";
 import {
   ModelPreparationActivity,
@@ -27,6 +28,9 @@ interface SettingsPanelProps {
   onPrepareModel?: (action: SystemReadinessModelAction) => void;
   onCancelPreparation?: () => void;
   onClearMockArchiveState?: () => Promise<void>;
+  onTestHuggingFaceAuth?: (
+    settings: Pick<WorkspaceSettings, "huggingFaceUsername" | "huggingFaceToken">
+  ) => Promise<HuggingFaceAuthCheckDto>;
   onSave: (settings: WorkspaceSettings) => void;
 }
 
@@ -50,12 +54,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onPrepareModel,
   onCancelPreparation,
   onClearMockArchiveState,
+  onTestHuggingFaceAuth,
   onSave,
 }) => {
   const [draft, setDraft] = useState<WorkspaceSettings>(settings);
   const [saved, setSaved] = useState(false);
   const [isClearingMockArchive, setIsClearingMockArchive] = useState(false);
+  const [isTestingHuggingFaceAuth, setIsTestingHuggingFaceAuth] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null);
+  const [huggingFaceAuthResult, setHuggingFaceAuthResult] =
+    useState<HuggingFaceAuthCheckDto | null>(null);
   const apiReachable = Boolean(sourceStatus?.api.reachable);
   const constructReachable = Boolean(sourceStatus?.construct.reachable);
   const catalogReachable = Boolean(sourceStatus?.catalog.reachable);
@@ -110,6 +118,36 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       );
     } finally {
       setIsClearingMockArchive(false);
+    }
+  };
+
+  const testHuggingFaceAuth = async () => {
+    if (!onTestHuggingFaceAuth) {
+      return;
+    }
+
+    setIsTestingHuggingFaceAuth(true);
+    setHuggingFaceAuthResult(null);
+    try {
+      const result = await onTestHuggingFaceAuth({
+        huggingFaceUsername: draft.huggingFaceUsername,
+        huggingFaceToken: draft.huggingFaceToken,
+      });
+      setHuggingFaceAuthResult(result);
+    } catch (error: unknown) {
+      setHuggingFaceAuthResult({
+        ok: false,
+        provider: "huggingface",
+        username: draft.huggingFaceUsername || null,
+        resolvedUsername: null,
+        tokenPresent: Boolean(draft.huggingFaceToken),
+        usernameMatches: false,
+        accessLevel: "unverified",
+        message:
+          error instanceof Error ? error.message : "Could not test Hugging Face credentials.",
+      });
+    } finally {
+      setIsTestingHuggingFaceAuth(false);
     }
   };
 
@@ -260,6 +298,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             placeholder="hf_..."
             onChange={(event) => updateDraft("huggingFaceToken", event.target.value)}
           />
+
+          <button
+            className="button-secondary"
+            disabled={isTestingHuggingFaceAuth || !onTestHuggingFaceAuth}
+            onClick={() => void testHuggingFaceAuth()}
+            type="button"
+          >
+            <i className="fas fa-plug-circle-check" aria-hidden="true" />
+            {isTestingHuggingFaceAuth ? "Testing" : "Test Hugging Face Credentials"}
+          </button>
+          {huggingFaceAuthResult && (
+            <p
+              className={`save-state ${
+                huggingFaceAuthResult.ok ? "success-state" : "error-state"
+              }`}
+            >
+              {huggingFaceAuthResult.message}
+              {huggingFaceAuthResult.resolvedUsername
+                ? ` Account: ${huggingFaceAuthResult.resolvedUsername}.`
+                : ""}
+            </p>
+          )}
 
           <label className="field-label" htmlFor="default-base-model">
             Default base model

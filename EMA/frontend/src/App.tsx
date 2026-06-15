@@ -391,6 +391,14 @@ const App: React.FC = () => {
     setStatusToast("Mock Archive cache and jobs cleared.");
   };
 
+  const handleTestHuggingFaceAuth = async (
+    authSettings: Pick<WorkspaceSettings, "huggingFaceUsername" | "huggingFaceToken">
+  ) =>
+    repository.testHuggingFaceAuth({
+      username: authSettings.huggingFaceUsername || undefined,
+      token: authSettings.huggingFaceToken || undefined,
+    });
+
   const handlePrepareModel = async (action: SystemReadinessModelAction) => {
     setCreateError(null);
     setStatusToast(null);
@@ -677,6 +685,7 @@ const App: React.FC = () => {
           onPrepareModel={handlePrepareModel}
           onCancelPreparation={handleCancelPreparation}
           onClearMockArchiveState={handleClearMockArchiveState}
+          onTestHuggingFaceAuth={handleTestHuggingFaceAuth}
           onSave={persistSettings}
         />
       );

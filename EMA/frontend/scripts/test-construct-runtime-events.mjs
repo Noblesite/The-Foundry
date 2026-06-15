@@ -56,9 +56,24 @@ assertIncludes(
   "Archive API requests can carry Hugging Face username"
 );
 assertIncludes(
+  files.contracts,
+  "testHuggingFaceAuth:",
+  "Frontend contract exposes Hugging Face credential test route"
+);
+assertIncludes(
+  files.contracts,
+  "HuggingFaceAuthCheckDto",
+  "Frontend contract includes Hugging Face auth check result"
+);
+assertIncludes(
   files.settings,
   "Hugging Face username",
   "Settings captures Hugging Face username"
+);
+assertIncludes(
+  files.settings,
+  "Test Hugging Face Credentials",
+  "Settings can test Hugging Face credentials"
 );
 assertIncludes(
   files.artifacts,
@@ -84,6 +99,11 @@ assertIncludes(
   files.repository,
   "archiveRequest",
   "Repository wraps Archive requests with friendly errors"
+);
+assertIncludes(
+  files.repository,
+  "testHuggingFaceAuth:",
+  "Repository tests Hugging Face credentials"
 );
 assertIncludes(
   files.app,
