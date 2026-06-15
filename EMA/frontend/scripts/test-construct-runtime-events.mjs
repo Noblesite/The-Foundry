@@ -137,9 +137,24 @@ assertIncludes(
   "System readiness domain builder"
 );
 assertIncludes(
+  files.systemReadinessDomain,
+  "ModelArchiveEntry",
+  "System readiness archive contract"
+);
+assertIncludes(
+  files.systemReadinessDomain,
+  "Archive state",
+  "System readiness archive state step"
+);
+assertIncludes(
   files.systemReadiness,
   "System readiness",
   "System readiness panel"
+);
+assertIncludes(
+  files.systemReadiness,
+  "archiveEntries",
+  "System readiness archive entries prop"
 );
 assertIncludes(
   files.settings,

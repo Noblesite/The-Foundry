@@ -4,6 +4,7 @@ import {
   ConstructRuntimeMode,
   ConstructRuntime,
   FoundryRuntimeStatus,
+  ModelArchiveEntry,
   TrainingMethod,
   WorkspaceSettings,
 } from "../domain/foundry";
@@ -16,6 +17,7 @@ interface SettingsPanelProps {
   settings: WorkspaceSettings;
   sourceStatus?: FoundryRuntimeStatus | null;
   runtime?: ConstructRuntime | null;
+  archiveEntries?: ModelArchiveEntry[];
   onSave: (settings: WorkspaceSettings) => void;
 }
 
@@ -34,6 +36,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   settings,
   sourceStatus,
   runtime,
+  archiveEntries = [],
   onSave,
 }) => {
   const [draft, setDraft] = useState<WorkspaceSettings>(settings);
@@ -131,6 +134,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           settings={draft}
           sourceStatus={sourceStatus}
           runtime={runtime}
+          archiveEntries={archiveEntries}
         />
 
         <fieldset className="settings-group">

@@ -12,6 +12,7 @@ import {
   ConstructRuntimeProbeResult,
   CreateConstructRuntimeEventRequest,
   FoundryRuntimeStatus,
+  ModelArchiveEntry,
   Trial,
   TrialVerdict,
 } from "../domain/foundry";
@@ -71,6 +72,7 @@ interface ConstructWorkbenchProps {
   repository: FoundryRepository;
   settings: WorkspaceSettings;
   sourceStatus?: FoundryRuntimeStatus | null;
+  archiveEntries?: ModelArchiveEntry[];
   onRuntimeChanged?: (runtime: ConstructRuntime) => void;
 }
 
@@ -81,6 +83,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   repository,
   settings,
   sourceStatus,
+  archiveEntries = [],
   onRuntimeChanged,
 }) => {
   const conversationId = `construct-${construct.id}`;
@@ -1014,6 +1017,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 settings={settings}
                 sourceStatus={sourceStatus}
                 runtime={runtime}
+                archiveEntries={archiveEntries}
               />
               <div className="runtime-load-meter" aria-label={`Runtime load ${runtimePhaseLabel}`}>
                 {(["configuring", "loading", "ready"] as RuntimeLoadPhase[]).map((phase) => (

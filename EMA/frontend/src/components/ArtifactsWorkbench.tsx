@@ -17,7 +17,9 @@ interface ArtifactsWorkbenchProps {
   summary: SectionSummary;
   workshop: Workshop;
   academyAction?: AcademyAction;
+  archiveEntries: ModelArchiveEntry[];
   onConstructLoaded: (construct: Construct, artifact: Artifact) => void;
+  onArchiveEntriesChanged: (entries: ModelArchiveEntry[]) => void;
   onBaseModelSelected: (modelId: string) => void;
   onOpenConstructWithModel: (modelId: string, label?: string) => void;
   onOpenAcademy: () => void;
@@ -29,13 +31,14 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   summary,
   workshop,
   academyAction,
+  archiveEntries,
   onConstructLoaded,
+  onArchiveEntriesChanged,
   onBaseModelSelected,
   onOpenConstructWithModel,
   onOpenAcademy,
 }) => {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
-  const [archiveEntries, setArchiveEntries] = useState<ModelArchiveEntry[]>([]);
   const [modelResults, setModelResults] = useState<ModelSearchResult[]>([]);
   const [modelQuery, setModelQuery] = useState("tiny-gpt2");
   const [selectedModelId, setSelectedModelId] = useState("");
@@ -77,7 +80,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
       .listModelArchiveEntries()
       .then((entries) => {
         if (isCurrent) {
-          setArchiveEntries(entries);
+          onArchiveEntriesChanged(entries);
         }
       })
       .catch((loadError: unknown) => {
@@ -89,7 +92,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     return () => {
       isCurrent = false;
     };
-  }, [repository]);
+  }, [onArchiveEntriesChanged, repository]);
 
   useEffect(() => {
     void searchModels();
@@ -172,8 +175,8 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
 
     try {
       const result = await repository.registerArchiveModel({ repoId: selectedModel.repoId });
-      setArchiveEntries((current) => {
-        const withoutDuplicate = current.filter(
+      const nextEntries = (() => {
+        const withoutDuplicate = archiveEntries.filter(
           (entry) =>
             !(
               entry.repoId === result.archiveEntry.repoId &&
@@ -181,7 +184,8 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
             )
         );
         return [result.archiveEntry, ...withoutDuplicate];
-      });
+      })();
+      onArchiveEntriesChanged(nextEntries);
       onBaseModelSelected(result.archiveEntry.repoId);
       setStatusText(`${result.archiveEntry.repoId} registered as the active base model.`);
     } catch (registerError: unknown) {
@@ -205,8 +209,8 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
         repoId: selectedModel.repoId,
         revision: selectedModel.revision,
       });
-      setArchiveEntries((current) => {
-        const withoutDuplicate = current.filter(
+      const nextEntries = (() => {
+        const withoutDuplicate = archiveEntries.filter(
           (entry) =>
             !(
               entry.repoId === result.archiveEntry.repoId &&
@@ -214,7 +218,8 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
             )
         );
         return [result.archiveEntry, ...withoutDuplicate];
-      });
+      })();
+      onArchiveEntriesChanged(nextEntries);
       onBaseModelSelected(result.archiveEntry.localPath || result.archiveEntry.repoId);
       setStatusText(`${result.archiveEntry.repoId} cached at ${result.archiveEntry.localPath}.`);
     } catch (downloadError: unknown) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import AcademyWorkbench from "./components/AcademyWorkbench";
 import ArtifactsWorkbench from "./components/ArtifactsWorkbench";
 import ConstructWorkbench from "./components/ConstructWorkbench";
@@ -24,6 +24,7 @@ import {
   ConstructModelHandoff,
   ConstructRuntime,
   FoundryRuntimeStatus,
+  ModelArchiveEntry,
   NavigationSection,
   RuntimeMetric,
   Workshop,
@@ -142,6 +143,7 @@ const App: React.FC = () => {
   const [constructHandoff, setConstructHandoff] = useState<ConstructModelHandoff | null>(null);
   const [constructRuntime, setConstructRuntime] = useState<ConstructRuntime | null>(null);
   const [foundryStatus, setFoundryStatus] = useState<FoundryRuntimeStatus | null>(null);
+  const [archiveEntries, setArchiveEntries] = useState<ModelArchiveEntry[]>([]);
   const [workshops, setWorkshops] = useState<Workshop[]>([mockDashboardSummary.workshop]);
   const [foundryData, setFoundryData] = useState<FoundryBootstrap>({
     dashboard: mockDashboardSummary,
@@ -159,13 +161,15 @@ const App: React.FC = () => {
       repository.listWorkshops(),
       repository.getConstructRuntime(),
       repository.getFoundryStatus(),
+      repository.listModelArchiveEntries(),
     ])
-      .then(([bootstrap, savedWorkshops, runtime, status]) => {
+      .then(([bootstrap, savedWorkshops, runtime, status, modelArchiveEntries]) => {
         if (isCurrent) {
           setFoundryData(bootstrap);
           setWorkshops(savedWorkshops.length ? savedWorkshops : [bootstrap.dashboard.workshop]);
           setConstructRuntime(runtime);
           setFoundryStatus(status);
+          setArchiveEntries(modelArchiveEntries);
         }
       })
       .catch((error: unknown) => {
@@ -183,14 +187,16 @@ const App: React.FC = () => {
   };
 
   const refreshFoundryData = async () => {
-    const [bootstrap, savedWorkshops, status] = await Promise.all([
+    const [bootstrap, savedWorkshops, status, modelArchiveEntries] = await Promise.all([
       loadFoundryBootstrap(repository),
       repository.listWorkshops(),
       repository.getFoundryStatus(),
+      repository.listModelArchiveEntries(),
     ]);
     setFoundryData(bootstrap);
     setWorkshops(savedWorkshops.length ? savedWorkshops : [bootstrap.dashboard.workshop]);
     setFoundryStatus(status);
+    setArchiveEntries(modelArchiveEntries);
     return bootstrap;
   };
 
@@ -204,6 +210,10 @@ const App: React.FC = () => {
     setConstructRuntime(runtime);
     void refreshFoundryStatus();
   };
+
+  const handleArchiveEntriesChanged = useCallback((entries: ModelArchiveEntry[]) => {
+    setArchiveEntries(entries);
+  }, []);
 
   const openWorkshopModal = () => {
     setCreateError(null);
@@ -397,6 +407,7 @@ const App: React.FC = () => {
           settings={settings}
           sourceStatus={foundryStatus}
           runtime={constructRuntime}
+          archiveEntries={archiveEntries}
           onSave={persistSettings}
         />
       );
@@ -411,6 +422,7 @@ const App: React.FC = () => {
           repository={repository}
           settings={settings}
           sourceStatus={foundryStatus}
+          archiveEntries={archiveEntries}
           onRuntimeChanged={handleConstructRuntimeChanged}
         />
       );
@@ -467,7 +479,9 @@ const App: React.FC = () => {
           summary={foundryData.sectionSummaries.artifacts}
           workshop={dashboardSummary.workshop}
           academyAction={getAcademyAction(ACADEMY_ACTION_IDS.artifactsOpenPromotion)}
+          archiveEntries={archiveEntries}
           onConstructLoaded={handleConstructLoaded}
+          onArchiveEntriesChanged={handleArchiveEntriesChanged}
           onBaseModelSelected={handleBaseModelSelected}
           onOpenConstructWithModel={handleOpenConstructWithModel}
           onOpenAcademy={() =>

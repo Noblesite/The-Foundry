@@ -1,6 +1,7 @@
 import type {
   ConstructRuntime,
   FoundryRuntimeStatus,
+  ModelArchiveEntry,
   WorkspaceSettings,
 } from "./foundry";
 import { activeFoundryDataSource } from "./dataSourceMode";
@@ -23,6 +24,24 @@ export interface SystemReadinessSummary {
 
 const hasValue = (value?: string | null) => Boolean(value?.trim());
 
+const normalizeModelRef = (value?: string | null) => (value || "").trim();
+
+const findArchiveEntryForModel = (
+  modelRef: string,
+  archiveEntries: ModelArchiveEntry[]
+): ModelArchiveEntry | undefined => {
+  if (!modelRef) {
+    return undefined;
+  }
+  return archiveEntries.find(
+    (entry) =>
+      entry.localPath === modelRef ||
+      entry.repoId === modelRef ||
+      (entry.localPath && modelRef.endsWith(entry.localPath)) ||
+      (entry.localPath && entry.localPath.endsWith(modelRef))
+  );
+};
+
 const deriveOverallState = (steps: SystemReadinessStep[]): SystemReadinessState => {
   if (steps.some((step) => step.state === "blocked")) {
     return "blocked";
@@ -36,18 +55,35 @@ const deriveOverallState = (steps: SystemReadinessStep[]): SystemReadinessState 
 export const buildSystemReadinessSummary = (
   settings: WorkspaceSettings,
   status?: FoundryRuntimeStatus | null,
-  runtime?: ConstructRuntime | null
+  runtime?: ConstructRuntime | null,
+  archiveEntries: ModelArchiveEntry[] = []
 ): SystemReadinessSummary => {
   const liveApiRequired = activeFoundryDataSource.liveConstruct || activeFoundryDataSource.liveCatalog;
   const apiReachable = Boolean(status?.api.reachable);
-  const selectedModel = settings.constructModelId || settings.modelName;
+  const selectedModel = normalizeModelRef(settings.constructModelId || settings.modelName);
   const runtimeLoaded = Boolean(status?.construct.modelLoaded || runtime?.loaded);
-  const runtimeModelId = status?.construct.modelId || runtime?.modelId || selectedModel;
-  const modelLooksLocal =
-    hasValue(runtimeModelId) &&
-    (runtimeModelId.startsWith("runtime/") ||
-      runtimeModelId.startsWith("/") ||
-      runtimeLoaded);
+  const runtimeModelId = normalizeModelRef(status?.construct.modelId || runtime?.modelId || selectedModel);
+  const archiveEntry = findArchiveEntryForModel(runtimeModelId || selectedModel, archiveEntries);
+  const modelLooksLocal = Boolean(
+    runtimeLoaded ||
+      archiveEntry?.status === "ready" ||
+      (archiveEntry?.status === "cached" && archiveEntry.localPath) ||
+      (runtimeModelId && (runtimeModelId.startsWith("runtime/") || runtimeModelId.startsWith("/")))
+  );
+  const archiveState = archiveEntry?.status || (hasValue(selectedModel) ? "remote" : "missing");
+  const archiveDetail = runtimeLoaded && !archiveEntry
+    ? `${runtimeModelId || "Construct runtime"} is currently loaded, but it is not registered in the Archive yet.`
+    : archiveEntry
+    ? archiveEntry.status === "ready"
+      ? `${archiveEntry.repoId} is load-ready at ${archiveEntry.localPath || "registered local storage"}.`
+      : archiveEntry.status === "cached"
+        ? `${archiveEntry.repoId} is cached at ${archiveEntry.localPath || "local Archive storage"}.`
+        : archiveEntry.status === "failed"
+          ? `${archiveEntry.repoId} failed its last Archive operation.`
+          : `${archiveEntry.repoId} is registered but not downloaded yet.`
+    : hasValue(selectedModel)
+      ? `${selectedModel} is selected from Hugging Face or settings but is not registered in the Archive yet.`
+      : "No model is selected yet.";
 
   const steps: SystemReadinessStep[] = [
     {
@@ -76,13 +112,13 @@ export const buildSystemReadinessSummary = (
     },
     {
       id: "model-cached",
-      label: "Model cached",
-      state: modelLooksLocal ? "ready" : runtimeModelId ? "caution" : "blocked",
-      detail: modelLooksLocal
-        ? `${runtimeModelId} is loaded or points to local runtime storage.`
-        : runtimeModelId
-          ? `${runtimeModelId} may need to be downloaded before first load.`
-          : "No model cache information is available yet.",
+      label: "Archive state",
+      state: modelLooksLocal
+        ? "ready"
+        : archiveState === "failed" || archiveState === "missing"
+          ? "blocked"
+          : "caution",
+      detail: archiveDetail,
     },
     {
       id: "construct-loaded",

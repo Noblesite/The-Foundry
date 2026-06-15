@@ -1,10 +1,16 @@
-import type { ConstructRuntime, FoundryRuntimeStatus, WorkspaceSettings } from "../domain/foundry";
+import type {
+  ConstructRuntime,
+  FoundryRuntimeStatus,
+  ModelArchiveEntry,
+  WorkspaceSettings,
+} from "../domain/foundry";
 import { buildSystemReadinessSummary } from "../domain/systemReadiness";
 
 interface SystemReadinessPanelProps {
   settings: WorkspaceSettings;
   sourceStatus?: FoundryRuntimeStatus | null;
   runtime?: ConstructRuntime | null;
+  archiveEntries?: ModelArchiveEntry[];
   compact?: boolean;
 }
 
@@ -18,9 +24,10 @@ const SystemReadinessPanel: React.FC<SystemReadinessPanelProps> = ({
   settings,
   sourceStatus,
   runtime,
+  archiveEntries = [],
   compact = false,
 }) => {
-  const summary = buildSystemReadinessSummary(settings, sourceStatus, runtime);
+  const summary = buildSystemReadinessSummary(settings, sourceStatus, runtime, archiveEntries);
   const steps = compact ? summary.steps.slice(0, 4) : summary.steps;
 
   return (
