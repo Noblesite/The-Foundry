@@ -11,6 +11,7 @@ import {
   ForgeTrainingContract,
   ForgeWorkerState,
   MaterialSource,
+  resolveDefaultBaseModel,
   SectionSummary,
   TrainingMethod,
   Workshop,
@@ -57,12 +58,13 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   onConstructLoaded,
   onOpenAcademy,
 }) => {
+  const defaultBaseModel = resolveDefaultBaseModel(settings);
   const [materials, setMaterials] = useState<MaterialSource[]>([]);
   const [forgeRuns, setForgeRuns] = useState<ForgeRun[]>([]);
   const [workerStates, setWorkerStates] = useState<Record<string, ForgeWorkerState>>({});
   const [draft, setDraft] = useState<StartForgeRequest>({
     materialSetId: "",
-    baseModel: settings.modelName,
+    baseModel: defaultBaseModel,
     method: settings.trainingMethod,
     purpose: "training",
     epochs: settings.epochs,
@@ -175,7 +177,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
           const material = jsonlMaterials.find((source) => source.id === materialSetId);
           return {
             ...current,
-            baseModel: settings.modelName,
+            baseModel: defaultBaseModel,
             method: settings.trainingMethod,
             learningRate: settings.learningRate,
             loadIn4Bit: settings.loadIn4Bit,
@@ -208,11 +210,11 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     };
   }, [
     repository,
+    defaultBaseModel,
     forgePreset,
     settings.epochs,
     settings.learningRate,
     settings.loadIn4Bit,
-    settings.modelName,
     settings.trainingMethod,
     workshop.id,
   ]);

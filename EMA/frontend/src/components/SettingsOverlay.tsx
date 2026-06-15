@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ConstructRuntimeDevice,
   ConstructRuntimeMode,
@@ -7,6 +7,7 @@ import {
   ModelArchiveEntry,
   TrainingMethod,
   WorkspaceSettings,
+  resolveDefaultBaseModel,
 } from "../domain/foundry";
 import { activeFoundryDataSource } from "../domain/dataSourceMode";
 import {
@@ -69,6 +70,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setSaved(false);
     setDraft((current) => ({ ...current, [key]: value }));
   };
+
+  const updateDefaultBaseModel = (value: string) => {
+    setSaved(false);
+    setDraft((current) => ({
+      ...current,
+      defaultBaseModel: value,
+      modelName: value,
+      constructModelId: value,
+    }));
+  };
+
+  useEffect(() => {
+    setDraft(settings);
+  }, [settings]);
 
   const saveSettings = () => {
     onSave(draft);
@@ -164,15 +179,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             onChange={(event) => updateDraft("huggingFaceToken", event.target.value)}
           />
 
-          <label className="field-label" htmlFor="model-name">
-            Base model
+          <label className="field-label" htmlFor="default-base-model">
+            Default base model
             <HelpTooltip text="The base model is the pretrained network before your subject-specific examples bend its behavior." />
           </label>
           <input
-            id="model-name"
+            id="default-base-model"
             type="text"
-            value={draft.modelName}
-            onChange={(event) => updateDraft("modelName", event.target.value)}
+            value={resolveDefaultBaseModel(draft)}
+            onChange={(event) => updateDefaultBaseModel(event.target.value)}
           />
         </fieldset>
 

@@ -50,6 +50,7 @@ export type LearningDifficulty = "starter" | "builder" | "advanced";
 
 export interface WorkspaceSettings {
   huggingFaceToken: string;
+  defaultBaseModel: string;
   modelName: string;
   subjectMatter: string;
   characterVoice: string;
@@ -69,6 +70,10 @@ export interface WorkspaceSettings {
   constructModelId: string;
   constructDevice: ConstructRuntimeDevice;
 }
+
+export const resolveDefaultBaseModel = (
+  settings: Pick<WorkspaceSettings, "defaultBaseModel" | "modelName">
+) => settings.defaultBaseModel || settings.modelName;
 
 export interface FoundryNavigationItem {
   id: NavigationSection;

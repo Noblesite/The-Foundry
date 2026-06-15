@@ -14,6 +14,7 @@ import { AcademyActionTooltip, ConceptTooltip, LearningCard } from "./LearningCo
 
 interface ArtifactsWorkbenchProps {
   activeArtifactId: string;
+  defaultBaseModel: string;
   repository: FoundryRepository;
   summary: SectionSummary;
   workshop: Workshop;
@@ -44,6 +45,7 @@ const mergeDownloadJobs = (
 
 const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   activeArtifactId,
+  defaultBaseModel,
   repository,
   summary,
   workshop,
@@ -67,7 +69,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   const [isDownloadingModel, setIsDownloadingModel] = useState(false);
   const [isEvictingArchiveEntry, setIsEvictingArchiveEntry] = useState(false);
   const [selectedInventoryEntryId, setSelectedInventoryEntryId] = useState("");
-  const [defaultBaseModelTarget, setDefaultBaseModelTarget] = useState("");
+  const [defaultBaseModelTarget, setDefaultBaseModelTarget] = useState(defaultBaseModel);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -141,6 +143,10 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     // Load an initial suggested model set once the repository is available.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repository]);
+
+  useEffect(() => {
+    setDefaultBaseModelTarget(defaultBaseModel);
+  }, [defaultBaseModel]);
 
   const selectedArtifact = useMemo(
     () => artifacts.find((artifact) => artifact.id === selectedArtifactId),

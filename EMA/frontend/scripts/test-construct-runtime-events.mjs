@@ -23,10 +23,19 @@ const files = {
     new URL("../src/components/ArtifactsWorkbench.tsx", import.meta.url),
     "utf8"
   ),
+  forge: await readFile(
+    new URL("../src/components/ForgeWorkbench.tsx", import.meta.url),
+    "utf8"
+  ),
+  workshopCreate: await readFile(
+    new URL("../src/components/WorkshopCreateModal.tsx", import.meta.url),
+    "utf8"
+  ),
   systemReadinessDomain: await readFile(
     new URL("../src/domain/systemReadiness.ts", import.meta.url),
     "utf8"
   ),
+  mockData: await readFile(new URL("../src/mocks/foundryMockData.ts", import.meta.url), "utf8"),
   app: await readFile(new URL("../src/App.tsx", import.meta.url), "utf8"),
 };
 
@@ -90,6 +99,21 @@ assertIncludes(
   files.domain,
   "export interface ModelDownloadJob",
   "Model download job domain contract"
+);
+assertIncludes(
+  files.domain,
+  "defaultBaseModel: string",
+  "Workspace settings default base model contract"
+);
+assertIncludes(
+  files.domain,
+  "resolveDefaultBaseModel",
+  "Default base model resolver"
+);
+assertIncludes(
+  files.mockData,
+  "defaultBaseModel:",
+  "Default settings include persisted default base model"
 );
 assertIncludes(
   files.repository,
@@ -162,9 +186,24 @@ assertIncludes(
   "Settings live source status"
 );
 assertIncludes(
+  files.settings,
+  "Default base model",
+  "Settings default base model field"
+);
+assertIncludes(
+  files.settings,
+  "updateDefaultBaseModel",
+  "Settings keeps default base model synchronized"
+);
+assertIncludes(
   files.construct,
   "sourceReachabilityLabel",
   "Construct live source status"
+);
+assertIncludes(
+  files.construct,
+  "configuredModelTarget",
+  "Construct uses resolved default model target"
 );
 assertIncludes(
   files.systemReadinessDomain,
@@ -275,6 +314,31 @@ assertIncludes(
   files.artifacts,
   "Evict Cache",
   "Artifacts evict cache button"
+);
+assertIncludes(
+  files.artifacts,
+  "defaultBaseModel",
+  "Artifacts receives persisted default base model"
+);
+assertIncludes(
+  files.forge,
+  "resolveDefaultBaseModel",
+  "Forge prefills from persisted default base model"
+);
+assertIncludes(
+  files.workshopCreate,
+  "resolveDefaultBaseModel",
+  "Workshop creation prefills from persisted default base model"
+);
+assertIncludes(
+  files.app,
+  "parsedSettings.defaultBaseModel",
+  "App migrates old saved settings to default base model"
+);
+assertIncludes(
+  files.app,
+  "defaultBaseModel: modelId",
+  "App persists Archive-selected default base model"
 );
 assertIncludes(
   files.app,

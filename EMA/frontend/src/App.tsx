@@ -29,6 +29,7 @@ import {
   NavigationSection,
   RuntimeMetric,
   Workshop,
+  resolveDefaultBaseModel,
 } from "./domain/foundry";
 import {
   defaultWorkspaceSettings,
@@ -55,7 +56,15 @@ const loadWorkspaceSettings = (): WorkspaceSettings => {
   }
 
   try {
-    return { ...defaultWorkspaceSettings, ...JSON.parse(savedSettings) };
+    const parsedSettings = JSON.parse(savedSettings) as Partial<WorkspaceSettings>;
+    const migratedSettings = { ...defaultWorkspaceSettings, ...parsedSettings };
+    return {
+      ...migratedSettings,
+      defaultBaseModel:
+        parsedSettings.defaultBaseModel ||
+        parsedSettings.modelName ||
+        defaultWorkspaceSettings.defaultBaseModel,
+    };
   } catch {
     return defaultWorkspaceSettings;
   }
@@ -548,6 +557,7 @@ const App: React.FC = () => {
   const handleBaseModelSelected = (modelId: string) => {
     persistSettings({
       ...settings,
+      defaultBaseModel: modelId,
       modelName: modelId,
       constructModelId: modelId,
     });
@@ -556,6 +566,7 @@ const App: React.FC = () => {
   const handleOpenConstructWithModel = (modelId: string, label?: string) => {
     persistSettings({
       ...settings,
+      defaultBaseModel: modelId,
       modelName: modelId,
       constructModelId: modelId,
     });
@@ -588,19 +599,20 @@ const App: React.FC = () => {
   const navigationItems = foundryData.navigationItems.length
     ? foundryData.navigationItems
     : foundryNavigationItems;
+  const defaultBaseModel = resolveDefaultBaseModel(settings);
 
   const activeArtifact = useMemo(
     () => ({
       ...mockDashboardSummary.currentArtifact,
       ...foundryData.dashboard.currentArtifact,
-      baseModel: foundryData.dashboard.currentArtifact.baseModel || settings.modelName,
+      baseModel: foundryData.dashboard.currentArtifact.baseModel || defaultBaseModel,
       name: foundryData.dashboard.currentArtifact.name || `${settings.characterVoice} Model`,
       trainingMethod: foundryData.dashboard.currentArtifact.trainingMethod || settings.trainingMethod,
     }),
     [
       foundryData.dashboard.currentArtifact,
+      defaultBaseModel,
       settings.characterVoice,
-      settings.modelName,
       settings.trainingMethod,
     ]
   );
@@ -720,6 +732,7 @@ const App: React.FC = () => {
       return (
         <ArtifactsWorkbench
           activeArtifactId={dashboardSummary.workshop.activeArtifactId}
+          defaultBaseModel={defaultBaseModel}
           repository={repository}
           summary={foundryData.sectionSummaries.artifacts}
           workshop={dashboardSummary.workshop}

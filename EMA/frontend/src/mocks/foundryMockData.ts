@@ -16,6 +16,7 @@ import {
 
 export const defaultWorkspaceSettings: WorkspaceSettings = {
   huggingFaceToken: "",
+  defaultBaseModel: "mistralai/Mistral-7B-Instruct-v0.2",
   modelName: "mistralai/Mistral-7B-Instruct-v0.2",
   subjectMatter: "Paw Patrol",
   characterVoice: "Marshall",

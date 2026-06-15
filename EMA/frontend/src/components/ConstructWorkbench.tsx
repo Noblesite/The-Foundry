@@ -13,6 +13,7 @@ import {
   CreateConstructRuntimeEventRequest,
   FoundryRuntimeStatus,
   ModelArchiveEntry,
+  resolveDefaultBaseModel,
   Trial,
   TrialVerdict,
 } from "../domain/foundry";
@@ -97,6 +98,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   onRuntimeChanged,
 }) => {
   const conversationId = `construct-${construct.id}`;
+  const configuredModelTarget = settings.constructModelId || resolveDefaultBaseModel(settings);
   const [activeConstruct, setActiveConstruct] = useState(construct);
   const [activeArtifact, setActiveArtifact] = useState(artifact);
   const [messages, setMessages] = useState<ConstructMessage[]>([
@@ -116,9 +118,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [probeResult, setProbeResult] = useState<ConstructRuntimeProbeResult | null>(null);
   const [isRuntimeBusy, setIsRuntimeBusy] = useState(false);
   const [runtimeLoadPhase, setRuntimeLoadPhase] = useState<RuntimeLoadPhase>("idle");
-  const [runtimeLoadTarget, setRuntimeLoadTarget] = useState(
-    settings.constructModelId || artifact.baseModel
-  );
+  const [runtimeLoadTarget, setRuntimeLoadTarget] = useState(configuredModelTarget || artifact.baseModel);
   const [runtimeSmokeStatus, setRuntimeSmokeStatus] = useState<RuntimeSmokeStatus>("idle");
   const [runtimeSmokeMessage, setRuntimeSmokeMessage] = useState(
     "Load the current model, stream a short reply, and inspect the runtime contract."
@@ -203,7 +203,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setRuntimeMode("simulated");
     setRuntimeDetail("Using deterministic simulated token streaming.");
     setRuntimeLoadPhase("idle");
-    setRuntimeLoadTarget(settings.constructModelId || artifact.baseModel);
+    setRuntimeLoadTarget(configuredModelTarget || artifact.baseModel);
     setRuntimeSmokeStatus("idle");
     setRuntimeSmokeMessage(
       "Load the current model, stream a short reply, and inspect the runtime contract."
@@ -229,10 +229,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
             type: "handoff",
             status: "info",
             title: "Construct session ready",
-            detail: `Runtime target set to ${settings.constructModelId || artifact.baseModel}.`,
+            detail: `Runtime target set to ${configuredModelTarget || artifact.baseModel}.`,
             constructId: construct.id,
             artifactId: artifact.id,
-            modelId: settings.constructModelId || artifact.baseModel,
+            modelId: configuredModelTarget || artifact.baseModel,
             source: "frontend",
           })
           .then((event) => {
@@ -249,11 +249,11 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
               type: "handoff",
               status: "info",
               title: "Construct session ready",
-              detail: `Runtime target set to ${settings.constructModelId || artifact.baseModel}.`,
+              detail: `Runtime target set to ${configuredModelTarget || artifact.baseModel}.`,
               timestamp: new Date().toISOString(),
               constructId: construct.id,
               artifactId: artifact.id,
-              modelId: settings.constructModelId || artifact.baseModel,
+              modelId: configuredModelTarget || artifact.baseModel,
               source: "frontend",
             },
           ]);
@@ -262,7 +262,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     return () => {
       isCurrent = false;
     };
-  }, [artifact, construct, repository, settings.constructModelId]);
+  }, [artifact, configuredModelTarget, construct, repository]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -338,7 +338,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   };
 
   const runRuntimePreflight = async (modelOverride?: string) => {
-    const targetModel = modelOverride || settings.constructModelId || activeArtifact.baseModel;
+    const targetModel = modelOverride || configuredModelTarget || activeArtifact.baseModel;
     setIsPreflightingRuntime(true);
     setRuntimeLoadTarget(targetModel);
     setError(null);
@@ -414,7 +414,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   }, [handoff?.requestedAt]);
 
   const configureRuntime = async () => {
-    const targetModel = settings.constructModelId || runtimeLoadTarget || activeArtifact.baseModel;
+    const targetModel = configuredModelTarget || runtimeLoadTarget || activeArtifact.baseModel;
     setIsRuntimeBusy(true);
     setRuntimeLoadPhase("configuring");
     setRuntimeLoadTarget(targetModel);
@@ -460,7 +460,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   };
 
   const loadCurrentRuntime = async (options?: { confirmCaution?: boolean }) => {
-    const targetModel = settings.constructModelId || runtimeLoadTarget || activeArtifact.baseModel;
+    const targetModel = configuredModelTarget || runtimeLoadTarget || activeArtifact.baseModel;
     const preflight = await runRuntimePreflight(targetModel);
     const readiness = buildRuntimeReadinessSummary(preflight);
     if (!readiness.canLoad) {
@@ -1308,7 +1308,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                   <pre>{JSON.stringify(probeResult.diagnostics, null, 2)}</pre>
                 </article>
               )}
-              <span>{runtime?.modelId || settings.constructModelId}</span>
+              <span>{runtime?.modelId || configuredModelTarget}</span>
               <label className="toggle-row" htmlFor="construct-library-context">
                 <input
                   id="construct-library-context"

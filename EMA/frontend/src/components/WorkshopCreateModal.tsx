@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { CreateWorkshopRequest } from "../contracts/foundryApi";
-import { WorkspaceSettings } from "../domain/foundry";
+import { WorkspaceSettings, resolveDefaultBaseModel } from "../domain/foundry";
 
 interface WorkshopCreateModalProps {
   isOpen: boolean;
@@ -17,11 +17,12 @@ const WorkshopCreateModal: React.FC<WorkshopCreateModalProps> = ({
   onClose,
   onCreate,
 }) => {
+  const defaultBaseModel = resolveDefaultBaseModel(settings);
   const [draft, setDraft] = useState<CreateWorkshopRequest>({
     name: `${settings.subjectMatter} Workshop`,
     subject: settings.subjectMatter,
     voiceTarget: settings.characterVoice,
-    baseModel: settings.modelName,
+    baseModel: defaultBaseModel,
   });
 
   useEffect(() => {
@@ -30,10 +31,15 @@ const WorkshopCreateModal: React.FC<WorkshopCreateModalProps> = ({
         name: `${settings.subjectMatter} Workshop`,
         subject: settings.subjectMatter,
         voiceTarget: settings.characterVoice,
-        baseModel: settings.modelName,
+        baseModel: defaultBaseModel,
       });
     }
-  }, [isOpen, settings.characterVoice, settings.modelName, settings.subjectMatter]);
+  }, [
+    defaultBaseModel,
+    isOpen,
+    settings.characterVoice,
+    settings.subjectMatter,
+  ]);
 
   if (!isOpen) {
     return null;

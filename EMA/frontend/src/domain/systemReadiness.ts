@@ -4,6 +4,7 @@ import type {
   ModelArchiveEntry,
   WorkspaceSettings,
 } from "./foundry";
+import { resolveDefaultBaseModel } from "./foundry";
 import { activeFoundryDataSource } from "./dataSourceMode";
 
 export type SystemReadinessState = "ready" | "caution" | "blocked";
@@ -101,7 +102,7 @@ export const buildSystemReadinessSummary = (
 ): SystemReadinessSummary => {
   const liveApiRequired = activeFoundryDataSource.liveConstruct || activeFoundryDataSource.liveCatalog;
   const apiReachable = Boolean(status?.api.reachable);
-  const selectedModel = normalizeModelRef(settings.constructModelId || settings.modelName);
+  const selectedModel = normalizeModelRef(settings.constructModelId || resolveDefaultBaseModel(settings));
   const runtimeLoaded = Boolean(status?.construct.modelLoaded || runtime?.loaded);
   const runtimeModelId = normalizeModelRef(status?.construct.modelId || runtime?.modelId || selectedModel);
   const archiveEntry = findArchiveEntryForModel(runtimeModelId || selectedModel, archiveEntries);
