@@ -117,6 +117,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [probeModelId, setProbeModelId] = useState("sshleifer/tiny-gpt2");
   const [probeResult, setProbeResult] = useState<ConstructRuntimeProbeResult | null>(null);
   const [isRuntimeBusy, setIsRuntimeBusy] = useState(false);
+  const [isReleasingMemory, setIsReleasingMemory] = useState(false);
+  const [runtimeMemoryReleaseMessage, setRuntimeMemoryReleaseMessage] = useState<string | null>(null);
   const [runtimeLoadPhase, setRuntimeLoadPhase] = useState<RuntimeLoadPhase>("idle");
   const [runtimeLoadTarget, setRuntimeLoadTarget] = useState(configuredModelTarget || artifact.baseModel);
   const [runtimeSmokeStatus, setRuntimeSmokeStatus] = useState<RuntimeSmokeStatus>("idle");
@@ -208,6 +210,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setRuntimeSmokeMessage(
       "Load the current model, stream a short reply, and inspect the runtime contract."
     );
+    setRuntimeMemoryReleaseMessage(null);
     setHandoffNotice(null);
     setPreflightResult(null);
     setReadinessGateMessage(null);
@@ -567,6 +570,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setIsRuntimeBusy(true);
     setRuntimeLoadPhase("idle");
     setError(null);
+    setRuntimeMemoryReleaseMessage(null);
     addRuntimeTimelineEvent({
       type: "unload",
       status: "running",
@@ -597,6 +601,60 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       setError(message);
     } finally {
       setIsRuntimeBusy(false);
+    }
+  };
+
+  const releaseRuntimeMemory = async () => {
+    setIsReleasingMemory(true);
+    setRuntimeLoadPhase("idle");
+    setError(null);
+    setRuntimeMemoryReleaseMessage(null);
+    addRuntimeTimelineEvent({
+      type: "unload",
+      status: "running",
+      title: "Memory release requested",
+      detail: `Clearing runtime cache and requesting memory cleanup for ${shortModelId(
+        runtime?.modelId || runtimeLoadTarget
+      )}.`,
+    });
+    try {
+      const runtimeStatus = await repository.releaseConstructRuntimeMemory();
+      await refreshRuntimeTimeline();
+      setRuntime(runtimeStatus);
+      setRuntimeMode(runtimeStatus.mode);
+      setRuntimeDetail(runtimeStatus.detail);
+      onRuntimeChanged?.(runtimeStatus);
+      const cleanup = (runtimeStatus.diagnostics?.memoryCleanup || {}) as Record<string, unknown>;
+      const cacheBefore =
+        typeof cleanup.cacheSizeBefore === "number" ? cleanup.cacheSizeBefore : 0;
+      const cacheAfter =
+        typeof cleanup.cacheSizeAfter === "number" ? cleanup.cacheSizeAfter : 0;
+      const methods = Array.isArray(cleanup.methods)
+        ? cleanup.methods.filter((method): method is string => typeof method === "string")
+        : [];
+      setRuntimeMemoryReleaseMessage(
+        `Runtime memory released. Cache ${cacheBefore} -> ${cacheAfter}${
+          methods.length ? ` via ${methods.join(", ")}` : ""
+        }.`
+      );
+      addRuntimeTimelineEvent({
+        type: "unload",
+        status: cleanup.status === "warning" ? "warning" : "passed",
+        title: "Memory released",
+        detail: `Runtime cache ${cacheBefore} -> ${cacheAfter}. Metrics refreshed after cleanup.`,
+      });
+    } catch (runtimeError: unknown) {
+      const message =
+        runtimeError instanceof Error ? runtimeError.message : "Could not release runtime memory.";
+      addRuntimeTimelineEvent({
+        type: "unload",
+        status: "failed",
+        title: "Memory release failed",
+        detail: message,
+      });
+      setError(message);
+    } finally {
+      setIsReleasingMemory(false);
     }
   };
 
@@ -862,6 +920,18 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
 
   const runtimeMemory = getRuntimeMemory(runtime);
   const loadedModel = getLoadedModelSnapshot(runtime);
+  const memoryCleanup = (runtime?.diagnostics?.memoryCleanup || {}) as Record<string, unknown>;
+  const memoryCleanupStatus =
+    typeof memoryCleanup.status === "string" ? memoryCleanup.status : "idle";
+  const memoryCleanupFinishedAt =
+    typeof memoryCleanup.finishedAt === "string" ? memoryCleanup.finishedAt : null;
+  const memoryCleanupMethods = Array.isArray(memoryCleanup.methods)
+    ? memoryCleanup.methods.filter((method): method is string => typeof method === "string")
+    : [];
+  const memoryCleanupCacheBefore =
+    typeof memoryCleanup.cacheSizeBefore === "number" ? memoryCleanup.cacheSizeBefore : null;
+  const memoryCleanupCacheAfter =
+    typeof memoryCleanup.cacheSizeAfter === "number" ? memoryCleanup.cacheSizeAfter : null;
   const apiReachable = Boolean(sourceStatus?.api.reachable);
   const constructReachable = Boolean(sourceStatus?.construct.reachable);
   const sourceReachabilityLabel = sourceStatus
@@ -892,9 +962,19 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     readinessSummary?.requiresConfirmation === true &&
     confirmedCautionTarget !== currentReadinessTarget;
   const loadButtonDisabled =
-    isRuntimeBusy || isPreflightingRuntime || isSending || readinessBlocksLoad || readinessNeedsConfirmation;
+    isRuntimeBusy ||
+    isPreflightingRuntime ||
+    isSending ||
+    isReleasingMemory ||
+    readinessBlocksLoad ||
+    readinessNeedsConfirmation;
   const smokeButtonDisabled =
-    isRuntimeBusy || isSending || isPreflightingRuntime || readinessBlocksLoad || readinessNeedsConfirmation;
+    isRuntimeBusy ||
+    isSending ||
+    isPreflightingRuntime ||
+    isReleasingMemory ||
+    readinessBlocksLoad ||
+    readinessNeedsConfirmation;
   const loadButtonLabel = isRuntimeBusy
     ? runtimePhaseLabel
     : readinessBlocksLoad
@@ -1082,16 +1162,39 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                   <span>Duration</span>
                   <strong>{formatLoadDuration(loadEvent.durationSeconds)}</strong>
                 </div>
+                <div>
+                  <span>Memory cleanup</span>
+                  <strong>{memoryCleanupStatus}</strong>
+                </div>
+                <div>
+                  <span>Cleanup at</span>
+                  <strong>{formatRuntimeTimestamp(memoryCleanupFinishedAt)}</strong>
+                </div>
+                <div>
+                  <span>Cleanup methods</span>
+                  <strong>{memoryCleanupMethods.length ? memoryCleanupMethods.join(", ") : "n/a"}</strong>
+                </div>
+                <div>
+                  <span>Cache released</span>
+                  <strong>
+                    {memoryCleanupCacheBefore !== null && memoryCleanupCacheAfter !== null
+                      ? `${memoryCleanupCacheBefore} -> ${memoryCleanupCacheAfter}`
+                      : "n/a"}
+                  </strong>
+                </div>
               </div>
               {loadEvent.failureReason && (
                 <p className="runtime-load-failure">
                   Load failed: {loadEvent.failureReason}
                 </p>
               )}
+              {runtimeMemoryReleaseMessage && (
+                <p className="save-state success-state">{runtimeMemoryReleaseMessage}</p>
+              )}
               <div className="runtime-action-row">
                 <button
                   className="button-secondary button-compact"
-                  disabled={isPreflightingRuntime || isRuntimeBusy || isSending}
+                  disabled={isPreflightingRuntime || isRuntimeBusy || isSending || isReleasingMemory}
                   onClick={() => void runRuntimePreflight()}
                   type="button"
                 >
@@ -1100,7 +1203,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 </button>
                 <button
                   className="button-secondary button-compact"
-                  disabled={isRuntimeBusy}
+                  disabled={isRuntimeBusy || isReleasingMemory}
                   onClick={configureRuntime}
                   type="button"
                 >
@@ -1125,12 +1228,22 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 </button>
                 <button
                   className="button-secondary button-compact"
-                  disabled={isRuntimeBusy}
+                  disabled={isRuntimeBusy || isReleasingMemory}
                   onClick={unloadRuntime}
                   type="button"
                 >
                   <i className="fas fa-power-off" aria-hidden="true" />
                   Unload
+                </button>
+                <button
+                  className="button-secondary button-compact"
+                  disabled={isRuntimeBusy || isSending || isReleasingMemory}
+                  onClick={() => void releaseRuntimeMemory()}
+                  title="Clear cached model references and request Python/CUDA/MPS memory cleanup."
+                  type="button"
+                >
+                  <i className="fas fa-broom" aria-hidden="true" />
+                  {isReleasingMemory ? "Releasing" : "Release Memory"}
                 </button>
               </div>
               {preflightResult && (

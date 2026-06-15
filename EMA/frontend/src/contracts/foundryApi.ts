@@ -72,6 +72,7 @@ export const foundryApiRoutes = {
   preflightConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/preflight`,
   probeConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/probe`,
   unloadConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/unload`,
+  releaseConstructRuntimeMemory: `${FOUNDRY_API_VERSION}/constructs/runtime/release-memory`,
   constructRuntimeEvents: `${FOUNDRY_API_VERSION}/constructs/runtime/events`,
   modelArchive: `${FOUNDRY_API_VERSION}/archive/models`,
   testHuggingFaceAuth: `${FOUNDRY_API_VERSION}/archive/huggingface/auth/test`,

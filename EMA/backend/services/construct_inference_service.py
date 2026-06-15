@@ -49,6 +49,13 @@ class ConstructInferenceService:
         }
         self._runtime_events: list[Dict[str, Any]] = []
         self._load_lock = asyncio.Lock()
+        self._last_memory_cleanup: Dict[str, Any] = {
+            "status": "idle",
+            "startedAt": None,
+            "finishedAt": None,
+            "cacheSizeBefore": 0,
+            "cacheSizeAfter": 0,
+        }
 
     def describe_runtime(self) -> InferenceRuntime:
         active_loaded_model_id = (
@@ -89,6 +96,7 @@ class ConstructInferenceService:
             "cacheSize": len(self._model_cache),
         }
         diagnostics["loadEvent"] = dict(self._last_load_event)
+        diagnostics["memoryCleanup"] = dict(self._last_memory_cleanup)
         return {
             "mode": runtime.mode,
             "status": runtime.status,
@@ -283,6 +291,7 @@ class ConstructInferenceService:
             self.device_preference = previous_device
 
     async def unload(self) -> Dict[str, Any]:
+        cache_size_before = len(self._model_cache)
         self._model_cache.clear()
         self._active_loaded_model_id = ""
         self._record_load_event(
@@ -300,8 +309,36 @@ class ConstructInferenceService:
             runtime_status="configured" if self.mode == "transformers" else "fallback",
             source="backend",
         )
-        self._clean_runtime_memory()
+        self._clean_runtime_memory(cache_size_before=cache_size_before)
         return self.runtime_payload()
+
+    async def release_memory(self) -> Dict[str, Any]:
+        cache_size_before = len(self._model_cache)
+        model_id = self._active_loaded_model_id or self.model_id or ""
+        self._model_cache.clear()
+        self._active_loaded_model_id = ""
+        self._record_load_event(
+            status="released",
+            model_id=model_id,
+            device=self.device_preference,
+            duration_seconds=0,
+        )
+        cleanup = self._clean_runtime_memory(cache_size_before=cache_size_before)
+        self.record_runtime_event(
+            event_type="unload",
+            status="passed",
+            title="Runtime memory released",
+            detail=(
+                "Construct cleared cached model references and requested Python, CUDA, "
+                "and MPS memory cleanup."
+            ),
+            model_id=model_id,
+            runtime_status="configured" if self.mode == "transformers" else "fallback",
+            source="backend",
+        )
+        runtime = self.runtime_payload()
+        runtime["diagnostics"]["memoryCleanup"] = cleanup
+        return runtime
 
     async def probe_runtime(
         self,
@@ -488,7 +525,7 @@ class ConstructInferenceService:
             if self._model_cache:
                 self._model_cache.clear()
                 self._active_loaded_model_id = ""
-                self._clean_runtime_memory()
+                self._clean_runtime_memory(cache_size_before=1)
 
             tokenizer, model = await asyncio.to_thread(self._load_transformers_model_sync, model_name)
             self._model_cache[model_name] = {"tokenizer": tokenizer, "model": model}
@@ -712,8 +749,12 @@ class ConstructInferenceService:
             return f"Estimated load is {estimated}GB and exceeds {available}GB available."
         return "Could not calculate a reliable memory estimate from config metadata."
 
-    def _clean_runtime_memory(self, torch_module=None) -> None:
+    def _clean_runtime_memory(self, torch_module=None, cache_size_before: Optional[int] = None) -> Dict[str, Any]:
+        started_at = self._utc_now()
+        before = self._runtime_diagnostics().get("memory", {})
         gc.collect()
+        cleanup_methods = ["python-gc"]
+        error_message = None
         try:
             torch = torch_module
             if torch is None:
@@ -724,10 +765,26 @@ class ConstructInferenceService:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 torch.cuda.ipc_collect()
+                cleanup_methods.extend(["cuda-empty-cache", "cuda-ipc-collect"])
             if hasattr(torch, "mps") and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
                 torch.mps.empty_cache()
-        except Exception:
-            pass
+                cleanup_methods.append("mps-empty-cache")
+        except Exception as error:
+            error_message = str(error)
+
+        after = self._runtime_diagnostics().get("memory", {})
+        self._last_memory_cleanup = {
+            "status": "warning" if error_message else "passed",
+            "startedAt": started_at,
+            "finishedAt": self._utc_now(),
+            "cacheSizeBefore": len(self._model_cache) if cache_size_before is None else cache_size_before,
+            "cacheSizeAfter": len(self._model_cache),
+            "methods": cleanup_methods,
+            "before": before,
+            "after": after,
+            "error": error_message,
+        }
+        return dict(self._last_memory_cleanup)
 
     def _loaded_device(self, model_id: str) -> str:
         cached = self._model_cache.get(model_id)

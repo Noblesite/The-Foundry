@@ -364,6 +364,11 @@ async def unload_foundry_construct_runtime_endpoint():
     return api_envelope(await construct_inference_service.unload())
 
 
+@app.post("/api/v1/constructs/runtime/release-memory")
+async def release_foundry_construct_runtime_memory_endpoint():
+    return api_envelope(await construct_inference_service.release_memory())
+
+
 @app.get("/api/v1/archive/models")
 async def foundry_model_archive_endpoint():
     return api_envelope(await huggingface_model_service.list_archive_entries())

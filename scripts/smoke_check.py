@@ -404,10 +404,18 @@ def run_huggingface_auth_contract_check() -> int:
 
 def run_construct_memory_cleanup_contract_check() -> int:
     construct_service = PACKAGE_ROOT / "backend" / "services" / "construct_inference_service.py"
+    api_server = PACKAGE_ROOT / "backend" / "api_server.py"
+    frontend_contracts = PACKAGE_ROOT / "frontend" / "src" / "contracts" / "foundryApi.ts"
+    frontend_repository = PACKAGE_ROOT / "frontend" / "src" / "services" / "foundryRepository.ts"
     service_source = construct_service.read_text(encoding="utf-8")
+    api_source = api_server.read_text(encoding="utf-8")
+    contract_source = frontend_contracts.read_text(encoding="utf-8")
+    repository_source = frontend_repository.read_text(encoding="utf-8")
 
     required_patterns = (
         "_clean_runtime_memory",
+        "release_memory",
+        "memoryCleanup",
         "gc.collect()",
         "torch.cuda.empty_cache()",
         "torch.cuda.ipc_collect()",
@@ -418,6 +426,29 @@ def run_construct_memory_cleanup_contract_check() -> int:
     missing = [pattern for pattern in required_patterns if pattern not in service_source]
     if missing:
         return fail("Construct runtime memory cleanup contract is missing: " + ", ".join(missing))
+
+    required_api_patterns = (
+        "/api/v1/constructs/runtime/release-memory",
+        "release_foundry_construct_runtime_memory_endpoint",
+    )
+    missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
+    if missing_api:
+        return fail("Construct runtime memory cleanup API is missing: " + ", ".join(missing_api))
+
+    required_frontend_patterns = (
+        "releaseConstructRuntimeMemory:",
+        "releaseConstructRuntimeMemory",
+    )
+    missing_frontend = [
+        pattern
+        for pattern in required_frontend_patterns
+        if pattern not in contract_source and pattern not in repository_source
+    ]
+    if missing_frontend:
+        return fail(
+            "Construct runtime memory cleanup frontend contract is missing: "
+            + ", ".join(missing_frontend)
+        )
 
     print("OK: Construct runtime memory cleanup contract is present.")
     return 0

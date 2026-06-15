@@ -182,6 +182,7 @@ export interface FoundryRepository {
     request: ProbeConstructRuntimeRequest
   ) => Promise<ConstructRuntimeProbeResult>;
   unloadConstructRuntime: () => Promise<ConstructRuntime>;
+  releaseConstructRuntimeMemory: () => Promise<ConstructRuntime>;
   listModelArchiveEntries: () => Promise<ModelArchiveEntry[]>;
   testHuggingFaceAuth: (
     request: TestHuggingFaceAuthRequest
@@ -1403,6 +1404,7 @@ export const mockFoundryRepository: FoundryRepository = {
     },
   }),
   unloadConstructRuntime: async () => {
+    const cacheSizeBefore = mockConstructRuntime.loaded ? 1 : 0;
     mockRuntimeLoadEvent = {
       status: "unloaded",
       modelId: mockConstructRuntime.modelId,
@@ -1419,13 +1421,64 @@ export const mockFoundryRepository: FoundryRepository = {
     };
     mockConstructRuntime = {
       ...nextRuntime,
-      diagnostics: mockRuntimeDiagnostics(nextRuntime),
+      diagnostics: {
+        ...mockRuntimeDiagnostics(nextRuntime),
+        memoryCleanup: {
+          status: "passed",
+          startedAt: new Date().toISOString(),
+          finishedAt: new Date().toISOString(),
+          cacheSizeBefore,
+          cacheSizeAfter: 0,
+          methods: ["python-gc", "mock-runtime-cache"],
+        },
+      },
     };
     recordMockConstructRuntimeEvent({
       type: "unload",
       status: "passed",
       title: "Mock runtime unloaded",
       detail: "The mock Construct runtime returned to its configured state.",
+      modelId: nextRuntime.modelId,
+      runtimeStatus: mockConstructRuntime.status,
+      source: "mock",
+    });
+    return mockConstructRuntime;
+  },
+  releaseConstructRuntimeMemory: async () => {
+    const cacheSizeBefore = mockConstructRuntime.loaded ? 1 : 0;
+    mockRuntimeLoadEvent = {
+      status: "released",
+      modelId: mockConstructRuntime.modelId,
+      device: mockConstructRuntime.device,
+      durationSeconds: 0,
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      failureReason: null,
+    };
+    const nextRuntime = {
+      ...mockConstructRuntime,
+      status: mockConstructRuntime.mode === "simulated" ? "fallback" : "configured",
+      loaded: mockConstructRuntime.mode === "simulated",
+    };
+    mockConstructRuntime = {
+      ...nextRuntime,
+      diagnostics: {
+        ...mockRuntimeDiagnostics(nextRuntime),
+        memoryCleanup: {
+          status: "passed",
+          startedAt: new Date().toISOString(),
+          finishedAt: new Date().toISOString(),
+          cacheSizeBefore,
+          cacheSizeAfter: 0,
+          methods: ["python-gc", "mock-runtime-cache"],
+        },
+      },
+    };
+    recordMockConstructRuntimeEvent({
+      type: "unload",
+      status: "passed",
+      title: "Mock runtime memory released",
+      detail: "The mock Construct runtime cleared cached model references.",
       modelId: nextRuntime.modelId,
       runtimeStatus: mockConstructRuntime.status,
       source: "mock",
@@ -1967,6 +2020,12 @@ export const apiFoundryRepository: FoundryRepository = {
         foundryApiRoutes.unloadConstructRuntime
       )
     ),
+  releaseConstructRuntimeMemory: async () =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ConstructRuntime>>(
+        foundryApiRoutes.releaseConstructRuntimeMemory
+      )
+    ),
   listModelArchiveEntries: async () =>
     archiveRequest(
       apiClient.get<ApiEnvelope<ModelArchiveEntry[]>>(foundryApiRoutes.modelArchive),
@@ -2076,6 +2135,7 @@ const constructApiOverrides: Pick<
   | "preflightConstructRuntime"
   | "probeConstructRuntime"
   | "unloadConstructRuntime"
+  | "releaseConstructRuntimeMemory"
   | "listModelArchiveEntries"
   | "testHuggingFaceAuth"
   | "searchArchiveModels"
@@ -2101,6 +2161,7 @@ const constructApiOverrides: Pick<
   preflightConstructRuntime: apiFoundryRepository.preflightConstructRuntime,
   probeConstructRuntime: apiFoundryRepository.probeConstructRuntime,
   unloadConstructRuntime: apiFoundryRepository.unloadConstructRuntime,
+  releaseConstructRuntimeMemory: apiFoundryRepository.releaseConstructRuntimeMemory,
   listModelArchiveEntries: apiFoundryRepository.listModelArchiveEntries,
   testHuggingFaceAuth: apiFoundryRepository.testHuggingFaceAuth,
   searchArchiveModels: apiFoundryRepository.searchArchiveModels,

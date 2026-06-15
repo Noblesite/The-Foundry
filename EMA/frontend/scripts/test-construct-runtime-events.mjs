@@ -167,6 +167,26 @@ assertIncludes(
 );
 assertIncludes(
   files.repository,
+  "releaseConstructRuntimeMemory:",
+  "Repository exposes runtime memory release"
+);
+assertIncludes(
+  files.contracts,
+  "releaseConstructRuntimeMemory:",
+  "Frontend contract exposes runtime memory release route"
+);
+assertIncludes(
+  files.construct,
+  "releaseRuntimeMemory",
+  "Construct workbench can request runtime memory release"
+);
+assertIncludes(
+  files.construct,
+  "Release Memory",
+  "Construct workbench renders runtime memory release action"
+);
+assertIncludes(
+  files.repository,
   "mockConstructRuntimeEvents",
   "Mock runtime event storage"
 );
