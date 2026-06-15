@@ -15,6 +15,10 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_MODEL_ARCHIVE_DIR = BASE_DIR / "runtime" / "models" / "huggingface"
 
 
+class HuggingFaceAccessError(ValueError):
+    """Raised when Hugging Face rejects or requires credentials."""
+
+
 class HuggingFaceModelService:
     """
     Archive-facing Hugging Face model discovery.
@@ -55,7 +59,7 @@ class HuggingFaceModelService:
         )
         return {
             "models": models,
-            "platform": self.platform_profile(),
+            "platform": self.platform_profile(username=username, token=token),
         }
 
     async def inspect_model(
@@ -85,7 +89,7 @@ class HuggingFaceModelService:
         model["cached"] = bool(archive_entry and archive_entry.get("status") in {"cached", "ready"})
         return {
             "model": model,
-            "platform": self.platform_profile(),
+            "platform": self.platform_profile(username=username, token=token),
         }
 
     async def register_remote_model(
@@ -170,7 +174,7 @@ class HuggingFaceModelService:
             return {
                 "model": model,
                 "archiveEntry": entry,
-                "platform": self.platform_profile(),
+                "platform": self.platform_profile(username=username, token=token),
             }
         except Exception:
             if model:
@@ -366,7 +370,7 @@ class HuggingFaceModelService:
                 phase="failed",
                 progress=100,
                 detail="Model download failed.",
-                error=str(error),
+                error=self._friendly_huggingface_error(error),
             )
             try:
                 await self.catalog_service.upsert_model_archive_entry(
@@ -394,7 +398,61 @@ class HuggingFaceModelService:
             raise asyncio.CancelledError("Download canceled.")
 
     async def _run_hf_query(self, fn, **kwargs):
-        return await asyncio.to_thread(fn, **kwargs)
+        try:
+            return await asyncio.to_thread(fn, **kwargs)
+        except Exception as error:
+            friendly_message = self._friendly_huggingface_error(error)
+            if friendly_message != str(error):
+                raise HuggingFaceAccessError(friendly_message) from error
+            raise
+
+    def _friendly_huggingface_error(self, error: Exception) -> str:
+        message = self._redact_secret(str(error)).strip()
+        lowered = message.lower()
+
+        if any(
+            marker in lowered
+            for marker in (
+                "invalid token",
+                "token is invalid",
+                "unauthorized",
+                "401 client error",
+                "401 unauthorized",
+                "bad credentials",
+            )
+        ):
+            return (
+                "Hugging Face rejected the saved token. Check Settings, paste a current "
+                "access token, and make sure it belongs to the selected username."
+            )
+
+        if any(
+            marker in lowered
+            for marker in (
+                "gated repo",
+                "gated repository",
+                "restricted",
+                "access to model",
+                "must be authenticated",
+                "private repo",
+                "private repository",
+            )
+        ):
+            return (
+                "This model is gated or private. Sign in to Hugging Face, accept the "
+                "model terms if required, then save your username and access token in Settings."
+            )
+
+        if "repository not found" in lowered or "404 client error" in lowered:
+            return (
+                "Hugging Face could not find that model, or the account saved in Settings "
+                "does not have access to it."
+            )
+
+        return message or "Hugging Face returned an unknown error."
+
+    def _redact_secret(self, value: str) -> str:
+        return re.sub(r"hf_[A-Za-z0-9_\\-]{8,}", "hf_***", value)
 
     def _search_models_sync(
         self,
@@ -553,7 +611,11 @@ class HuggingFaceModelService:
         normalized = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw_value).strip("-")
         return normalized or "model"
 
-    def platform_profile(self) -> Dict[str, Any]:
+    def platform_profile(
+        self,
+        username: Optional[str] = None,
+        token: Optional[str] = None,
+    ) -> Dict[str, Any]:
         memory = psutil.virtual_memory()
         accelerator = "cpu"
         accelerator_memory_bytes = 0
@@ -589,6 +651,11 @@ class HuggingFaceModelService:
             "acceleratorMemoryBytes": accelerator_memory_bytes,
             "unifiedMemory": accelerator == "mps",
             "torch": torch_details,
+            "auth": {
+                "provider": "huggingface",
+                "username": (username or "").strip() or None,
+                "tokenPresent": bool((token or "").strip()),
+            },
         }
 
     def estimate_fit(

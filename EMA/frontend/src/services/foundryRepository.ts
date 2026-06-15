@@ -1,5 +1,6 @@
 import {
   ApiEnvelope,
+  ApiErrorEnvelope,
   AcademyActionDto,
   AcademyConceptDto,
   ArchiveModelEvictDto,
@@ -541,6 +542,70 @@ const buildMockEvaluationReport = (
 };
 
 const unwrap = <T>(response: { data: ApiEnvelope<T> }): T => response.data.data;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const normalizeHuggingFaceError = (message: string) => {
+  const lowered = message.toLowerCase();
+  if (
+    lowered.includes("rejected the saved token") ||
+    lowered.includes("gated or private") ||
+    lowered.includes("could not find that model")
+  ) {
+    return message;
+  }
+  if (
+    lowered.includes("invalid token") ||
+    lowered.includes("token is invalid") ||
+    lowered.includes("unauthorized") ||
+    lowered.includes("401")
+  ) {
+    return "Hugging Face rejected the saved token. Check Settings, paste a current access token, and make sure it belongs to the selected username.";
+  }
+  if (
+    lowered.includes("gated") ||
+    lowered.includes("private") ||
+    lowered.includes("restricted") ||
+    lowered.includes("access to model")
+  ) {
+    return "This model is gated or private. Sign in to Hugging Face, accept the model terms if required, then save your username and access token in Settings.";
+  }
+  if (lowered.includes("repository not found") || lowered.includes("404")) {
+    return "Hugging Face could not find that model, or the account saved in Settings does not have access to it.";
+  }
+  return message;
+};
+
+const apiErrorMessage = (error: unknown, fallback: string) => {
+  if (isRecord(error) && isRecord(error.response)) {
+    const data = error.response.data;
+    if (isRecord(data)) {
+      const detail = data.detail;
+      if (typeof detail === "string") {
+        return normalizeHuggingFaceError(detail);
+      }
+      const envelope = data as Partial<ApiErrorEnvelope>;
+      if (envelope.error?.message) {
+        return normalizeHuggingFaceError(envelope.error.message);
+      }
+    }
+  }
+
+  if (error instanceof Error && error.message) {
+    return normalizeHuggingFaceError(error.message);
+  }
+
+  return fallback;
+};
+
+const archiveRequest = async <T>(request: Promise<{ data: ApiEnvelope<T> }>, fallback: string) => {
+  try {
+    return unwrap(await request);
+  } catch (error: unknown) {
+    throw new Error(apiErrorMessage(error, fallback));
+  }
+};
 
 const buildApiUnavailableStatus = (detail: string): FoundryRuntimeStatus => {
   const checkedAt = new Date().toISOString();
@@ -1838,70 +1903,82 @@ export const apiFoundryRepository: FoundryRepository = {
       )
     ),
   listModelArchiveEntries: async () =>
-    unwrap(await apiClient.get<ApiEnvelope<ModelArchiveEntry[]>>(foundryApiRoutes.modelArchive)),
+    archiveRequest(
+      apiClient.get<ApiEnvelope<ModelArchiveEntry[]>>(foundryApiRoutes.modelArchive),
+      "Could not load Model Archive entries."
+    ),
   searchArchiveModels: async (request) =>
-    unwrap(
-      await apiClient.post<ApiEnvelope<ArchiveModelSearchDto>>(
+    archiveRequest(
+      apiClient.post<ApiEnvelope<ArchiveModelSearchDto>>(
         foundryApiRoutes.searchArchiveModels,
         request
-      )
+      ),
+      "Could not search Hugging Face models."
     ),
   inspectArchiveModel: async (request) =>
-    unwrap(
-      await apiClient.post<ApiEnvelope<ArchiveModelInspectDto>>(
+    archiveRequest(
+      apiClient.post<ApiEnvelope<ArchiveModelInspectDto>>(
         foundryApiRoutes.inspectArchiveModel,
         request
-      )
+      ),
+      "Could not inspect Hugging Face model."
     ),
   registerArchiveModel: async (request) =>
-    unwrap(
-      await apiClient.post<ApiEnvelope<ArchiveModelRegisterDto>>(
+    archiveRequest(
+      apiClient.post<ApiEnvelope<ArchiveModelRegisterDto>>(
         foundryApiRoutes.registerArchiveModel,
         request
-      )
+      ),
+      "Could not register Hugging Face model."
     ),
   downloadArchiveModel: async (request) =>
-    unwrap(
-      await apiClient.post<ApiEnvelope<ArchiveModelDownloadDto>>(
+    archiveRequest(
+      apiClient.post<ApiEnvelope<ArchiveModelDownloadDto>>(
         foundryApiRoutes.downloadArchiveModel,
         request
-      )
+      ),
+      "Could not download Hugging Face model."
     ),
   evictArchiveModel: async (request) =>
-    unwrap(
-      await apiClient.post<ApiEnvelope<ArchiveModelEvictDto>>(
+    archiveRequest(
+      apiClient.post<ApiEnvelope<ArchiveModelEvictDto>>(
         foundryApiRoutes.evictArchiveModel,
         request
-      )
+      ),
+      "Could not evict Archive model."
     ),
   clearMockArchiveState: async () => ({
     archiveEntries: await apiFoundryRepository.listModelArchiveEntries(),
     downloadJobs: await apiFoundryRepository.listModelDownloadJobs(),
   }),
   startModelDownloadJob: async (request) =>
-    unwrap(
-      await apiClient.post<ApiEnvelope<ModelDownloadJobDto>>(
+    archiveRequest(
+      apiClient.post<ApiEnvelope<ModelDownloadJobDto>>(
         foundryApiRoutes.startModelDownloadJob,
         request
-      )
+      ),
+      "Could not start model download job."
     ),
   listModelDownloadJobs: async () =>
-    unwrap(
-      await apiClient.get<ApiEnvelope<ModelDownloadJobDto[]>>(
+    archiveRequest(
+      apiClient.get<ApiEnvelope<ModelDownloadJobDto[]>>(
         foundryApiRoutes.modelDownloadJobs
-      )
+      ),
+      "Could not load model download jobs."
     ),
   getModelDownloadJob: async (jobId) =>
-    unwrap(
-      await apiClient.get<ApiEnvelope<ModelDownloadJobDto>>(
+    archiveRequest(
+      apiClient.get<ApiEnvelope<ModelDownloadJobDto>>(
         foundryApiRoutes.modelDownloadJob(jobId)
-      )
+      ),
+      "Could not load model download job."
     ),
   cancelModelDownloadJob: async (jobId) =>
-    unwrap(
-      await apiClient.post<ApiEnvelope<ModelDownloadJobDto>>(
+    archiveRequest(
+      apiClient.post<ApiEnvelope<ModelDownloadJobDto>>(
         foundryApiRoutes.cancelModelDownloadJob(jobId)
-      )
+      ),
+      "Could not cancel model download job."
     ),
 };
 

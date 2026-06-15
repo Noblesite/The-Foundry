@@ -447,6 +447,11 @@ export interface ModelPlatformProfile {
   acceleratorMemoryBytes: number;
   unifiedMemory: boolean;
   torch: Record<string, unknown>;
+  auth?: {
+    provider: "huggingface" | string;
+    username?: string | null;
+    tokenPresent: boolean;
+  };
 }
 
 export interface ModelFitEstimate {

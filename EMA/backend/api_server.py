@@ -379,6 +379,8 @@ async def search_foundry_archive_models_endpoint(data: SearchArchiveModelsInput)
                 token=data.token,
             )
         )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
     except Exception as error:
         raise HTTPException(status_code=502, detail=f"Hugging Face model search failed: {error}")
 

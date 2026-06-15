@@ -340,6 +340,60 @@ def run_model_download_job_contract_check() -> int:
     return 0
 
 
+def run_huggingface_auth_contract_check() -> int:
+    api_server = PACKAGE_ROOT / "backend" / "api_server.py"
+    hf_service = PACKAGE_ROOT / "backend" / "services" / "huggingface_model_service.py"
+    frontend_contract = PACKAGE_ROOT / "frontend" / "src" / "contracts" / "foundryApi.ts"
+    frontend_repository = PACKAGE_ROOT / "frontend" / "src" / "services" / "foundryRepository.ts"
+    frontend_artifacts = PACKAGE_ROOT / "frontend" / "src" / "components" / "ArtifactsWorkbench.tsx"
+    api_source = api_server.read_text(encoding="utf-8")
+    service_source = hf_service.read_text(encoding="utf-8")
+    contract_source = frontend_contract.read_text(encoding="utf-8")
+    repository_source = frontend_repository.read_text(encoding="utf-8")
+    artifacts_source = frontend_artifacts.read_text(encoding="utf-8")
+
+    required_api_patterns = (
+        "username: str | None = None",
+        "username=data.username",
+    )
+    missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
+    if missing_api:
+        return fail("Hugging Face auth API boundary is missing: " + ", ".join(missing_api))
+
+    required_service_patterns = (
+        "HuggingFaceAccessError",
+        "_validate_auth_pair",
+        "_friendly_huggingface_error",
+        "_redact_secret",
+        "\"tokenPresent\": bool",
+    )
+    missing_service = [
+        pattern for pattern in required_service_patterns if pattern not in service_source
+    ]
+    if missing_service:
+        return fail("Hugging Face auth service handling is missing: " + ", ".join(missing_service))
+
+    required_frontend_patterns = (
+        "username?: string",
+        "normalizeHuggingFaceError",
+        "archiveRequest",
+        "huggingFaceAuthLabel",
+        "Using anonymous Hugging Face access",
+    )
+    missing_frontend = [
+        pattern
+        for pattern in required_frontend_patterns
+        if pattern not in contract_source
+        and pattern not in repository_source
+        and pattern not in artifacts_source
+    ]
+    if missing_frontend:
+        return fail("Hugging Face auth frontend handling is missing: " + ", ".join(missing_frontend))
+
+    print("OK: Hugging Face auth handling contract is present.")
+    return 0
+
+
 def run_chat_service_fake_engine_check() -> int:
     if str(PACKAGE_ROOT) not in sys.path:
         sys.path.insert(0, str(PACKAGE_ROOT))
@@ -401,6 +455,7 @@ def main() -> int:
         run_construct_runtime_event_contract_check,
         run_foundry_runtime_status_contract_check,
         run_model_download_job_contract_check,
+        run_huggingface_auth_contract_check,
         run_chat_service_fake_engine_check,
     )
     failures = sum(check() for check in checks)

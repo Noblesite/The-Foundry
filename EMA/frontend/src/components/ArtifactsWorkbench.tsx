@@ -82,6 +82,9 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     }),
     [settings.huggingFaceToken, settings.huggingFaceUsername]
   );
+  const huggingFaceAuthLabel = huggingFaceAuth.username
+    ? `Using Hugging Face auth for ${huggingFaceAuth.username}`
+    : "Using anonymous Hugging Face access";
 
   useEffect(() => {
     let isCurrent = true;
@@ -665,6 +668,12 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
             {isSearchingModels ? "Searching" : "Search"}
           </button>
         </div>
+        <p className="save-state">
+          {huggingFaceAuthLabel}
+          {huggingFaceAuth.username && !huggingFaceAuth.token
+            ? ". Add a token in Settings before opening gated or private models."
+            : "."}
+        </p>
 
         <div className="model-browser-grid">
           <div className="model-result-list" aria-label="Model search results">

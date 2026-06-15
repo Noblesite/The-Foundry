@@ -66,6 +66,26 @@ assertIncludes(
   "Artifacts forwards Hugging Face auth to Archive requests"
 );
 assertIncludes(
+  files.artifacts,
+  "huggingFaceAuthLabel",
+  "Artifacts shows active Hugging Face auth identity"
+);
+assertIncludes(
+  files.artifacts,
+  "Using anonymous Hugging Face access",
+  "Artifacts identifies anonymous Hugging Face mode"
+);
+assertIncludes(
+  files.repository,
+  "normalizeHuggingFaceError",
+  "Repository normalizes Hugging Face auth errors"
+);
+assertIncludes(
+  files.repository,
+  "archiveRequest",
+  "Repository wraps Archive requests with friendly errors"
+);
+assertIncludes(
   files.app,
   "aria-label={`Open ${item.label}`}",
   "Sidebar navigation exposes deterministic accessible labels"
