@@ -18,7 +18,10 @@ import {
 } from "../domain/foundry";
 import { buildRuntimeReadinessSummary } from "../domain/constructReadiness";
 import { activeFoundryDataSource } from "../domain/dataSourceMode";
-import { SystemReadinessModelAction } from "../domain/systemReadiness";
+import {
+  ModelPreparationActivity,
+  SystemReadinessModelAction,
+} from "../domain/systemReadiness";
 import {
   formatLoadDuration,
   formatRuntimeMemory,
@@ -74,6 +77,7 @@ interface ConstructWorkbenchProps {
   settings: WorkspaceSettings;
   sourceStatus?: FoundryRuntimeStatus | null;
   archiveEntries?: ModelArchiveEntry[];
+  preparationActivity?: ModelPreparationActivity;
   onPrepareModel?: (action: SystemReadinessModelAction) => void;
   onRuntimeChanged?: (runtime: ConstructRuntime) => void;
 }
@@ -86,6 +90,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   settings,
   sourceStatus,
   archiveEntries = [],
+  preparationActivity,
   onPrepareModel,
   onRuntimeChanged,
 }) => {
@@ -1021,6 +1026,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 sourceStatus={sourceStatus}
                 runtime={runtime}
                 archiveEntries={archiveEntries}
+                preparationActivity={preparationActivity}
                 onPrepareModel={onPrepareModel}
               />
               <div className="runtime-load-meter" aria-label={`Runtime load ${runtimePhaseLabel}`}>

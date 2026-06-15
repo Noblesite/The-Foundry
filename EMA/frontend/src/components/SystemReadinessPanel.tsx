@@ -6,6 +6,7 @@ import type {
 } from "../domain/foundry";
 import {
   buildSystemReadinessSummary,
+  ModelPreparationActivity,
   SystemReadinessModelAction,
 } from "../domain/systemReadiness";
 
@@ -14,6 +15,7 @@ interface SystemReadinessPanelProps {
   sourceStatus?: FoundryRuntimeStatus | null;
   runtime?: ConstructRuntime | null;
   archiveEntries?: ModelArchiveEntry[];
+  preparationActivity?: ModelPreparationActivity;
   compact?: boolean;
   onPrepareModel?: (action: SystemReadinessModelAction) => void;
 }
@@ -29,12 +31,17 @@ const SystemReadinessPanel: React.FC<SystemReadinessPanelProps> = ({
   sourceStatus,
   runtime,
   archiveEntries = [],
+  preparationActivity,
   compact = false,
   onPrepareModel,
 }) => {
   const summary = buildSystemReadinessSummary(settings, sourceStatus, runtime, archiveEntries);
   const steps = compact ? summary.steps.slice(0, 4) : summary.steps;
-  const actionDisabled = summary.modelAction.type === "ready";
+  const actionInProgress = Boolean(
+    preparationActivity &&
+      !["idle", "ready", "failed"].includes(preparationActivity.state)
+  );
+  const actionDisabled = summary.modelAction.type === "ready" || actionInProgress;
 
   return (
     <section className={`system-readiness-card readiness-${summary.state}`}>
@@ -58,9 +65,23 @@ const SystemReadinessPanel: React.FC<SystemReadinessPanelProps> = ({
           type="button"
         >
           <i className="fas fa-wand-magic-sparkles" aria-hidden="true" />
-          Prepare Model
+          {actionInProgress ? "Preparing" : "Prepare Model"}
         </button>
       </div>
+      {preparationActivity && preparationActivity.state !== "idle" && (
+        <div className={`model-preparation-activity is-${preparationActivity.state}`}>
+          <div>
+            <strong>{preparationActivity.label}</strong>
+            <span>{preparationActivity.detail}</span>
+          </div>
+          <div
+            aria-label={`Model preparation ${preparationActivity.progress}%`}
+            className="model-preparation-track"
+          >
+            <span style={{ width: `${preparationActivity.progress}%` }} />
+          </div>
+        </div>
+      )}
       <div className="system-readiness-list">
         {steps.map((step) => (
           <article className={`system-readiness-step is-${step.state}`} key={step.id}>

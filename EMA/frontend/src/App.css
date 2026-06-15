@@ -1383,6 +1383,52 @@ input[type="checkbox"] {
   line-height: 1.35;
 }
 
+.model-preparation-activity {
+  display: grid;
+  gap: 0.5rem;
+  border: 1px solid rgba(0, 212, 255, 0.16);
+  border-radius: 8px;
+  padding: 0.62rem;
+  background: rgba(13, 17, 23, 0.45);
+}
+
+.model-preparation-activity.is-failed {
+  border-color: rgba(255, 138, 0, 0.42);
+}
+
+.model-preparation-activity strong,
+.model-preparation-activity span {
+  display: block;
+}
+
+.model-preparation-activity strong {
+  color: var(--text-primary);
+  font-size: 0.76rem;
+}
+
+.model-preparation-activity span {
+  margin-top: 0.12rem;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.model-preparation-track {
+  height: 0.38rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(119, 140, 152, 0.18);
+}
+
+.model-preparation-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--arc-blue), var(--forge-orange));
+  box-shadow: var(--shadow-blue);
+  transition: width 180ms ease;
+}
+
 .system-readiness-step {
   display: grid;
   grid-template-columns: 1.25rem minmax(0, 1fr);

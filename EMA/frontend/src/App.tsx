@@ -40,7 +40,10 @@ import {
   getFoundryRepository,
   loadFoundryBootstrap,
 } from "./services/foundryRepository";
-import { SystemReadinessModelAction } from "./domain/systemReadiness";
+import {
+  ModelPreparationActivity,
+  SystemReadinessModelAction,
+} from "./domain/systemReadiness";
 import { getRuntimeMemory } from "./domain/runtimeState";
 import "./App.css";
 
@@ -138,6 +141,13 @@ const App: React.FC = () => {
   const [settings, setSettings] = useState<WorkspaceSettings>(loadWorkspaceSettings);
   const [createError, setCreateError] = useState<string | null>(null);
   const [statusToast, setStatusToast] = useState<string | null>(null);
+  const [modelPreparationActivity, setModelPreparationActivity] =
+    useState<ModelPreparationActivity>({
+      state: "idle",
+      label: "Idle",
+      detail: "No model preparation is running.",
+      progress: 0,
+    });
   const [isWorkshopModalOpen, setIsWorkshopModalOpen] = useState(false);
   const [isCreatingWorkshop, setIsCreatingWorkshop] = useState(false);
   const [forgePreset, setForgePreset] = useState<StartForgeRequest | null>(null);
@@ -227,40 +237,96 @@ const App: React.FC = () => {
     setArchiveEntries(entries);
   }, []);
 
+  const updateModelPreparation = (activity: ModelPreparationActivity) => {
+    setModelPreparationActivity(activity);
+  };
+
   const handlePrepareModel = async (action: SystemReadinessModelAction) => {
     setCreateError(null);
     setStatusToast(null);
 
     if (action.type === "ready") {
+      updateModelPreparation({
+        state: "ready",
+        label: "Model ready",
+        detail: action.detail,
+        progress: 100,
+      });
       setStatusToast(action.detail);
       return;
     }
 
     if (action.type === "open-construct") {
+      updateModelPreparation({
+        state: "handoff",
+        label: "Opening Construct",
+        detail: action.detail,
+        progress: 82,
+      });
       handleOpenConstructWithModel(action.modelId, action.modelLabel);
+      updateModelPreparation({
+        state: "ready",
+        label: "Construct handoff ready",
+        detail: `${action.modelLabel || action.modelId} is queued for Construct preflight.`,
+        progress: 100,
+      });
       return;
     }
 
     if (action.type === "download-model") {
       try {
+        updateModelPreparation({
+          state: "downloading",
+          label: "Downloading model",
+          detail: `${action.modelId} is being cached in the Archive.`,
+          progress: 35,
+        });
         const result = await repository.downloadArchiveModel({
           repoId: action.modelId,
           revision: action.revision,
           token: settings.huggingFaceToken || undefined,
+        });
+        updateModelPreparation({
+          state: "handoff",
+          label: "Preparing Construct handoff",
+          detail: `${result.archiveEntry.repoId} is cached. Opening Construct for preflight.`,
+          progress: 82,
         });
         upsertArchiveEntry(result.archiveEntry);
         handleOpenConstructWithModel(
           result.archiveEntry.localPath || result.archiveEntry.repoId,
           result.archiveEntry.repoId
         );
+        updateModelPreparation({
+          state: "ready",
+          label: "Model cached",
+          detail: `${result.archiveEntry.repoId} is cached and handed to Construct.`,
+          progress: 100,
+        });
         setStatusToast(`${result.archiveEntry.repoId} cached and handed to Construct.`);
       } catch (error: unknown) {
-        setCreateError(error instanceof Error ? error.message : "Could not download model.");
+        const message = error instanceof Error ? error.message : "Could not download model.";
+        updateModelPreparation({
+          state: "failed",
+          label: "Download failed",
+          detail: message,
+          progress: 100,
+        });
+        setCreateError(message);
         setActiveSection("artifacts");
       }
       return;
     }
 
+    updateModelPreparation({
+      state: "routing",
+      label: "Opening Archive",
+      detail:
+        action.type === "select-model"
+          ? "Choose a model in Archive to continue preparation."
+          : `${action.modelId} needs Archive registration before download.`,
+      progress: 20,
+    });
     setActiveSection("artifacts");
     setStatusToast(
       action.type === "select-model"
@@ -462,6 +528,7 @@ const App: React.FC = () => {
           sourceStatus={foundryStatus}
           runtime={constructRuntime}
           archiveEntries={archiveEntries}
+          preparationActivity={modelPreparationActivity}
           onPrepareModel={handlePrepareModel}
           onSave={persistSettings}
         />
@@ -478,6 +545,7 @@ const App: React.FC = () => {
           settings={settings}
           sourceStatus={foundryStatus}
           archiveEntries={archiveEntries}
+          preparationActivity={modelPreparationActivity}
           onPrepareModel={handlePrepareModel}
           onRuntimeChanged={handleConstructRuntimeChanged}
         />

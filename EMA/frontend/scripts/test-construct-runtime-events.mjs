@@ -153,6 +153,11 @@ assertIncludes(
   "System readiness model action contract"
 );
 assertIncludes(
+  files.systemReadinessDomain,
+  "ModelPreparationActivity",
+  "System readiness model preparation activity contract"
+);
+assertIncludes(
   files.systemReadiness,
   "System readiness",
   "System readiness panel"
@@ -164,6 +169,11 @@ assertIncludes(
 );
 assertIncludes(
   files.systemReadiness,
+  "model-preparation-activity",
+  "System readiness preparation activity UI"
+);
+assertIncludes(
+  files.systemReadiness,
   "archiveEntries",
   "System readiness archive entries prop"
 );
@@ -171,6 +181,11 @@ assertIncludes(
   files.app,
   "handlePrepareModel",
   "App prepare model action handler"
+);
+assertIncludes(
+  files.app,
+  "updateModelPreparation",
+  "App preparation activity transitions"
 );
 assertIncludes(
   files.settings,

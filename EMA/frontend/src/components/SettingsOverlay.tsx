@@ -9,7 +9,10 @@ import {
   WorkspaceSettings,
 } from "../domain/foundry";
 import { activeFoundryDataSource } from "../domain/dataSourceMode";
-import { SystemReadinessModelAction } from "../domain/systemReadiness";
+import {
+  ModelPreparationActivity,
+  SystemReadinessModelAction,
+} from "../domain/systemReadiness";
 import SystemReadinessPanel from "./SystemReadinessPanel";
 
 export type { WorkspaceSettings };
@@ -19,6 +22,7 @@ interface SettingsPanelProps {
   sourceStatus?: FoundryRuntimeStatus | null;
   runtime?: ConstructRuntime | null;
   archiveEntries?: ModelArchiveEntry[];
+  preparationActivity?: ModelPreparationActivity;
   onPrepareModel?: (action: SystemReadinessModelAction) => void;
   onSave: (settings: WorkspaceSettings) => void;
 }
@@ -39,6 +43,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   sourceStatus,
   runtime,
   archiveEntries = [],
+  preparationActivity,
   onPrepareModel,
   onSave,
 }) => {
@@ -138,6 +143,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           sourceStatus={sourceStatus}
           runtime={runtime}
           archiveEntries={archiveEntries}
+          preparationActivity={preparationActivity}
           onPrepareModel={onPrepareModel}
         />
 

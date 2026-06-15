@@ -23,6 +23,13 @@ export interface SystemReadinessSummary {
   modelAction: SystemReadinessModelAction;
 }
 
+export interface ModelPreparationActivity {
+  state: "idle" | "routing" | "registering" | "downloading" | "handoff" | "ready" | "failed";
+  label: string;
+  detail: string;
+  progress: number;
+}
+
 export type SystemReadinessModelAction =
   | {
       type: "select-model";
