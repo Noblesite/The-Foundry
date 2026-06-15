@@ -254,6 +254,8 @@ const mockForgeRuns: ForgeRun[] = [...mockDashboardSummary.forgeQueue];
 const mockArtifacts: Artifact[] = [mockDashboardSummary.currentArtifact];
 const mockTrials: Trial[] = [];
 const mockForgeWorkerStates: Record<string, ForgeWorkerState> = {};
+const MOCK_ARCHIVE_ENTRIES_STORAGE_KEY = "foundry.mock.modelArchiveEntries";
+const MOCK_DOWNLOAD_JOBS_STORAGE_KEY = "foundry.mock.modelDownloadJobs";
 const mockPlatformProfile: ModelPlatformProfile = {
   os: "Darwin",
   machine: "arm64",
@@ -268,8 +270,47 @@ const mockPlatformProfile: ModelPlatformProfile = {
     mpsAvailable: true,
   },
 };
-const mockModelArchiveEntries: ModelArchiveEntry[] = [];
-const mockModelDownloadJobs: Record<string, ModelDownloadJob> = {};
+
+const readMockStorage = <T,>(key: string, fallback: T): T => {
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(key);
+    return storedValue ? (JSON.parse(storedValue) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const writeMockStorage = (key: string, value: unknown) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Mock persistence should never block the workbench if storage is unavailable.
+  }
+};
+
+const mockModelArchiveEntries: ModelArchiveEntry[] = readMockStorage<ModelArchiveEntry[]>(
+  MOCK_ARCHIVE_ENTRIES_STORAGE_KEY,
+  []
+);
+const mockModelDownloadJobs: Record<string, ModelDownloadJob> = readMockStorage<
+  Record<string, ModelDownloadJob>
+>(MOCK_DOWNLOAD_JOBS_STORAGE_KEY, {});
+
+const persistMockArchiveEntries = () => {
+  writeMockStorage(MOCK_ARCHIVE_ENTRIES_STORAGE_KEY, mockModelArchiveEntries);
+};
+
+const persistMockDownloadJobs = () => {
+  writeMockStorage(MOCK_DOWNLOAD_JOBS_STORAGE_KEY, mockModelDownloadJobs);
+};
 const mockArchiveModels: ModelSearchResult[] = [
   {
     repoId: "sshleifer/tiny-gpt2",
@@ -1353,10 +1394,11 @@ export const mockFoundryRepository: FoundryRepository = {
         lastCheckedAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      };
+    };
     if (!existingEntry) {
       mockModelArchiveEntries.unshift(archiveEntry);
     }
+    persistMockArchiveEntries();
     return {
       ...inspection,
       model: {
@@ -1406,6 +1448,7 @@ export const mockFoundryRepository: FoundryRepository = {
     } else {
       mockModelArchiveEntries.unshift(archiveEntry);
     }
+    persistMockArchiveEntries();
     return {
       ...inspection,
       model: {
@@ -1434,6 +1477,7 @@ export const mockFoundryRepository: FoundryRepository = {
     };
     const index = mockModelArchiveEntries.findIndex((entry) => entry.id === existingEntry.id);
     mockModelArchiveEntries.splice(index, 1, archiveEntry);
+    persistMockArchiveEntries();
     return { archiveEntry };
   },
   startModelDownloadJob: async (request) => {
@@ -1449,6 +1493,7 @@ export const mockFoundryRepository: FoundryRepository = {
       error: null,
     };
     mockModelDownloadJobs[job.id] = job;
+    persistMockDownloadJobs();
     return { ...job };
   },
   getModelDownloadJob: async (jobId) => {
@@ -1481,6 +1526,7 @@ export const mockFoundryRepository: FoundryRepository = {
       });
       job.archiveEntry = result.archiveEntry;
     }
+    persistMockDownloadJobs();
     return { ...job };
   },
   listModelDownloadJobs: async () =>
@@ -1490,7 +1536,7 @@ export const mockFoundryRepository: FoundryRepository = {
     if (!job) {
       throw new Error("Model download job was not found.");
     }
-    if (job.status === "completed" || job.status === "failed") {
+    if (job.status === "completed" || job.status === "failed" || job.status === "canceled") {
       return { ...job };
     }
     job.status = "canceled";
@@ -1498,6 +1544,7 @@ export const mockFoundryRepository: FoundryRepository = {
     job.progress = 100;
     job.detail = "Mock download canceled.";
     job.cancelRequested = true;
+    persistMockDownloadJobs();
     return { ...job };
   },
 };

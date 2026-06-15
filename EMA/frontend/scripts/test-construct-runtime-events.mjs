@@ -72,6 +72,26 @@ assertIncludes(
 );
 assertIncludes(
   files.repository,
+  "foundry.mock.modelArchiveEntries",
+  "Mock Archive entries persist across refresh"
+);
+assertIncludes(
+  files.repository,
+  "foundry.mock.modelDownloadJobs",
+  "Mock Archive download jobs persist across refresh"
+);
+assertIncludes(
+  files.repository,
+  "persistMockArchiveEntries",
+  "Mock Archive entry persistence helper"
+);
+assertIncludes(
+  files.repository,
+  "persistMockDownloadJobs",
+  "Mock Archive job persistence helper"
+);
+assertIncludes(
+  files.repository,
   "constructApiFoundryRepository",
   "Construct API hybrid repository"
 );
