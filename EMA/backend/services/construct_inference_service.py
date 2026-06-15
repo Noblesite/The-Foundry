@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import gc
 import os
+from queue import Empty
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -10,6 +12,9 @@ from pathlib import Path
 from threading import Thread
 from typing import Any, AsyncIterator, Dict, Optional
 from uuid import uuid4
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+DEFAULT_MODEL_ARCHIVE_DIR = BASE_DIR / "runtime" / "models" / "huggingface"
 
 
 @dataclass
@@ -36,6 +41,13 @@ class ConstructInferenceService:
         self.mode = os.getenv("FOUNDRY_CONSTRUCT_INFERENCE_MODE", "simulated").strip().lower()
         self.model_id = os.getenv("FOUNDRY_CONSTRUCT_MODEL_ID", "").strip()
         self.device_preference = os.getenv("FOUNDRY_CONSTRUCT_DEVICE", "auto").strip().lower()
+        self.archive_dir = Path(
+            os.getenv("FOUNDRY_MODEL_ARCHIVE_DIR", str(DEFAULT_MODEL_ARCHIVE_DIR))
+        )
+        self.allow_remote_model_download = (
+            os.getenv("FOUNDRY_CONSTRUCT_ALLOW_REMOTE_MODEL_DOWNLOAD", "0").strip().lower()
+            in {"1", "true", "yes"}
+        )
         self._model_cache: Dict[str, Any] = {}
         self._active_loaded_model_id = ""
         self._last_load_event: Dict[str, Any] = {
@@ -49,6 +61,9 @@ class ConstructInferenceService:
         }
         self._runtime_events: list[Dict[str, Any]] = []
         self._load_lock = asyncio.Lock()
+        self._stream_token_timeout_seconds = float(
+            os.getenv("FOUNDRY_CONSTRUCT_STREAM_TOKEN_TIMEOUT_SECONDS", "1.0")
+        )
         self._last_memory_cleanup: Dict[str, Any] = {
             "status": "idle",
             "startedAt": None,
@@ -216,7 +231,11 @@ class ConstructInferenceService:
             "failureReason": None,
         }
         try:
-            _tokenizer, model = await self._load_transformers_model(target_model)
+            model_reference = self._resolve_model_reference(target_model)
+            _tokenizer, model = await self._load_transformers_model(
+                model_reference,
+                cache_key=target_model,
+            )
             self._active_loaded_model_id = target_model
             self._record_load_event(
                 status="loaded",
@@ -264,7 +283,10 @@ class ConstructInferenceService:
         previous_device = self.device_preference
         self.device_preference = (device or "auto").strip().lower()
         try:
-            result = await asyncio.to_thread(self._preflight_model_sync, target_model)
+            model_reference = self._resolve_model_reference(target_model, require_cached=False)
+            if model_reference is None:
+                return self._uncached_model_preflight(target_model)
+            result = await asyncio.to_thread(self._preflight_model_sync, model_reference, target_model)
             if result["ok"]:
                 status = "passed"
                 title = "Preflight passed"
@@ -358,7 +380,11 @@ class ConstructInferenceService:
         self.device_preference = device.strip().lower() or "auto"
 
         try:
-            tokenizer, model = await self._load_transformers_model(safe_model_id)
+            model_reference = self._resolve_model_reference(safe_model_id)
+            tokenizer, model = await self._load_transformers_model(
+                model_reference,
+                cache_key=safe_model_id,
+            )
             load_seconds = round(time.perf_counter() - started_at, 3)
             output_text = await asyncio.to_thread(
                 self._generate_probe_text_sync,
@@ -447,9 +473,13 @@ class ConstructInferenceService:
     ) -> AsyncIterator[str]:
         try:
             target_model = self.model_id or prepared_response["artifact"]["baseModel"]
+            model_reference = self._resolve_model_reference(target_model)
             started_at = time.perf_counter()
             event_started_at = self._utc_now()
-            tokenizer, model = await self._load_transformers_model(target_model)
+            tokenizer, model = await self._load_transformers_model(
+                model_reference,
+                cache_key=target_model,
+            )
             self._active_loaded_model_id = target_model
             self._record_load_event(
                 status="loaded",
@@ -492,7 +522,13 @@ class ConstructInferenceService:
         inputs = tokenizer(prompt, return_tensors="pt")
         device = next(model.parameters()).device
         inputs = {key: value.to(device) for key, value in inputs.items()}
-        streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
+        streamer = TextIteratorStreamer(
+            tokenizer,
+            skip_prompt=True,
+            skip_special_tokens=True,
+            timeout=self._stream_token_timeout_seconds,
+        )
+        generation_error: list[BaseException] = []
 
         generation_kwargs = {
             **inputs,
@@ -503,23 +539,68 @@ class ConstructInferenceService:
         }
         if generation["temperature"] > 0:
             generation_kwargs["temperature"] = generation["temperature"]
-        thread = Thread(target=model.generate, kwargs=generation_kwargs, daemon=True)
+
+        def generate_tokens() -> None:
+            try:
+                with torch.inference_mode():
+                    model.generate(**generation_kwargs)
+            except BaseException as error:
+                generation_error.append(error)
+
+        thread = Thread(target=generate_tokens, daemon=True)
         thread.start()
 
-        for token in streamer:
-            yield token
-            await asyncio.sleep(0)
+        streamed_any = False
+        try:
+            while True:
+                if generation_error:
+                    raise RuntimeError(
+                        f"Transformers generation failed: {generation_error[0]}"
+                    ) from generation_error[0]
+                try:
+                    token = next(streamer)
+                except StopIteration:
+                    break
+                except Empty:
+                    if thread.is_alive():
+                        await asyncio.sleep(0)
+                        continue
+                    if generation_error:
+                        raise RuntimeError(
+                            f"Transformers generation failed: {generation_error[0]}"
+                        ) from generation_error[0]
+                    break
+                streamed_any = True
+                yield token
+                await asyncio.sleep(0)
 
-        self._clean_runtime_memory(torch)
+            thread.join(timeout=0.1)
+            if generation_error:
+                raise RuntimeError(
+                    f"Transformers generation failed: {generation_error[0]}"
+                ) from generation_error[0]
+            if not streamed_any:
+                self.record_runtime_event(
+                    event_type="smoke",
+                    status="warning",
+                    title="Transformers stream returned no tokens",
+                    detail=f"{target_model} finished generation without streaming visible tokens.",
+                    model_id=target_model,
+                    runtime_status=self.describe_runtime().status,
+                    source="backend",
+                )
+        finally:
+            self._clean_runtime_memory(torch)
 
-    async def _load_transformers_model(self, model_name: str):
-        if model_name in self._model_cache:
-            cached = self._model_cache[model_name]
+    async def _load_transformers_model(self, model_name: str, *, cache_key: Optional[str] = None):
+        model_cache_key = cache_key or model_name
+        if model_cache_key in self._model_cache:
+            cached = self._model_cache[model_cache_key]
             return cached["tokenizer"], cached["model"]
 
         async with self._load_lock:
-            if model_name in self._model_cache:
-                cached = self._model_cache[model_name]
+            if model_cache_key in self._model_cache:
+                cached = self._model_cache[model_cache_key]
                 return cached["tokenizer"], cached["model"]
 
             if self._model_cache:
@@ -528,24 +609,102 @@ class ConstructInferenceService:
                 self._clean_runtime_memory(cache_size_before=1)
 
             tokenizer, model = await asyncio.to_thread(self._load_transformers_model_sync, model_name)
-            self._model_cache[model_name] = {"tokenizer": tokenizer, "model": model}
+            self._model_cache[model_cache_key] = {"tokenizer": tokenizer, "model": model}
             return tokenizer, model
+
+    def _resolve_model_reference(self, model_name: str, *, require_cached: bool = True) -> Optional[str]:
+        model_reference = model_name.strip()
+        if not model_reference:
+            raise ValueError("Set a model id before using the Transformers runtime.")
+
+        model_path = Path(model_reference).expanduser()
+        if model_path.exists():
+            return str(model_path)
+
+        archive_path = self.archive_dir / self._safe_archive_slug(model_reference, "")
+        if archive_path.exists():
+            return str(archive_path)
+
+        if self.allow_remote_model_download:
+            return model_reference
+
+        if require_cached:
+            raise ValueError(
+                f"{model_reference} is not cached in the local Archive. "
+                "Download the model from Archive before loading it into Construct."
+            )
+        return None
+
+    def _uncached_model_preflight(self, model_name: str) -> Dict[str, Any]:
+        diagnostics = self._runtime_diagnostics()
+        detail = (
+            f"{model_name} is not cached in the local Archive. Download it from Archive "
+            "before loading it into Construct, or enable remote Construct downloads for development."
+        )
+        result = {
+            "ok": False,
+            "modelId": model_name,
+            "device": self._resolve_device_for_preflight(diagnostics),
+            "localFilesOnly": True,
+            "modelType": None,
+            "architectures": [],
+            "contextWindow": None,
+            "parameterCountEstimate": None,
+            "estimatedLoadBytes": 0,
+            "availableBytes": self._available_runtime_bytes(diagnostics),
+            "fitStatus": "unknown",
+            "checks": [
+                {
+                    "id": "archive-cache",
+                    "label": "Archive cache",
+                    "status": "fail",
+                    "detail": detail,
+                }
+            ],
+            "warnings": ["Construct loads from the local Archive so runtime tests stay predictable."],
+            "diagnostics": diagnostics,
+        }
+        self.record_runtime_event(
+            event_type="preflight",
+            status="failed",
+            title="Preflight blocked",
+            detail=detail,
+            model_id=model_name,
+            runtime_status=self.describe_runtime().status,
+            source="backend",
+        )
+        return result
+
+    def _safe_archive_slug(self, repo_id: str, revision: str) -> str:
+        raw_value = f"{repo_id}@{revision}" if revision else repo_id
+        normalized = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw_value).strip("-")
+        return normalized or "model"
 
     def _load_transformers_model_sync(self, model_name: str):
         from transformers import AutoModelForCausalLM, AutoTokenizer
         import torch
 
         device = self._resolve_device(torch)
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModelForCausalLM.from_pretrained(model_name)
+        local_files_only = Path(model_name).exists()
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_name,
+            local_files_only=local_files_only,
+            trust_remote_code=False,
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            local_files_only=local_files_only,
+            trust_remote_code=False,
+        )
         model.to(device)
         model.eval()
         return tokenizer, model
 
-    def _preflight_model_sync(self, model_name: str) -> Dict[str, Any]:
+    def _preflight_model_sync(self, model_name: str, display_model_id: Optional[str] = None) -> Dict[str, Any]:
         from transformers import AutoConfig, AutoTokenizer
 
         local_files_only = Path(model_name).exists()
+        model_id = display_model_id or model_name
         diagnostics = self._runtime_diagnostics()
         checks = []
         warnings = []
@@ -624,7 +783,7 @@ class ConstructInferenceService:
         ok = bool(config and tokenizer_ok and memory_status != "too-large")
         return {
             "ok": ok,
-            "modelId": model_name,
+            "modelId": model_id,
             "device": self._resolve_device_for_preflight(diagnostics),
             "localFilesOnly": local_files_only,
             "modelType": getattr(config, "model_type", None) if config else None,

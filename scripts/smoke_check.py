@@ -416,6 +416,17 @@ def run_construct_memory_cleanup_contract_check() -> int:
         "_clean_runtime_memory",
         "release_memory",
         "memoryCleanup",
+        "FOUNDRY_CONSTRUCT_STREAM_TOKEN_TIMEOUT_SECONDS",
+        "FOUNDRY_CONSTRUCT_ALLOW_REMOTE_MODEL_DOWNLOAD",
+        "DEFAULT_MODEL_ARCHIVE_DIR",
+        "_resolve_model_reference",
+        "_uncached_model_preflight",
+        "_safe_archive_slug",
+        "Download the model from Archive",
+        "TextIteratorStreamer",
+        "timeout=self._stream_token_timeout_seconds",
+        "generation_error",
+        "torch.inference_mode()",
         "gc.collect()",
         "torch.cuda.empty_cache()",
         "torch.cuda.ipc_collect()",
@@ -430,6 +441,8 @@ def run_construct_memory_cleanup_contract_check() -> int:
     required_api_patterns = (
         "/api/v1/constructs/runtime/release-memory",
         "release_foundry_construct_runtime_memory_endpoint",
+        "construct_inference_service.runtime_payload()",
+        "Construct stream failed",
     )
     missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
     if missing_api:

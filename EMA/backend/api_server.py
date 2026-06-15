@@ -979,7 +979,6 @@ async def stream_foundry_construct_chat_endpoint(construct_id: str, data: Constr
                 max_new_tokens=data.maxNewTokens,
                 temperature=data.temperature,
             )
-            runtime = construct_inference_service.describe_runtime()
             streamed_tokens = []
             async for token in construct_inference_service.stream_tokens(
                 prepared_response=prepared,
@@ -1014,18 +1013,19 @@ async def stream_foundry_construct_chat_endpoint(construct_id: str, data: Constr
                     "construct": prepared["construct"],
                     "artifact": prepared["artifact"],
                     "generation": prepared["generation"],
-                    "runtime": {
-                        "mode": runtime.mode,
-                        "status": runtime.status,
-                        "detail": runtime.detail,
-                        "modelId": runtime.modelId,
-                        "device": runtime.device,
-                        "loaded": runtime.loaded,
-                        "diagnostics": runtime.diagnostics,
-                    },
+                    "runtime": construct_inference_service.runtime_payload(),
                 },
             )
         except ValueError as error:
+            yield sse_event("error", {"type": "error", "message": str(error)})
+        except Exception as error:
+            construct_inference_service.record_runtime_event(
+                event_type="smoke",
+                status="failed",
+                title="Construct stream failed",
+                detail=str(error),
+                source="backend",
+            )
             yield sse_event("error", {"type": "error", "message": str(error)})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
