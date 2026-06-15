@@ -47,6 +47,31 @@ const assertIncludes = (source, expected, message) => {
 
 assertIncludes(
   files.domain,
+  "huggingFaceUsername: string",
+  "Workspace settings include Hugging Face username"
+);
+assertIncludes(
+  files.contracts,
+  "username?: string",
+  "Archive API requests can carry Hugging Face username"
+);
+assertIncludes(
+  files.settings,
+  "Hugging Face username",
+  "Settings captures Hugging Face username"
+);
+assertIncludes(
+  files.artifacts,
+  "huggingFaceAuth",
+  "Artifacts forwards Hugging Face auth to Archive requests"
+);
+assertIncludes(
+  files.app,
+  "aria-label={`Open ${item.label}`}",
+  "Sidebar navigation exposes deterministic accessible labels"
+);
+assertIncludes(
+  files.domain,
   "export interface ConstructRuntimeEvent",
   "Runtime event domain contract"
 );

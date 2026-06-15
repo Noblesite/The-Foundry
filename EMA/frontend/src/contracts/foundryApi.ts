@@ -375,12 +375,14 @@ export interface SearchArchiveModelsRequest {
   sort?: "downloads" | "likes" | "lastModified";
   limit?: number;
   includeGated?: boolean;
+  username?: string;
   token?: string;
 }
 
 export interface InspectArchiveModelRequest {
   repoId: string;
   revision?: string;
+  username?: string;
   token?: string;
 }
 

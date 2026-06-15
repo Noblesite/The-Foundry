@@ -39,8 +39,10 @@ class HuggingFaceModelService:
         sort: str,
         limit: int,
         include_gated: bool,
+        username: Optional[str],
         token: Optional[str],
     ) -> Dict[str, Any]:
+        self._validate_auth_pair(username=username, token=token)
         safe_limit = max(1, min(limit, 50))
         models = await self._run_hf_query(
             self._search_models_sync,
@@ -61,8 +63,10 @@ class HuggingFaceModelService:
         *,
         repo_id: str,
         revision: str,
+        username: Optional[str],
         token: Optional[str],
     ) -> Dict[str, Any]:
+        self._validate_auth_pair(username=username, token=token)
         safe_repo_id = repo_id.strip()
         if not safe_repo_id:
             raise ValueError("Model repository id cannot be empty.")
@@ -89,9 +93,15 @@ class HuggingFaceModelService:
         *,
         repo_id: str,
         revision: str,
+        username: Optional[str],
         token: Optional[str],
     ) -> Dict[str, Any]:
-        inspection = await self.inspect_model(repo_id=repo_id, revision=revision, token=token)
+        inspection = await self.inspect_model(
+            repo_id=repo_id,
+            revision=revision,
+            username=username,
+            token=token,
+        )
         model = inspection["model"]
         entry = await self.catalog_service.upsert_model_archive_entry(
             repo_id=model["repoId"],
@@ -118,8 +128,10 @@ class HuggingFaceModelService:
         *,
         repo_id: str,
         revision: str,
+        username: Optional[str],
         token: Optional[str],
     ) -> Dict[str, Any]:
+        self._validate_auth_pair(username=username, token=token)
         safe_repo_id = repo_id.strip()
         if not safe_repo_id:
             raise ValueError("Model repository id cannot be empty.")
@@ -182,8 +194,10 @@ class HuggingFaceModelService:
         *,
         repo_id: str,
         revision: str,
+        username: Optional[str],
         token: Optional[str],
     ) -> Dict[str, Any]:
+        self._validate_auth_pair(username=username, token=token)
         safe_repo_id = repo_id.strip()
         if not safe_repo_id:
             raise ValueError("Model repository id cannot be empty.")
@@ -212,6 +226,10 @@ class HuggingFaceModelService:
             self._run_download_job(job["id"], token=self._effective_token(token))
         )
         return job
+
+    def _validate_auth_pair(self, *, username: Optional[str], token: Optional[str]) -> None:
+        if (username or "").strip() and not (token or "").strip():
+            raise ValueError("Hugging Face token is required when a username is provided.")
 
     async def get_download_job(self, job_id: str) -> Dict[str, Any]:
         job = await self.catalog_service.get_model_download_job(job_id)

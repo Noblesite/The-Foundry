@@ -123,11 +123,13 @@ class SearchArchiveModelsInput(BaseModel):
     sort: Literal["downloads", "likes", "lastModified"] = "downloads"
     limit: int = 20
     includeGated: bool = False
+    username: str | None = None
     token: str | None = None
 
 class InspectArchiveModelInput(BaseModel):
     repoId: str
     revision: str | None = None
+    username: str | None = None
     token: str | None = None
 
 class CreateTrialInput(BaseModel):
@@ -373,6 +375,7 @@ async def search_foundry_archive_models_endpoint(data: SearchArchiveModelsInput)
                 sort=data.sort,
                 limit=data.limit,
                 include_gated=data.includeGated,
+                username=data.username,
                 token=data.token,
             )
         )
@@ -387,6 +390,7 @@ async def inspect_foundry_archive_model_endpoint(data: InspectArchiveModelInput)
             await huggingface_model_service.inspect_model(
                 repo_id=data.repoId,
                 revision=data.revision or "",
+                username=data.username,
                 token=data.token,
             )
         )
@@ -403,6 +407,7 @@ async def register_foundry_archive_model_endpoint(data: InspectArchiveModelInput
             await huggingface_model_service.register_remote_model(
                 repo_id=data.repoId,
                 revision=data.revision or "",
+                username=data.username,
                 token=data.token,
             )
         )
@@ -419,6 +424,7 @@ async def download_foundry_archive_model_endpoint(data: InspectArchiveModelInput
             await huggingface_model_service.download_model(
                 repo_id=data.repoId,
                 revision=data.revision or "",
+                username=data.username,
                 token=data.token,
             )
         )
@@ -448,6 +454,7 @@ async def start_foundry_archive_model_download_job_endpoint(data: InspectArchive
             await huggingface_model_service.start_download_job(
                 repo_id=data.repoId,
                 revision=data.revision or "",
+                username=data.username,
                 token=data.token,
             )
         )

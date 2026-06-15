@@ -235,11 +235,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         <fieldset className="settings-group">
           <legend>Provider</legend>
-          <label className="field-label" htmlFor="hf-token">
-            Hugging Face token
-            <HelpTooltip text="The token lets the wrapper download gated models and push trained adapters when the backend supports it." />
+          <label className="field-label" htmlFor="hf-username">
+            Hugging Face username
+            <HelpTooltip text="Your Hugging Face username pairs with the access token for gated, private, and account-scoped model operations." />
           </label>
           <input
+            autoComplete="username"
+            id="hf-username"
+            type="text"
+            value={draft.huggingFaceUsername}
+            placeholder="engineer-name"
+            onChange={(event) => updateDraft("huggingFaceUsername", event.target.value)}
+          />
+
+          <label className="field-label" htmlFor="hf-token">
+            Hugging Face token
+            <HelpTooltip text="The token lets the wrapper download gated/private models and push trained adapters when the backend supports it. Store a read token for downloads; use a write token only when publishing." />
+          </label>
+          <input
+            autoComplete="new-password"
             id="hf-token"
             type="password"
             value={draft.huggingFaceToken}

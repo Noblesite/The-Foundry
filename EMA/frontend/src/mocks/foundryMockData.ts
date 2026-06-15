@@ -15,6 +15,7 @@ import {
 } from "../domain/foundry";
 
 export const defaultWorkspaceSettings: WorkspaceSettings = {
+  huggingFaceUsername: "",
   huggingFaceToken: "",
   defaultBaseModel: "mistralai/Mistral-7B-Instruct-v0.2",
   modelName: "mistralai/Mistral-7B-Instruct-v0.2",

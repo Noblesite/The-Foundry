@@ -49,6 +49,7 @@ export type TrialVerdict = "pass" | "needs-work" | "fail";
 export type LearningDifficulty = "starter" | "builder" | "advanced";
 
 export interface WorkspaceSettings {
+  huggingFaceUsername: string;
   huggingFaceToken: string;
   defaultBaseModel: string;
   modelName: string;

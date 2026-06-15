@@ -166,11 +166,15 @@ export const buildSystemReadinessSummary = (
     },
     {
       id: "token",
-      label: "Hugging Face token",
-      state: hasValue(settings.huggingFaceToken) ? "ready" : "caution",
-      detail: hasValue(settings.huggingFaceToken)
-        ? "A token is saved locally for gated models and downloads."
-        : "Optional for public models; required for gated/private models.",
+      label: "Hugging Face auth",
+      state:
+        hasValue(settings.huggingFaceUsername) && hasValue(settings.huggingFaceToken)
+          ? "ready"
+          : "caution",
+      detail:
+        hasValue(settings.huggingFaceUsername) && hasValue(settings.huggingFaceToken)
+          ? `Credentials are saved locally for ${settings.huggingFaceUsername}.`
+          : "Optional for public models; username and token are required for gated/private models.",
     },
     {
       id: "model-selected",

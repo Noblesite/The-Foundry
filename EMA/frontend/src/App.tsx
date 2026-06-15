@@ -434,6 +434,7 @@ const App: React.FC = () => {
         const downloadJob = await repository.startModelDownloadJob({
           repoId: action.modelId,
           revision: action.revision,
+          username: settings.huggingFaceUsername || undefined,
           token: settings.huggingFaceToken || undefined,
         });
         updateModelPreparation({
@@ -752,6 +753,7 @@ const App: React.FC = () => {
           workshop={dashboardSummary.workshop}
           academyAction={getAcademyAction(ACADEMY_ACTION_IDS.artifactsOpenPromotion)}
           archiveEntries={archiveEntries}
+          settings={settings}
           onConstructLoaded={handleConstructLoaded}
           onArchiveEntriesChanged={handleArchiveEntriesChanged}
           onBaseModelSelected={handleBaseModelSelected}
@@ -824,6 +826,7 @@ const App: React.FC = () => {
           {navigationItems.map((item) => (
             <button
               key={item.id}
+              aria-label={`Open ${item.label}`}
               className={`foundry-nav-button ${activeSection === item.id ? "is-active" : ""}`}
               onClick={() => {
                 if (item.id === "academy") {
@@ -832,6 +835,7 @@ const App: React.FC = () => {
                 setActiveSection(item.id);
               }}
               aria-current={activeSection === item.id ? "page" : undefined}
+              type="button"
             >
               <i className={`fas ${item.icon}`} aria-hidden="true" />
               <span>{item.label}</span>

@@ -8,6 +8,7 @@ import {
   ModelSearchResult,
   SectionSummary,
   Workshop,
+  WorkspaceSettings,
 } from "../domain/foundry";
 import { FoundryRepository } from "../services/foundryRepository";
 import { AcademyActionTooltip, ConceptTooltip, LearningCard } from "./LearningComponents";
@@ -20,6 +21,7 @@ interface ArtifactsWorkbenchProps {
   workshop: Workshop;
   academyAction?: AcademyAction;
   archiveEntries: ModelArchiveEntry[];
+  settings: WorkspaceSettings;
   onConstructLoaded: (construct: Construct, artifact: Artifact) => void;
   onArchiveEntriesChanged: (entries: ModelArchiveEntry[]) => void;
   onBaseModelSelected: (modelId: string) => void;
@@ -51,6 +53,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   workshop,
   academyAction,
   archiveEntries,
+  settings,
   onConstructLoaded,
   onArchiveEntriesChanged,
   onBaseModelSelected,
@@ -72,6 +75,13 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   const [defaultBaseModelTarget, setDefaultBaseModelTarget] = useState(defaultBaseModel);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const huggingFaceAuth = useMemo(
+    () => ({
+      username: settings.huggingFaceUsername || undefined,
+      token: settings.huggingFaceToken || undefined,
+    }),
+    [settings.huggingFaceToken, settings.huggingFaceUsername]
+  );
 
   useEffect(() => {
     let isCurrent = true;
@@ -328,6 +338,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
         pipelineTag: "text-generation",
         sort: "downloads",
         limit: 8,
+        ...huggingFaceAuth,
       });
       setModelResults(result.models);
       setSelectedModelId((current) => current || result.models[0]?.repoId || "");
@@ -348,7 +359,10 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     setError(null);
 
     try {
-      const result = await repository.registerArchiveModel({ repoId: selectedModel.repoId });
+      const result = await repository.registerArchiveModel({
+        repoId: selectedModel.repoId,
+        ...huggingFaceAuth,
+      });
       const nextEntries = (() => {
         const withoutDuplicate = archiveEntries.filter(
           (entry) =>
@@ -384,6 +398,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
       const job = await repository.startModelDownloadJob({
         repoId: selectedModel.repoId,
         revision: selectedModel.revision,
+        ...huggingFaceAuth,
       });
       setDownloadJobs((currentJobs) => mergeDownloadJobs(currentJobs, [job]));
       setStatusText(`${job.repoId} added to Archive Jobs.`);
@@ -402,6 +417,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
       const nextJob = await repository.startModelDownloadJob({
         repoId: job.repoId,
         revision: job.revision,
+        ...huggingFaceAuth,
       });
       setDownloadJobs((currentJobs) => mergeDownloadJobs(currentJobs, [nextJob]));
       setStatusText(`${nextJob.repoId} queued again for Archive download.`);
@@ -459,6 +475,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
       const job = await repository.startModelDownloadJob({
         repoId: entry.repoId,
         revision: entry.revision,
+        ...huggingFaceAuth,
       });
       setDownloadJobs((currentJobs) => mergeDownloadJobs(currentJobs, [job]));
       setStatusText(`${job.repoId} added to Archive Jobs for cache refresh.`);
