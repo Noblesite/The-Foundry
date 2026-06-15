@@ -25,6 +25,7 @@ import {
   ConstructRuntime,
   FoundryRuntimeStatus,
   ModelArchiveEntry,
+  ModelDownloadJob,
   NavigationSection,
   RuntimeMetric,
   Workshop,
@@ -66,6 +67,53 @@ const wait = (durationMs: number) =>
   new Promise((resolve) => {
     window.setTimeout(resolve, durationMs);
   });
+
+const isActiveModelDownloadJob = (job: ModelDownloadJob) =>
+  job.status === "queued" || job.status === "running";
+
+const modelDownloadJobToActivity = (job: ModelDownloadJob): ModelPreparationActivity => {
+  if (job.status === "completed") {
+    return {
+      state: "ready",
+      label: "Model cached",
+      detail: job.detail,
+      progress: 100,
+      jobId: job.id,
+    };
+  }
+  if (job.status === "failed") {
+    return {
+      state: "failed",
+      label: "Download failed",
+      detail: job.error || job.detail,
+      progress: 100,
+      jobId: job.id,
+    };
+  }
+  if (job.status === "canceled") {
+    return {
+      state: "canceled",
+      label: "Download canceled",
+      detail: job.detail,
+      progress: 100,
+      jobId: job.id,
+    };
+  }
+  return {
+    state: job.phase === "cataloging" ? "handoff" : "downloading",
+    label:
+      job.phase === "queued"
+        ? "Download queued"
+        : job.phase === "inspecting"
+          ? "Inspecting model"
+          : job.phase === "cataloging"
+            ? "Cataloging model"
+            : "Downloading model",
+    detail: job.detail,
+    progress: job.progress,
+    jobId: job.id,
+  };
+};
 
 const deriveRuntimeMetrics = (
   baselineMetrics: RuntimeMetric[],
@@ -153,6 +201,7 @@ const App: React.FC = () => {
       detail: "No model preparation is running.",
       progress: 0,
     });
+  const [activeModelDownloadJobId, setActiveModelDownloadJobId] = useState<string | null>(null);
   const [isWorkshopModalOpen, setIsWorkshopModalOpen] = useState(false);
   const [isCreatingWorkshop, setIsCreatingWorkshop] = useState(false);
   const [forgePreset, setForgePreset] = useState<StartForgeRequest | null>(null);
@@ -179,14 +228,20 @@ const App: React.FC = () => {
       repository.getConstructRuntime(),
       repository.getFoundryStatus(),
       repository.listModelArchiveEntries(),
+      repository.listModelDownloadJobs(),
     ])
-      .then(([bootstrap, savedWorkshops, runtime, status, modelArchiveEntries]) => {
+      .then(([bootstrap, savedWorkshops, runtime, status, modelArchiveEntries, modelDownloadJobs]) => {
         if (isCurrent) {
           setFoundryData(bootstrap);
           setWorkshops(savedWorkshops.length ? savedWorkshops : [bootstrap.dashboard.workshop]);
           setConstructRuntime(runtime);
           setFoundryStatus(status);
           setArchiveEntries(modelArchiveEntries);
+          const activeJob = modelDownloadJobs.find(isActiveModelDownloadJob) || modelDownloadJobs[0];
+          if (activeJob) {
+            setModelPreparationActivity(modelDownloadJobToActivity(activeJob));
+            setActiveModelDownloadJobId(isActiveModelDownloadJob(activeJob) ? activeJob.id : null);
+          }
         }
       })
       .catch((error: unknown) => {
@@ -246,6 +301,74 @@ const App: React.FC = () => {
     setModelPreparationActivity(activity);
   };
 
+  useEffect(() => {
+    if (!activeModelDownloadJobId) {
+      return undefined;
+    }
+
+    let isCurrent = true;
+
+    const pollActiveDownloadJob = async () => {
+      try {
+        let job = await repository.getModelDownloadJob(activeModelDownloadJobId);
+        while (isCurrent && isActiveModelDownloadJob(job)) {
+          updateModelPreparation(modelDownloadJobToActivity(job));
+          await wait(1200);
+          job = await repository.getModelDownloadJob(activeModelDownloadJobId);
+        }
+        if (!isCurrent) {
+          return;
+        }
+        updateModelPreparation(modelDownloadJobToActivity(job));
+        if (job.archiveEntry) {
+          upsertArchiveEntry(job.archiveEntry);
+          setStatusToast(`${job.archiveEntry.repoId} cached in Archive.`);
+        }
+        setActiveModelDownloadJobId(null);
+      } catch (error: unknown) {
+        if (!isCurrent) {
+          return;
+        }
+        updateModelPreparation({
+          state: "failed",
+          label: "Download status unavailable",
+          detail: error instanceof Error ? error.message : "Could not refresh model download job.",
+          progress: 100,
+          jobId: activeModelDownloadJobId,
+        });
+        setActiveModelDownloadJobId(null);
+      }
+    };
+
+    void pollActiveDownloadJob();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [activeModelDownloadJobId, repository, upsertArchiveEntry]);
+
+  const handleCancelPreparation = async () => {
+    if (!activeModelDownloadJobId) {
+      return;
+    }
+    try {
+      const job = await repository.cancelModelDownloadJob(activeModelDownloadJobId);
+      updateModelPreparation(modelDownloadJobToActivity(job));
+      setActiveModelDownloadJobId(null);
+      setStatusToast(`${job.repoId} download canceled.`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Could not cancel model download.";
+      updateModelPreparation({
+        state: "failed",
+        label: "Cancel failed",
+        detail: message,
+        progress: 100,
+        jobId: activeModelDownloadJobId,
+      });
+      setCreateError(message);
+    }
+  };
+
   const handlePrepareModel = async (action: SystemReadinessModelAction) => {
     setCreateError(null);
     setStatusToast(null);
@@ -286,7 +409,7 @@ const App: React.FC = () => {
           detail: `${action.modelId} is being queued in the Archive.`,
           progress: 8,
         });
-        let downloadJob = await repository.startModelDownloadJob({
+        const downloadJob = await repository.startModelDownloadJob({
           repoId: action.modelId,
           revision: action.revision,
           token: settings.huggingFaceToken || undefined,
@@ -296,46 +419,10 @@ const App: React.FC = () => {
           label: downloadJob.phase === "queued" ? "Download queued" : "Downloading model",
           detail: downloadJob.detail,
           progress: downloadJob.progress,
+          jobId: downloadJob.id,
         });
-        while (downloadJob.status === "queued" || downloadJob.status === "running") {
-          await wait(900);
-          downloadJob = await repository.getModelDownloadJob(downloadJob.id);
-          updateModelPreparation({
-            state: downloadJob.phase === "cataloging" ? "handoff" : "downloading",
-            label:
-              downloadJob.phase === "cataloging"
-                ? "Cataloging model"
-                : downloadJob.phase === "inspecting"
-                  ? "Inspecting model"
-                  : "Downloading model",
-            detail: downloadJob.detail,
-            progress: downloadJob.progress,
-          });
-        }
-        if (downloadJob.status === "failed") {
-          throw new Error(downloadJob.error || downloadJob.detail);
-        }
-        if (!downloadJob.archiveEntry) {
-          throw new Error("Download completed without an Archive entry.");
-        }
-        updateModelPreparation({
-          state: "handoff",
-          label: "Preparing Construct handoff",
-          detail: `${downloadJob.archiveEntry.repoId} is cached. Opening Construct for preflight.`,
-          progress: 82,
-        });
-        upsertArchiveEntry(downloadJob.archiveEntry);
-        handleOpenConstructWithModel(
-          downloadJob.archiveEntry.localPath || downloadJob.archiveEntry.repoId,
-          downloadJob.archiveEntry.repoId
-        );
-        updateModelPreparation({
-          state: "ready",
-          label: "Model cached",
-          detail: `${downloadJob.archiveEntry.repoId} is cached and handed to Construct.`,
-          progress: 100,
-        });
-        setStatusToast(`${downloadJob.archiveEntry.repoId} cached and handed to Construct.`);
+        setActiveModelDownloadJobId(downloadJob.id);
+        setStatusToast(`${downloadJob.repoId} download started.`);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Could not download model.";
         updateModelPreparation({
@@ -562,6 +649,7 @@ const App: React.FC = () => {
           archiveEntries={archiveEntries}
           preparationActivity={modelPreparationActivity}
           onPrepareModel={handlePrepareModel}
+          onCancelPreparation={handleCancelPreparation}
           onSave={persistSettings}
         />
       );
@@ -579,6 +667,7 @@ const App: React.FC = () => {
           archiveEntries={archiveEntries}
           preparationActivity={modelPreparationActivity}
           onPrepareModel={handlePrepareModel}
+          onCancelPreparation={handleCancelPreparation}
           onRuntimeChanged={handleConstructRuntimeChanged}
         />
       );

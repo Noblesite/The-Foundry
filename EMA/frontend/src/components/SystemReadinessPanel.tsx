@@ -18,6 +18,7 @@ interface SystemReadinessPanelProps {
   preparationActivity?: ModelPreparationActivity;
   compact?: boolean;
   onPrepareModel?: (action: SystemReadinessModelAction) => void;
+  onCancelPreparation?: () => void;
 }
 
 const stateIcon = {
@@ -34,12 +35,13 @@ const SystemReadinessPanel: React.FC<SystemReadinessPanelProps> = ({
   preparationActivity,
   compact = false,
   onPrepareModel,
+  onCancelPreparation,
 }) => {
   const summary = buildSystemReadinessSummary(settings, sourceStatus, runtime, archiveEntries);
   const steps = compact ? summary.steps.slice(0, 4) : summary.steps;
   const actionInProgress = Boolean(
     preparationActivity &&
-      !["idle", "ready", "failed"].includes(preparationActivity.state)
+      !["idle", "ready", "failed", "canceled"].includes(preparationActivity.state)
   );
   const actionDisabled = summary.modelAction.type === "ready" || actionInProgress;
 
@@ -70,9 +72,20 @@ const SystemReadinessPanel: React.FC<SystemReadinessPanelProps> = ({
       </div>
       {preparationActivity && preparationActivity.state !== "idle" && (
         <div className={`model-preparation-activity is-${preparationActivity.state}`}>
-          <div>
-            <strong>{preparationActivity.label}</strong>
-            <span>{preparationActivity.detail}</span>
+          <div className="model-preparation-copy">
+            <div>
+              <strong>{preparationActivity.label}</strong>
+              <span>{preparationActivity.detail}</span>
+            </div>
+            {actionInProgress && preparationActivity.jobId && (
+              <button
+                className="button-secondary button-compact"
+                onClick={onCancelPreparation}
+                type="button"
+              >
+                Cancel
+              </button>
+            )}
           </div>
           <div
             aria-label={`Model preparation ${preparationActivity.progress}%`}

@@ -292,18 +292,23 @@ def run_model_download_job_contract_check() -> int:
         "/api/v1/archive/models/download-jobs",
         "start_foundry_archive_model_download_job_endpoint",
         "foundry_archive_model_download_job_endpoint",
+        "foundry_archive_model_download_jobs_endpoint",
+        "cancel_foundry_archive_model_download_job_endpoint",
     )
     missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
     if missing_api:
         return fail("Model download job API boundary is missing: " + ", ".join(missing_api))
 
     required_service_patterns = (
-        "_download_jobs",
         "start_download_job",
         "get_download_job",
+        "list_download_jobs",
+        "cancel_download_job",
         "_run_download_job",
-        "\"phase\": \"downloading\"",
-        "\"phase\": \"cataloging\"",
+        "phase=\"downloading\"",
+        "phase=\"cataloging\"",
+        "create_model_download_job",
+        "update_model_download_job",
     )
     missing_service = [
         pattern for pattern in required_service_patterns if pattern not in service_source
@@ -313,7 +318,9 @@ def run_model_download_job_contract_check() -> int:
 
     required_frontend_patterns = (
         "startModelDownloadJob",
+        "listModelDownloadJobs",
         "getModelDownloadJob",
+        "cancelModelDownloadJob",
         "ModelDownloadJob",
     )
     missing_frontend = [

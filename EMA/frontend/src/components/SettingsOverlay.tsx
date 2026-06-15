@@ -24,6 +24,7 @@ interface SettingsPanelProps {
   archiveEntries?: ModelArchiveEntry[];
   preparationActivity?: ModelPreparationActivity;
   onPrepareModel?: (action: SystemReadinessModelAction) => void;
+  onCancelPreparation?: () => void;
   onSave: (settings: WorkspaceSettings) => void;
 }
 
@@ -45,6 +46,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   archiveEntries = [],
   preparationActivity,
   onPrepareModel,
+  onCancelPreparation,
   onSave,
 }) => {
   const [draft, setDraft] = useState<WorkspaceSettings>(settings);
@@ -145,6 +147,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           archiveEntries={archiveEntries}
           preparationActivity={preparationActivity}
           onPrepareModel={onPrepareModel}
+          onCancelPreparation={onCancelPreparation}
         />
 
         <fieldset className="settings-group">

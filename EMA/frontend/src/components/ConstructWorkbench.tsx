@@ -79,6 +79,7 @@ interface ConstructWorkbenchProps {
   archiveEntries?: ModelArchiveEntry[];
   preparationActivity?: ModelPreparationActivity;
   onPrepareModel?: (action: SystemReadinessModelAction) => void;
+  onCancelPreparation?: () => void;
   onRuntimeChanged?: (runtime: ConstructRuntime) => void;
 }
 
@@ -92,6 +93,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   archiveEntries = [],
   preparationActivity,
   onPrepareModel,
+  onCancelPreparation,
   onRuntimeChanged,
 }) => {
   const conversationId = `construct-${construct.id}`;
@@ -1028,6 +1030,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 archiveEntries={archiveEntries}
                 preparationActivity={preparationActivity}
                 onPrepareModel={onPrepareModel}
+                onCancelPreparation={onCancelPreparation}
               />
               <div className="runtime-load-meter" aria-label={`Runtime load ${runtimePhaseLabel}`}>
                 {(["configuring", "loading", "ready"] as RuntimeLoadPhase[]).map((phase) => (

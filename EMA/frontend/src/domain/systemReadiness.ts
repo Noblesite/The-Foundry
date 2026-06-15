@@ -24,10 +24,11 @@ export interface SystemReadinessSummary {
 }
 
 export interface ModelPreparationActivity {
-  state: "idle" | "routing" | "registering" | "downloading" | "handoff" | "ready" | "failed";
+  state: "idle" | "routing" | "registering" | "downloading" | "handoff" | "ready" | "failed" | "canceled";
   label: string;
   detail: string;
   progress: number;
+  jobId?: string;
 }
 
 export type SystemReadinessModelAction =

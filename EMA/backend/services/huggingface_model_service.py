@@ -30,7 +30,6 @@ class HuggingFaceModelService:
             os.getenv("FOUNDRY_MODEL_ARCHIVE_DIR", str(DEFAULT_MODEL_ARCHIVE_DIR))
         )
         self.archive_dir.mkdir(parents=True, exist_ok=True)
-        self._download_jobs: Dict[str, Dict[str, Any]] = {}
 
     async def search_models(
         self,
@@ -200,52 +199,77 @@ class HuggingFaceModelService:
             "archiveEntry": None,
             "error": None,
         }
-        self._download_jobs[job["id"]] = job
+        job = await self.catalog_service.create_model_download_job(
+            job_id=job["id"],
+            repo_id=job["repoId"],
+            revision=job["revision"],
+            status=job["status"],
+            phase=job["phase"],
+            progress=job["progress"],
+            detail=job["detail"],
+        )
         asyncio.create_task(
             self._run_download_job(job["id"], token=self._effective_token(token))
         )
-        return dict(job)
+        return job
 
     async def get_download_job(self, job_id: str) -> Dict[str, Any]:
-        job = self._download_jobs.get(job_id)
+        job = await self.catalog_service.get_model_download_job(job_id)
         if job is None:
             raise ValueError("Model download job was not found.")
-        return dict(job)
+        return job
+
+    async def list_download_jobs(self) -> list[Dict[str, Any]]:
+        return await self.catalog_service.list_model_download_jobs()
+
+    async def cancel_download_job(self, job_id: str) -> Dict[str, Any]:
+        job = await self.catalog_service.get_model_download_job(job_id)
+        if job is None:
+            raise ValueError("Model download job was not found.")
+        if job["status"] in {"completed", "failed", "canceled"}:
+            return job
+        return await self.catalog_service.cancel_model_download_job(job_id)
 
     async def list_archive_entries(self) -> list[Dict[str, Any]]:
         return await self.catalog_service.list_model_archive_entries()
 
     async def _run_download_job(self, job_id: str, token: Optional[str]) -> None:
-        job = self._download_jobs[job_id]
         try:
-            job.update({
-                "status": "running",
-                "phase": "inspecting",
-                "progress": 15,
-                "detail": f"Inspecting {job['repoId']} metadata.",
-            })
+            await self._raise_if_download_canceled(job_id)
+            job = await self._update_download_job(
+                job_id,
+                status="running",
+                phase="inspecting",
+                progress=15,
+                detail="Inspecting model metadata.",
+            )
+            await self._raise_if_download_canceled(job_id)
             model = await self._run_hf_query(
                 self._inspect_model_sync,
                 repo_id=job["repoId"],
                 revision=job["revision"],
                 token=token,
             )
-            job.update({
-                "phase": "downloading",
-                "progress": 35,
-                "detail": f"Downloading {model['repoId']} into the local Archive.",
-            })
+            await self._raise_if_download_canceled(job_id)
+            job = await self._update_download_job(
+                job_id,
+                phase="downloading",
+                progress=35,
+                detail=f"Downloading {model['repoId']} into the local Archive.",
+            )
             local_path = await self._run_hf_query(
                 self._download_model_sync,
                 repo_id=job["repoId"],
                 revision=job["revision"],
                 token=token,
             )
-            job.update({
-                "phase": "cataloging",
-                "progress": 88,
-                "detail": "Cataloging local model files.",
-            })
+            await self._raise_if_download_canceled(job_id)
+            await self._update_download_job(
+                job_id,
+                phase="cataloging",
+                progress=88,
+                detail="Cataloging local model files.",
+            )
             size_on_disk = self._directory_size(Path(local_path))
             entry = await self.catalog_service.upsert_model_archive_entry(
                 repo_id=model["repoId"],
@@ -260,25 +284,49 @@ class HuggingFaceModelService:
                 gated=bool(model.get("gated")),
                 private=bool(model.get("private")),
             )
-            job.update({
-                "status": "completed",
-                "phase": "completed",
-                "progress": 100,
-                "detail": f"{model['repoId']} is cached in the local Archive.",
-                "archiveEntry": entry,
-            })
+            await self._update_download_job(
+                job_id,
+                status="completed",
+                phase="completed",
+                progress=100,
+                detail=f"{model['repoId']} is cached in the local Archive.",
+                archive_entry_id=entry["id"],
+            )
+        except asyncio.CancelledError as error:
+            await self._update_download_job(
+                job_id,
+                status="canceled",
+                phase="canceled",
+                progress=100,
+                detail=str(error),
+                error=str(error),
+                cancel_requested=True,
+            )
         except Exception as error:
-            job.update({
-                "status": "failed",
-                "phase": "failed",
-                "progress": 100,
-                "detail": "Model download failed.",
-                "error": str(error),
-            })
+            job = await self.catalog_service.get_model_download_job(job_id)
+            if job and job.get("cancelRequested"):
+                await self._update_download_job(
+                    job_id,
+                    status="canceled",
+                    phase="canceled",
+                    progress=100,
+                    detail="Download canceled.",
+                    error=None,
+                    cancel_requested=True,
+                )
+                return
+            await self._update_download_job(
+                job_id,
+                status="failed",
+                phase="failed",
+                progress=100,
+                detail="Model download failed.",
+                error=str(error),
+            )
             try:
                 await self.catalog_service.upsert_model_archive_entry(
-                    repo_id=job["repoId"],
-                    revision=job["revision"],
+                    repo_id=job["repoId"] if job else "",
+                    revision=job["revision"] if job else "",
                     local_path="",
                     source="huggingface",
                     status="failed",
@@ -291,6 +339,14 @@ class HuggingFaceModelService:
                 )
             except Exception:
                 pass
+
+    async def _update_download_job(self, job_id: str, **kwargs) -> Dict[str, Any]:
+        return await self.catalog_service.update_model_download_job(job_id, **kwargs)
+
+    async def _raise_if_download_canceled(self, job_id: str) -> None:
+        job = await self.catalog_service.get_model_download_job(job_id)
+        if job and job.get("cancelRequested"):
+            raise asyncio.CancelledError("Download canceled.")
 
     async def _run_hf_query(self, fn, **kwargs):
         return await asyncio.to_thread(fn, **kwargs)

@@ -442,10 +442,23 @@ async def start_foundry_archive_model_download_job_endpoint(data: InspectArchive
         raise HTTPException(status_code=400, detail=str(error))
 
 
+@app.get("/api/v1/archive/models/download-jobs")
+async def foundry_archive_model_download_jobs_endpoint():
+    return api_envelope(await huggingface_model_service.list_download_jobs())
+
+
 @app.get("/api/v1/archive/models/download-jobs/{job_id}")
 async def foundry_archive_model_download_job_endpoint(job_id: str):
     try:
         return api_envelope(await huggingface_model_service.get_download_job(job_id))
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+
+@app.post("/api/v1/archive/models/download-jobs/{job_id}/cancel")
+async def cancel_foundry_archive_model_download_job_endpoint(job_id: str):
+    try:
+        return api_envelope(await huggingface_model_service.cancel_download_job(job_id))
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error))
 

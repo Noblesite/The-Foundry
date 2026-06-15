@@ -79,8 +79,11 @@ export const foundryApiRoutes = {
   registerArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/register`,
   downloadArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/download`,
   startModelDownloadJob: `${FOUNDRY_API_VERSION}/archive/models/download-jobs`,
+  modelDownloadJobs: `${FOUNDRY_API_VERSION}/archive/models/download-jobs`,
   modelDownloadJob: (jobId: string) =>
     `${FOUNDRY_API_VERSION}/archive/models/download-jobs/${jobId}`,
+  cancelModelDownloadJob: (jobId: string) =>
+    `${FOUNDRY_API_VERSION}/archive/models/download-jobs/${jobId}/cancel`,
   construct: (constructId: string) => `${FOUNDRY_API_VERSION}/constructs/${constructId}`,
   constructChat: (constructId: string) =>
     `${FOUNDRY_API_VERSION}/constructs/${constructId}/chat`,

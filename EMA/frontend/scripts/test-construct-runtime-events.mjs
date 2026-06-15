@@ -104,6 +104,16 @@ assertIncludes(
 );
 assertIncludes(
   files.repository,
+  "listModelDownloadJobs:",
+  "Repository list model download jobs method"
+);
+assertIncludes(
+  files.repository,
+  "cancelModelDownloadJob:",
+  "Repository cancel model download job method"
+);
+assertIncludes(
+  files.repository,
   "buildApiUnavailableStatus",
   "Repository status fallback"
 );
@@ -211,6 +221,16 @@ assertIncludes(
   files.app,
   "repository.getModelDownloadJob",
   "App polls backend model download job"
+);
+assertIncludes(
+  files.app,
+  "activeModelDownloadJobId",
+  "App resumes active model download job"
+);
+assertIncludes(
+  files.app,
+  "handleCancelPreparation",
+  "App cancels model preparation"
 );
 assertIncludes(
   files.settings,

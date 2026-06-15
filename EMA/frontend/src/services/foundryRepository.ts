@@ -183,7 +183,9 @@ export interface FoundryRepository {
   registerArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelRegisterDto>;
   downloadArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelDownloadDto>;
   startModelDownloadJob: (request: InspectArchiveModelRequest) => Promise<ModelDownloadJob>;
+  listModelDownloadJobs: () => Promise<ModelDownloadJob[]>;
   getModelDownloadJob: (jobId: string) => Promise<ModelDownloadJob>;
+  cancelModelDownloadJob: (jobId: string) => Promise<ModelDownloadJob>;
 }
 
 const mockMaterialSources: MaterialSource[] = [
@@ -1459,6 +1461,23 @@ export const mockFoundryRepository: FoundryRepository = {
     }
     return { ...job };
   },
+  listModelDownloadJobs: async () =>
+    Object.values(mockModelDownloadJobs).sort((left, right) => right.id.localeCompare(left.id)),
+  cancelModelDownloadJob: async (jobId) => {
+    const job = mockModelDownloadJobs[jobId];
+    if (!job) {
+      throw new Error("Model download job was not found.");
+    }
+    if (job.status === "completed" || job.status === "failed") {
+      return { ...job };
+    }
+    job.status = "canceled";
+    job.phase = "canceled";
+    job.progress = 100;
+    job.detail = "Mock download canceled.";
+    job.cancelRequested = true;
+    return { ...job };
+  },
 };
 
 export const apiFoundryRepository: FoundryRepository = {
@@ -1758,10 +1777,22 @@ export const apiFoundryRepository: FoundryRepository = {
         request
       )
     ),
+  listModelDownloadJobs: async () =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<ModelDownloadJobDto[]>>(
+        foundryApiRoutes.modelDownloadJobs
+      )
+    ),
   getModelDownloadJob: async (jobId) =>
     unwrap(
       await apiClient.get<ApiEnvelope<ModelDownloadJobDto>>(
         foundryApiRoutes.modelDownloadJob(jobId)
+      )
+    ),
+  cancelModelDownloadJob: async (jobId) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ModelDownloadJobDto>>(
+        foundryApiRoutes.cancelModelDownloadJob(jobId)
       )
     ),
 };
@@ -1785,7 +1816,9 @@ const constructApiOverrides: Pick<
   | "registerArchiveModel"
   | "downloadArchiveModel"
   | "startModelDownloadJob"
+  | "listModelDownloadJobs"
   | "getModelDownloadJob"
+  | "cancelModelDownloadJob"
 > = {
   getFoundryStatus: apiFoundryRepository.getFoundryStatus,
   chatWithConstruct: apiFoundryRepository.chatWithConstruct,
@@ -1804,7 +1837,9 @@ const constructApiOverrides: Pick<
   registerArchiveModel: apiFoundryRepository.registerArchiveModel,
   downloadArchiveModel: apiFoundryRepository.downloadArchiveModel,
   startModelDownloadJob: apiFoundryRepository.startModelDownloadJob,
+  listModelDownloadJobs: apiFoundryRepository.listModelDownloadJobs,
   getModelDownloadJob: apiFoundryRepository.getModelDownloadJob,
+  cancelModelDownloadJob: apiFoundryRepository.cancelModelDownloadJob,
 };
 
 export const constructApiFoundryRepository: FoundryRepository = {

@@ -1396,6 +1396,17 @@ input[type="checkbox"] {
   border-color: rgba(255, 138, 0, 0.42);
 }
 
+.model-preparation-activity.is-canceled {
+  border-color: rgba(119, 140, 152, 0.36);
+}
+
+.model-preparation-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  align-items: start;
+}
+
 .model-preparation-activity strong,
 .model-preparation-activity span {
   display: block;

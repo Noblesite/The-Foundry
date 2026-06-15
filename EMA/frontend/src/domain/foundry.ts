@@ -475,12 +475,15 @@ export interface ModelDownloadJob {
   id: string;
   repoId: string;
   revision: string;
-  status: "queued" | "running" | "completed" | "failed";
-  phase: "queued" | "inspecting" | "downloading" | "cataloging" | "completed" | "failed";
+  status: "queued" | "running" | "completed" | "failed" | "canceled";
+  phase: "queued" | "inspecting" | "downloading" | "cataloging" | "completed" | "failed" | "canceled";
   progress: number;
   detail: string;
   archiveEntry?: ModelArchiveEntry | null;
   error?: string | null;
+  cancelRequested?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ModelSearchResult {

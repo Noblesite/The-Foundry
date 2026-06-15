@@ -246,6 +246,22 @@ class FoundryCatalogService:
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            CREATE TABLE IF NOT EXISTS model_download_jobs (
+                id TEXT PRIMARY KEY,
+                repo_id TEXT NOT NULL,
+                revision TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                progress INTEGER NOT NULL DEFAULT 0,
+                detail TEXT NOT NULL DEFAULT '',
+                archive_entry_id TEXT,
+                error TEXT,
+                cancel_requested INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(archive_entry_id) REFERENCES model_archive_entries(id)
+            );
+
             CREATE TABLE IF NOT EXISTS navigation_items (
                 id TEXT PRIMARY KEY,
                 label TEXT NOT NULL,
@@ -2872,6 +2888,119 @@ class FoundryCatalogService:
 
         return await self._run_query(query)
 
+    async def list_model_download_jobs(self) -> List[Dict[str, Any]]:
+        def query():
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM model_download_jobs
+                    ORDER BY datetime(updated_at) DESC
+                    LIMIT 25
+                    """
+                ).fetchall()
+                return [self._model_download_job_from_row(connection, row) for row in rows]
+
+        return await self._run_query(query)
+
+    async def get_model_download_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        def query():
+            with self._connect() as connection:
+                row = connection.execute(
+                    "SELECT * FROM model_download_jobs WHERE id = ?",
+                    (job_id,),
+                ).fetchone()
+                return self._model_download_job_from_row(connection, row) if row else None
+
+        return await self._run_query(query)
+
+    async def create_model_download_job(
+        self,
+        *,
+        job_id: str,
+        repo_id: str,
+        revision: str,
+        status: str,
+        phase: str,
+        progress: int,
+        detail: str,
+    ) -> Dict[str, Any]:
+        async with self._write_lock:
+            with self._connect() as connection:
+                connection.execute(
+                    """
+                    INSERT INTO model_download_jobs (
+                        id, repo_id, revision, status, phase, progress, detail
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (job_id, repo_id, revision or "", status, phase, progress, detail),
+                )
+                row = connection.execute(
+                    "SELECT * FROM model_download_jobs WHERE id = ?",
+                    (job_id,),
+                ).fetchone()
+                return self._model_download_job_from_row(connection, row)
+
+    async def update_model_download_job(
+        self,
+        job_id: str,
+        *,
+        status: Optional[str] = None,
+        phase: Optional[str] = None,
+        progress: Optional[int] = None,
+        detail: Optional[str] = None,
+        archive_entry_id: Optional[str] = None,
+        error: Optional[str] = None,
+        cancel_requested: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        async with self._write_lock:
+            with self._connect() as connection:
+                current = connection.execute(
+                    "SELECT * FROM model_download_jobs WHERE id = ?",
+                    (job_id,),
+                ).fetchone()
+                if current is None:
+                    raise ValueError("Model download job was not found.")
+                connection.execute(
+                    """
+                    UPDATE model_download_jobs
+                    SET status = ?,
+                        phase = ?,
+                        progress = ?,
+                        detail = ?,
+                        archive_entry_id = ?,
+                        error = ?,
+                        cancel_requested = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (
+                        status if status is not None else current["status"],
+                        phase if phase is not None else current["phase"],
+                        progress if progress is not None else current["progress"],
+                        detail if detail is not None else current["detail"],
+                        archive_entry_id if archive_entry_id is not None else current["archive_entry_id"],
+                        error if error is not None else current["error"],
+                        int(cancel_requested) if cancel_requested is not None else current["cancel_requested"],
+                        job_id,
+                    ),
+                )
+                row = connection.execute(
+                    "SELECT * FROM model_download_jobs WHERE id = ?",
+                    (job_id,),
+                ).fetchone()
+                return self._model_download_job_from_row(connection, row)
+
+    async def cancel_model_download_job(self, job_id: str) -> Dict[str, Any]:
+        return await self.update_model_download_job(
+            job_id,
+            status="canceled",
+            phase="canceled",
+            progress=100,
+            detail="Cancellation requested.",
+            cancel_requested=True,
+        )
+
     async def get_model_archive_entry(
         self,
         repo_id: str,
@@ -2995,6 +3124,33 @@ class FoundryCatalogService:
             "private": bool(row["private"]),
             "lastUsedAt": row["last_used_at"],
             "lastCheckedAt": row["last_checked_at"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+        }
+
+    def _model_download_job_from_row(
+        self,
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+    ) -> Dict[str, Any]:
+        archive_entry = None
+        if row["archive_entry_id"]:
+            archive_row = connection.execute(
+                "SELECT * FROM model_archive_entries WHERE id = ?",
+                (row["archive_entry_id"],),
+            ).fetchone()
+            archive_entry = self._model_archive_entry_from_row(archive_row) if archive_row else None
+        return {
+            "id": row["id"],
+            "repoId": row["repo_id"],
+            "revision": row["revision"],
+            "status": row["status"],
+            "phase": row["phase"],
+            "progress": row["progress"],
+            "detail": row["detail"],
+            "archiveEntry": archive_entry,
+            "error": row["error"],
+            "cancelRequested": bool(row["cancel_requested"]),
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
         }
