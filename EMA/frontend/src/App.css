@@ -983,6 +983,20 @@ input[type="checkbox"] {
   box-shadow: var(--shadow-orange);
 }
 
+.toast-status {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 90;
+  max-width: min(420px, calc(100vw - 2rem));
+  border: 1px solid rgba(0, 212, 255, 0.42);
+  border-radius: 8px;
+  padding: 0.8rem 0.95rem;
+  background: rgba(13, 17, 23, 0.94);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-blue);
+}
+
 .workbench-page {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -1339,6 +1353,34 @@ input[type="checkbox"] {
 .system-readiness-list {
   display: grid;
   gap: 0.45rem;
+}
+
+.system-readiness-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  border: 1px solid rgba(0, 212, 255, 0.14);
+  border-radius: 8px;
+  padding: 0.62rem;
+  background: rgba(0, 212, 255, 0.04);
+}
+
+.system-readiness-action strong,
+.system-readiness-action span {
+  display: block;
+}
+
+.system-readiness-action strong {
+  color: var(--text-primary);
+  font-size: 0.78rem;
+}
+
+.system-readiness-action span {
+  margin-top: 0.14rem;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.35;
 }
 
 .system-readiness-step {

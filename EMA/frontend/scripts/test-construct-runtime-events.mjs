@@ -23,6 +23,7 @@ const files = {
     new URL("../src/domain/systemReadiness.ts", import.meta.url),
     "utf8"
   ),
+  app: await readFile(new URL("../src/App.tsx", import.meta.url), "utf8"),
 };
 
 const assertIncludes = (source, expected, message) => {
@@ -147,14 +148,29 @@ assertIncludes(
   "System readiness archive state step"
 );
 assertIncludes(
+  files.systemReadinessDomain,
+  "SystemReadinessModelAction",
+  "System readiness model action contract"
+);
+assertIncludes(
   files.systemReadiness,
   "System readiness",
   "System readiness panel"
 );
 assertIncludes(
   files.systemReadiness,
+  "Prepare Model",
+  "System readiness prepare model action"
+);
+assertIncludes(
+  files.systemReadiness,
   "archiveEntries",
   "System readiness archive entries prop"
+);
+assertIncludes(
+  files.app,
+  "handlePrepareModel",
+  "App prepare model action handler"
 );
 assertIncludes(
   files.settings,

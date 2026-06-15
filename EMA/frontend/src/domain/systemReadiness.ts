@@ -20,7 +20,40 @@ export interface SystemReadinessSummary {
   title: string;
   detail: string;
   steps: SystemReadinessStep[];
+  modelAction: SystemReadinessModelAction;
 }
+
+export type SystemReadinessModelAction =
+  | {
+      type: "select-model";
+      label: string;
+      detail: string;
+    }
+  | {
+      type: "open-archive";
+      label: string;
+      detail: string;
+      modelId: string;
+    }
+  | {
+      type: "download-model";
+      label: string;
+      detail: string;
+      modelId: string;
+      revision?: string;
+    }
+  | {
+      type: "open-construct";
+      label: string;
+      detail: string;
+      modelId: string;
+      modelLabel?: string;
+    }
+  | {
+      type: "ready";
+      label: string;
+      detail: string;
+    };
 
 const hasValue = (value?: string | null) => Boolean(value?.trim());
 
@@ -71,6 +104,34 @@ export const buildSystemReadinessSummary = (
       (runtimeModelId && (runtimeModelId.startsWith("runtime/") || runtimeModelId.startsWith("/")))
   );
   const archiveState = archiveEntry?.status || (hasValue(selectedModel) ? "remote" : "missing");
+  const modelAction: SystemReadinessModelAction = !hasValue(selectedModel)
+    ? {
+        type: "select-model",
+        label: "Choose Model",
+        detail: "Select a base model in Archive before preparing local inference.",
+      }
+    : archiveEntry?.localPath && (archiveEntry.status === "cached" || archiveEntry.status === "ready")
+      ? {
+          type: "open-construct",
+          label: "Open in Construct",
+          detail: "The selected model is cached locally and can be handed to Construct.",
+          modelId: archiveEntry.localPath,
+          modelLabel: archiveEntry.repoId,
+        }
+      : archiveEntry && archiveEntry.status !== "failed"
+        ? {
+            type: "download-model",
+            label: "Download Model",
+            detail: "The model is registered in Archive but still needs a local cache.",
+            modelId: archiveEntry.repoId,
+            revision: archiveEntry.revision || undefined,
+          }
+        : {
+            type: "open-archive",
+            label: "Open Archive",
+            detail: "Register this model in Archive before downloading or loading it.",
+            modelId: selectedModel,
+          };
   const archiveDetail = runtimeLoaded && !archiveEntry
     ? `${runtimeModelId || "Construct runtime"} is currently loaded, but it is not registered in the Archive yet.`
     : archiveEntry
@@ -152,5 +213,12 @@ export const buildSystemReadinessSummary = (
           ? "The core loop can continue, but one or more setup items should be reviewed."
           : "Resolve the blocked setup items before testing the full local model flow.",
     steps,
+    modelAction: runtimeLoaded
+      ? {
+          type: "ready",
+          label: "Model Ready",
+          detail: "The current Construct runtime already has a model loaded.",
+        }
+      : modelAction,
   };
 };

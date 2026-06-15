@@ -40,6 +40,7 @@ import {
   getFoundryRepository,
   loadFoundryBootstrap,
 } from "./services/foundryRepository";
+import { SystemReadinessModelAction } from "./domain/systemReadiness";
 import { getRuntimeMemory } from "./domain/runtimeState";
 import "./App.css";
 
@@ -136,6 +137,7 @@ const App: React.FC = () => {
   const [activeSection, setActiveSection] = useState<NavigationSection>("workshop");
   const [settings, setSettings] = useState<WorkspaceSettings>(loadWorkspaceSettings);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [statusToast, setStatusToast] = useState<string | null>(null);
   const [isWorkshopModalOpen, setIsWorkshopModalOpen] = useState(false);
   const [isCreatingWorkshop, setIsCreatingWorkshop] = useState(false);
   const [forgePreset, setForgePreset] = useState<StartForgeRequest | null>(null);
@@ -186,6 +188,16 @@ const App: React.FC = () => {
     window.localStorage.setItem("foundry.workspaceSettings", JSON.stringify(nextSettings));
   };
 
+  const upsertArchiveEntry = useCallback((entry: ModelArchiveEntry) => {
+    setArchiveEntries((current) => {
+      const withoutDuplicate = current.filter(
+        (candidate) =>
+          !(candidate.repoId === entry.repoId && candidate.revision === entry.revision)
+      );
+      return [entry, ...withoutDuplicate];
+    });
+  }, []);
+
   const refreshFoundryData = async () => {
     const [bootstrap, savedWorkshops, status, modelArchiveEntries] = await Promise.all([
       loadFoundryBootstrap(repository),
@@ -214,6 +226,48 @@ const App: React.FC = () => {
   const handleArchiveEntriesChanged = useCallback((entries: ModelArchiveEntry[]) => {
     setArchiveEntries(entries);
   }, []);
+
+  const handlePrepareModel = async (action: SystemReadinessModelAction) => {
+    setCreateError(null);
+    setStatusToast(null);
+
+    if (action.type === "ready") {
+      setStatusToast(action.detail);
+      return;
+    }
+
+    if (action.type === "open-construct") {
+      handleOpenConstructWithModel(action.modelId, action.modelLabel);
+      return;
+    }
+
+    if (action.type === "download-model") {
+      try {
+        const result = await repository.downloadArchiveModel({
+          repoId: action.modelId,
+          revision: action.revision,
+          token: settings.huggingFaceToken || undefined,
+        });
+        upsertArchiveEntry(result.archiveEntry);
+        handleOpenConstructWithModel(
+          result.archiveEntry.localPath || result.archiveEntry.repoId,
+          result.archiveEntry.repoId
+        );
+        setStatusToast(`${result.archiveEntry.repoId} cached and handed to Construct.`);
+      } catch (error: unknown) {
+        setCreateError(error instanceof Error ? error.message : "Could not download model.");
+        setActiveSection("artifacts");
+      }
+      return;
+    }
+
+    setActiveSection("artifacts");
+    setStatusToast(
+      action.type === "select-model"
+        ? "Open Archive and choose a model to prepare."
+        : `${action.modelId} needs to be registered in Archive.`
+    );
+  };
 
   const openWorkshopModal = () => {
     setCreateError(null);
@@ -408,6 +462,7 @@ const App: React.FC = () => {
           sourceStatus={foundryStatus}
           runtime={constructRuntime}
           archiveEntries={archiveEntries}
+          onPrepareModel={handlePrepareModel}
           onSave={persistSettings}
         />
       );
@@ -423,6 +478,7 @@ const App: React.FC = () => {
           settings={settings}
           sourceStatus={foundryStatus}
           archiveEntries={archiveEntries}
+          onPrepareModel={handlePrepareModel}
           onRuntimeChanged={handleConstructRuntimeChanged}
         />
       );
@@ -621,6 +677,7 @@ const App: React.FC = () => {
         onCreate={handleCreateWorkshop}
       />
       {createError && <div className="toast-error" role="status">{createError}</div>}
+      {statusToast && <div className="toast-status" role="status">{statusToast}</div>}
     </div>
   );
 };

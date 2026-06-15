@@ -4,7 +4,10 @@ import type {
   ModelArchiveEntry,
   WorkspaceSettings,
 } from "../domain/foundry";
-import { buildSystemReadinessSummary } from "../domain/systemReadiness";
+import {
+  buildSystemReadinessSummary,
+  SystemReadinessModelAction,
+} from "../domain/systemReadiness";
 
 interface SystemReadinessPanelProps {
   settings: WorkspaceSettings;
@@ -12,6 +15,7 @@ interface SystemReadinessPanelProps {
   runtime?: ConstructRuntime | null;
   archiveEntries?: ModelArchiveEntry[];
   compact?: boolean;
+  onPrepareModel?: (action: SystemReadinessModelAction) => void;
 }
 
 const stateIcon = {
@@ -26,9 +30,11 @@ const SystemReadinessPanel: React.FC<SystemReadinessPanelProps> = ({
   runtime,
   archiveEntries = [],
   compact = false,
+  onPrepareModel,
 }) => {
   const summary = buildSystemReadinessSummary(settings, sourceStatus, runtime, archiveEntries);
   const steps = compact ? summary.steps.slice(0, 4) : summary.steps;
+  const actionDisabled = summary.modelAction.type === "ready";
 
   return (
     <section className={`system-readiness-card readiness-${summary.state}`}>
@@ -39,6 +45,21 @@ const SystemReadinessPanel: React.FC<SystemReadinessPanelProps> = ({
           <p>{summary.detail}</p>
         </div>
         <span className={`status-badge readiness-${summary.state}`}>{summary.state}</span>
+      </div>
+      <div className="system-readiness-action">
+        <div>
+          <strong>{summary.modelAction.label}</strong>
+          <span>{summary.modelAction.detail}</span>
+        </div>
+        <button
+          className="button-secondary button-compact"
+          disabled={actionDisabled}
+          onClick={() => onPrepareModel?.(summary.modelAction)}
+          type="button"
+        >
+          <i className="fas fa-wand-magic-sparkles" aria-hidden="true" />
+          Prepare Model
+        </button>
       </div>
       <div className="system-readiness-list">
         {steps.map((step) => (
