@@ -3240,6 +3240,151 @@ input[type="checkbox"] {
   color: var(--text-secondary);
 }
 
+.archive-inventory-panel {
+  display: grid;
+  gap: 0.82rem;
+  border: 1px solid rgba(212, 160, 23, 0.18);
+  border-radius: 8px;
+  padding: 0.95rem;
+  background:
+    radial-gradient(circle at top right, rgba(212, 160, 23, 0.1), transparent 34%),
+    rgba(13, 17, 23, 0.48);
+}
+
+.archive-inventory-panel h3,
+.archive-detail-title h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.archive-inventory-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.48fr) minmax(320px, 1fr);
+  gap: 0.85rem;
+}
+
+.archive-entry-list {
+  display: grid;
+  align-content: start;
+  gap: 0.58rem;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.archive-entry-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.72rem;
+  background: rgba(13, 17, 23, 0.58);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.archive-entry-row:hover,
+.archive-entry-row.is-active {
+  border-color: rgba(212, 160, 23, 0.56);
+  background: rgba(212, 160, 23, 0.08);
+}
+
+.archive-entry-row strong {
+  display: block;
+  overflow: hidden;
+  margin-bottom: 0.2rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archive-entry-row span,
+.archive-path-readout span,
+.archive-detail-stats dt {
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+}
+
+.archive-entry-meta {
+  display: grid;
+  justify-items: end;
+  gap: 0.24rem;
+  text-transform: uppercase;
+}
+
+.archive-detail-drawer {
+  display: grid;
+  align-content: start;
+  gap: 0.82rem;
+  border: 1px solid rgba(0, 212, 255, 0.14);
+  border-radius: 8px;
+  padding: 0.9rem;
+  background:
+    radial-gradient(circle at top left, rgba(0, 212, 255, 0.1), transparent 36%),
+    rgba(13, 17, 23, 0.62);
+}
+
+.archive-detail-title {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.archive-detail-title h3 {
+  overflow-wrap: anywhere;
+}
+
+.archive-path-readout {
+  display: grid;
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.62rem;
+  background: rgba(13, 17, 23, 0.55);
+}
+
+.archive-path-readout code {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archive-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.archive-detail-stats div {
+  display: grid;
+  gap: 0.24rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem;
+  background: rgba(13, 17, 23, 0.45);
+}
+
+.archive-detail-stats dd {
+  overflow: hidden;
+  margin: 0;
+  color: var(--text-primary);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archive-detail-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
 .forge-progress-track {
   position: relative;
   width: min(100%, 260px);
@@ -3886,6 +4031,10 @@ input[type="checkbox"] {
   .model-browser-grid {
     grid-template-columns: 1fr;
   }
+
+  .archive-inventory-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 820px) {
@@ -3958,6 +4107,9 @@ input[type="checkbox"] {
   .artifact-row,
   .model-result-row,
   .archive-job-row,
+  .archive-entry-row,
+  .archive-detail-stats,
+  .archive-detail-actions,
   .assembly-run-row,
   .assembly-review-grid,
   .trial-card-header,

@@ -428,6 +428,19 @@ async def download_foundry_archive_model_endpoint(data: InspectArchiveModelInput
         raise HTTPException(status_code=502, detail=f"Hugging Face model download failed: {error}")
 
 
+@app.post("/api/v1/archive/models/evict")
+async def evict_foundry_archive_model_endpoint(data: InspectArchiveModelInput):
+    try:
+        return api_envelope(
+            await huggingface_model_service.evict_archive_model(
+                repo_id=data.repoId,
+                revision=data.revision or "",
+            )
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+
 @app.post("/api/v1/archive/models/download-jobs")
 async def start_foundry_archive_model_download_job_endpoint(data: InspectArchiveModelInput):
     try:

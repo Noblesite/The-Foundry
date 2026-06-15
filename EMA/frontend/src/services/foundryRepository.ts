@@ -2,6 +2,7 @@ import {
   ApiEnvelope,
   AcademyActionDto,
   AcademyConceptDto,
+  ArchiveModelEvictDto,
   ArchiveModelInspectDto,
   ArchiveModelDownloadDto,
   ArchiveModelRegisterDto,
@@ -182,6 +183,7 @@ export interface FoundryRepository {
   inspectArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelInspectDto>;
   registerArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelRegisterDto>;
   downloadArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelDownloadDto>;
+  evictArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelEvictDto>;
   startModelDownloadJob: (request: InspectArchiveModelRequest) => Promise<ModelDownloadJob>;
   listModelDownloadJobs: () => Promise<ModelDownloadJob[]>;
   getModelDownloadJob: (jobId: string) => Promise<ModelDownloadJob>;
@@ -1414,6 +1416,26 @@ export const mockFoundryRepository: FoundryRepository = {
       archiveEntry,
     };
   },
+  evictArchiveModel: async (request) => {
+    const existingEntry = mockModelArchiveEntries.find(
+      (entry) => entry.repoId === request.repoId && entry.revision === (request.revision || "")
+    );
+    if (!existingEntry) {
+      throw new Error("Model Archive entry was not found.");
+    }
+    const now = new Date().toISOString();
+    const archiveEntry: ModelArchiveEntry = {
+      ...existingEntry,
+      localPath: "",
+      status: "remote",
+      sizeOnDiskBytes: 0,
+      lastCheckedAt: now,
+      updatedAt: now,
+    };
+    const index = mockModelArchiveEntries.findIndex((entry) => entry.id === existingEntry.id);
+    mockModelArchiveEntries.splice(index, 1, archiveEntry);
+    return { archiveEntry };
+  },
   startModelDownloadJob: async (request) => {
     const job: ModelDownloadJob = {
       id: `mdl-download-${Date.now()}`,
@@ -1770,6 +1792,13 @@ export const apiFoundryRepository: FoundryRepository = {
         request
       )
     ),
+  evictArchiveModel: async (request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ArchiveModelEvictDto>>(
+        foundryApiRoutes.evictArchiveModel,
+        request
+      )
+    ),
   startModelDownloadJob: async (request) =>
     unwrap(
       await apiClient.post<ApiEnvelope<ModelDownloadJobDto>>(
@@ -1815,6 +1844,7 @@ const constructApiOverrides: Pick<
   | "inspectArchiveModel"
   | "registerArchiveModel"
   | "downloadArchiveModel"
+  | "evictArchiveModel"
   | "startModelDownloadJob"
   | "listModelDownloadJobs"
   | "getModelDownloadJob"
@@ -1836,6 +1866,7 @@ const constructApiOverrides: Pick<
   inspectArchiveModel: apiFoundryRepository.inspectArchiveModel,
   registerArchiveModel: apiFoundryRepository.registerArchiveModel,
   downloadArchiveModel: apiFoundryRepository.downloadArchiveModel,
+  evictArchiveModel: apiFoundryRepository.evictArchiveModel,
   startModelDownloadJob: apiFoundryRepository.startModelDownloadJob,
   listModelDownloadJobs: apiFoundryRepository.listModelDownloadJobs,
   getModelDownloadJob: apiFoundryRepository.getModelDownloadJob,

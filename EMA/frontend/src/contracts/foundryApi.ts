@@ -78,6 +78,7 @@ export const foundryApiRoutes = {
   inspectArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/inspect`,
   registerArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/register`,
   downloadArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/download`,
+  evictArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/evict`,
   startModelDownloadJob: `${FOUNDRY_API_VERSION}/archive/models/download-jobs`,
   modelDownloadJobs: `${FOUNDRY_API_VERSION}/archive/models/download-jobs`,
   modelDownloadJob: (jobId: string) =>
@@ -398,6 +399,9 @@ export interface ArchiveModelRegisterDto extends ArchiveModelInspectDto {
 }
 
 export type ArchiveModelDownloadDto = ArchiveModelRegisterDto;
+export interface ArchiveModelEvictDto {
+  archiveEntry: ModelArchiveEntry;
+}
 export type ModelDownloadJobDto = ModelDownloadJob;
 
 export interface ConstructChatRequest {

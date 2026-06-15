@@ -233,6 +233,33 @@ class HuggingFaceModelService:
     async def list_archive_entries(self) -> list[Dict[str, Any]]:
         return await self.catalog_service.list_model_archive_entries()
 
+    async def evict_archive_model(self, *, repo_id: str, revision: str) -> Dict[str, Any]:
+        safe_repo_id = repo_id.strip()
+        if not safe_repo_id:
+            raise ValueError("Model repository id cannot be empty.")
+
+        existing_entry = await self.catalog_service.get_model_archive_entry(
+            repo_id=safe_repo_id,
+            revision=revision.strip(),
+        )
+        if existing_entry is None:
+            raise ValueError("Model Archive entry was not found.")
+
+        entry = await self.catalog_service.upsert_model_archive_entry(
+            repo_id=existing_entry["repoId"],
+            revision=existing_entry.get("revision") or "",
+            local_path="",
+            source=existing_entry.get("source") or "huggingface",
+            status="remote",
+            size_on_disk_bytes=0,
+            parameter_count=existing_entry.get("parameterCount"),
+            library_name=existing_entry.get("libraryName"),
+            pipeline_tag=existing_entry.get("pipelineTag"),
+            gated=bool(existing_entry.get("gated")),
+            private=bool(existing_entry.get("private")),
+        )
+        return {"archiveEntry": entry}
+
     async def _run_download_job(self, job_id: str, token: Optional[str]) -> None:
         try:
             await self._raise_if_download_canceled(job_id)

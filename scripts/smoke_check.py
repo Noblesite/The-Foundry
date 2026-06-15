@@ -289,6 +289,8 @@ def run_model_download_job_contract_check() -> int:
     repository_source = frontend_repository.read_text(encoding="utf-8")
 
     required_api_patterns = (
+        "/api/v1/archive/models/evict",
+        "evict_foundry_archive_model_endpoint",
         "/api/v1/archive/models/download-jobs",
         "start_foundry_archive_model_download_job_endpoint",
         "foundry_archive_model_download_job_endpoint",
@@ -300,6 +302,7 @@ def run_model_download_job_contract_check() -> int:
         return fail("Model download job API boundary is missing: " + ", ".join(missing_api))
 
     required_service_patterns = (
+        "evict_archive_model",
         "start_download_job",
         "get_download_job",
         "list_download_jobs",
@@ -317,6 +320,8 @@ def run_model_download_job_contract_check() -> int:
         return fail("Model download job service contract is missing: " + ", ".join(missing_service))
 
     required_frontend_patterns = (
+        "evictArchiveModel",
+        "evictArchiveModel:",
         "startModelDownloadJob",
         "listModelDownloadJobs",
         "getModelDownloadJob",

@@ -65,6 +65,9 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   const [isSearchingModels, setIsSearchingModels] = useState(false);
   const [isRegisteringModel, setIsRegisteringModel] = useState(false);
   const [isDownloadingModel, setIsDownloadingModel] = useState(false);
+  const [isEvictingArchiveEntry, setIsEvictingArchiveEntry] = useState(false);
+  const [selectedInventoryEntryId, setSelectedInventoryEntryId] = useState("");
+  const [defaultBaseModelTarget, setDefaultBaseModelTarget] = useState("");
   const [statusText, setStatusText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -171,10 +174,36 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     [archiveEntries]
   );
 
+  const archiveInventoryEntries = useMemo(
+    () =>
+      [...archiveEntries].sort((left, right) =>
+        (right.updatedAt || right.createdAt || right.repoId).localeCompare(
+          left.updatedAt || left.createdAt || left.repoId
+        )
+      ),
+    [archiveEntries]
+  );
+
+  const selectedInventoryEntry = useMemo(
+    () =>
+      archiveInventoryEntries.find((entry) => entry.id === selectedInventoryEntryId) ||
+      archiveInventoryEntries.find(
+        (entry) => entry.status === "cached" || entry.status === "ready"
+      ) ||
+      archiveInventoryEntries[0],
+    [archiveInventoryEntries, selectedInventoryEntryId]
+  );
+
   const activeDownloadJobs = useMemo(
     () => downloadJobs.filter(isActiveDownloadJob),
     [downloadJobs]
   );
+
+  useEffect(() => {
+    if (!selectedInventoryEntryId && selectedInventoryEntry?.id) {
+      setSelectedInventoryEntryId(selectedInventoryEntry.id);
+    }
+  }, [selectedInventoryEntry, selectedInventoryEntryId]);
 
   useEffect(() => {
     if (activeDownloadJobs.length === 0) {
@@ -238,6 +267,8 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     return `${Math.max(1, Math.round(mb))} MB`;
   };
 
+  const formatLocalBytes = (bytes: number) => (bytes > 0 ? formatBytes(bytes) : "0 MB");
+
   const formatJobTimestamp = (job: ModelDownloadJob) => {
     const timestamp = job.updatedAt || job.createdAt;
     if (!timestamp) {
@@ -247,6 +278,28 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
       hour: "numeric",
       minute: "2-digit",
     }).format(new Date(timestamp));
+  };
+
+  const formatArchiveTimestamp = (timestamp?: string | null) => {
+    if (!timestamp) {
+      return "Never";
+    }
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date(timestamp));
+  };
+
+  const archiveTarget = (entry: ModelArchiveEntry) => entry.localPath || entry.repoId;
+
+  const upsertArchiveEntry = (entry: ModelArchiveEntry) => {
+    const withoutDuplicate = archiveEntries.filter(
+      (candidate) => !(candidate.repoId === entry.repoId && candidate.revision === entry.revision)
+    );
+    onArchiveEntriesChanged([entry, ...withoutDuplicate]);
+    setSelectedInventoryEntryId(entry.id);
   };
 
   const findCachedEntryForJob = (job: ModelDownloadJob) =>
@@ -301,7 +354,9 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
         return [result.archiveEntry, ...withoutDuplicate];
       })();
       onArchiveEntriesChanged(nextEntries);
+      setSelectedInventoryEntryId(result.archiveEntry.id);
       onBaseModelSelected(result.archiveEntry.repoId);
+      setDefaultBaseModelTarget(result.archiveEntry.repoId);
       setStatusText(`${result.archiveEntry.repoId} registered as the active base model.`);
     } catch (registerError: unknown) {
       setError(registerError instanceof Error ? registerError.message : "Could not register model.");
@@ -373,6 +428,58 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     setStatusText(`${cachedEntry.repoId} handed off to Construct for preflight.`);
   };
 
+  const openArchiveEntryInConstruct = (entry: ModelArchiveEntry) => {
+    if (!entry.localPath) {
+      return;
+    }
+    setStatusText(null);
+    setError(null);
+    onOpenConstructWithModel(entry.localPath, entry.repoId);
+    setStatusText(`${entry.repoId} handed off to Construct for preflight.`);
+  };
+
+  const selectArchiveEntryAsDefault = (entry: ModelArchiveEntry) => {
+    const target = archiveTarget(entry);
+    onBaseModelSelected(target);
+    setDefaultBaseModelTarget(target);
+    setStatusText(`${target} selected as the default base model for Forge and Construct.`);
+  };
+
+  const refreshArchiveEntryCache = async (entry: ModelArchiveEntry) => {
+    setStatusText(null);
+    setError(null);
+
+    try {
+      const job = await repository.startModelDownloadJob({
+        repoId: entry.repoId,
+        revision: entry.revision,
+      });
+      setDownloadJobs((currentJobs) => mergeDownloadJobs(currentJobs, [job]));
+      setStatusText(`${job.repoId} added to Archive Jobs for cache refresh.`);
+    } catch (downloadError: unknown) {
+      setError(downloadError instanceof Error ? downloadError.message : "Could not refresh cache.");
+    }
+  };
+
+  const evictArchiveEntry = async (entry: ModelArchiveEntry) => {
+    setIsEvictingArchiveEntry(true);
+    setStatusText(null);
+    setError(null);
+
+    try {
+      const result = await repository.evictArchiveModel({
+        repoId: entry.repoId,
+        revision: entry.revision,
+      });
+      upsertArchiveEntry(result.archiveEntry);
+      setStatusText(`${result.archiveEntry.repoId} cache pointer evicted from Archive.`);
+    } catch (evictError: unknown) {
+      setError(evictError instanceof Error ? evictError.message : "Could not evict Archive cache.");
+    } finally {
+      setIsEvictingArchiveEntry(false);
+    }
+  };
+
   const openCachedModelInConstruct = () => {
     if (!selectedArchiveEntry?.localPath) {
       return;
@@ -389,6 +496,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     }
     const modelTarget = selectedArchiveEntry?.localPath || selectedModel.repoId;
     onBaseModelSelected(modelTarget);
+    setDefaultBaseModelTarget(modelTarget);
     setStatusText(`${modelTarget} selected for Forge and Construct defaults.`);
   };
 
@@ -724,6 +832,139 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                   </article>
                 );
               })}
+            </div>
+          )}
+        </section>
+
+        <section className="archive-inventory-panel" aria-label="Model Archive inventory">
+          <div className="panel-heading">
+            <div>
+              <p className="panel-kicker">Local inventory</p>
+              <h3>Archive Detail</h3>
+            </div>
+            <span className="status-badge">
+              {archiveInventoryEntries.filter((entry) => entry.localPath).length} cached
+            </span>
+          </div>
+
+          {archiveInventoryEntries.length === 0 ? (
+            <p className="empty-state">Register or download a base model to build your local Archive inventory.</p>
+          ) : (
+            <div className="archive-inventory-grid">
+              <div className="archive-entry-list" aria-label="Registered Archive models">
+                {archiveInventoryEntries.map((entry) => (
+                  <button
+                    className={`archive-entry-row ${
+                      selectedInventoryEntry?.id === entry.id ? "is-active" : ""
+                    }`}
+                    key={entry.id}
+                    onClick={() => setSelectedInventoryEntryId(entry.id)}
+                    type="button"
+                  >
+                    <div>
+                      <strong>{entry.repoId}</strong>
+                      <span>{entry.revision || "default revision"}</span>
+                    </div>
+                    <div className="archive-entry-meta">
+                      <span className={`status-badge cache-${entry.status}`}>{entry.status}</span>
+                      <span>{formatLocalBytes(entry.sizeOnDiskBytes)}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              <aside className="archive-detail-drawer" aria-label="Archive model detail">
+                {selectedInventoryEntry ? (
+                  <>
+                    <div className="archive-detail-title">
+                      <div>
+                        <p className="panel-kicker">Cached base model</p>
+                        <h3>{selectedInventoryEntry.repoId}</h3>
+                      </div>
+                      <span className={`status-badge cache-${selectedInventoryEntry.status}`}>
+                        {selectedInventoryEntry.status}
+                      </span>
+                    </div>
+
+                    <div className="archive-path-readout">
+                      <span>Local path</span>
+                      <code>{selectedInventoryEntry.localPath || "Not cached locally."}</code>
+                    </div>
+
+                    <dl className="archive-detail-stats">
+                      <div>
+                        <dt>Disk</dt>
+                        <dd>{formatLocalBytes(selectedInventoryEntry.sizeOnDiskBytes)}</dd>
+                      </div>
+                      <div>
+                        <dt>Runtime fit</dt>
+                        <dd>{selectedInventoryEntry.localPath ? "ready" : "remote"}</dd>
+                      </div>
+                      <div>
+                        <dt>Last used</dt>
+                        <dd>{formatArchiveTimestamp(selectedInventoryEntry.lastUsedAt)}</dd>
+                      </div>
+                      <div>
+                        <dt>Checked</dt>
+                        <dd>{formatArchiveTimestamp(selectedInventoryEntry.lastCheckedAt)}</dd>
+                      </div>
+                      <div>
+                        <dt>Library</dt>
+                        <dd>{selectedInventoryEntry.libraryName || "unknown"}</dd>
+                      </div>
+                      <div>
+                        <dt>Params</dt>
+                        <dd>
+                          {selectedInventoryEntry.parameterCount
+                            ? `${(selectedInventoryEntry.parameterCount / 1_000_000).toFixed(1)}M`
+                            : "Unknown"}
+                        </dd>
+                      </div>
+                    </dl>
+
+                    <div className="archive-detail-actions">
+                      <button
+                        className="button-primary"
+                        disabled={!selectedInventoryEntry.localPath}
+                        onClick={() => openArchiveEntryInConstruct(selectedInventoryEntry)}
+                        type="button"
+                      >
+                        <i className="fas fa-play" aria-hidden="true" />
+                        Open in Construct
+                      </button>
+                      <button
+                        className="button-secondary"
+                        onClick={() => selectArchiveEntryAsDefault(selectedInventoryEntry)}
+                        type="button"
+                      >
+                        <i className="fas fa-thumbtack" aria-hidden="true" />
+                        {defaultBaseModelTarget === archiveTarget(selectedInventoryEntry)
+                          ? "Default Selected"
+                          : "Set Default Base"}
+                      </button>
+                      <button
+                        className="button-secondary"
+                        onClick={() => void refreshArchiveEntryCache(selectedInventoryEntry)}
+                        type="button"
+                      >
+                        <i className="fas fa-download" aria-hidden="true" />
+                        Refresh Cache
+                      </button>
+                      <button
+                        className="button-secondary"
+                        disabled={!selectedInventoryEntry.localPath || isEvictingArchiveEntry}
+                        onClick={() => void evictArchiveEntry(selectedInventoryEntry)}
+                        type="button"
+                      >
+                        <i className="fas fa-box-open" aria-hidden="true" />
+                        {isEvictingArchiveEntry ? "Evicting" : "Evict Cache"}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="empty-state">Select an Archive entry to inspect its runtime fit.</p>
+                )}
+              </aside>
             </div>
           )}
         </section>

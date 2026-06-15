@@ -118,6 +118,11 @@ assertIncludes(
 );
 assertIncludes(
   files.repository,
+  "evictArchiveModel:",
+  "Repository evict Archive model method"
+);
+assertIncludes(
+  files.repository,
   "buildApiUnavailableStatus",
   "Repository status fallback"
 );
@@ -240,6 +245,36 @@ assertIncludes(
   files.artifacts,
   "openDownloadJobInConstruct",
   "Artifacts opens cached Archive jobs in Construct"
+);
+assertIncludes(
+  files.artifacts,
+  "Archive Detail",
+  "Artifacts Archive detail drawer"
+);
+assertIncludes(
+  files.artifacts,
+  "archive-inventory-grid",
+  "Artifacts Archive inventory layout"
+);
+assertIncludes(
+  files.artifacts,
+  "selectArchiveEntryAsDefault",
+  "Artifacts default base model action"
+);
+assertIncludes(
+  files.artifacts,
+  "repository.evictArchiveModel",
+  "Artifacts evicts Archive cache"
+);
+assertIncludes(
+  files.artifacts,
+  "Set Default Base",
+  "Artifacts default base model button"
+);
+assertIncludes(
+  files.artifacts,
+  "Evict Cache",
+  "Artifacts evict cache button"
 );
 assertIncludes(
   files.app,
