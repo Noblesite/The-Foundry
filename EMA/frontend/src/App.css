@@ -3678,6 +3678,37 @@ input[type="checkbox"] {
   text-transform: uppercase;
 }
 
+.settings-panel input,
+.settings-panel select,
+.settings-panel textarea {
+  border-color: rgba(119, 140, 152, 0.32);
+  background:
+    linear-gradient(135deg, rgba(24, 33, 40, 0.9), rgba(13, 17, 23, 0.95));
+  color: var(--text-primary);
+  caret-color: var(--arc-blue);
+  color-scheme: dark;
+  -webkit-text-fill-color: var(--text-primary);
+}
+
+.settings-panel input::placeholder,
+.settings-panel textarea::placeholder {
+  color: var(--text-dim);
+  -webkit-text-fill-color: var(--text-dim);
+}
+
+.settings-panel select option {
+  background: var(--steel-deep);
+  color: var(--text-primary);
+}
+
+.settings-panel input:-webkit-autofill,
+.settings-panel input:-webkit-autofill:hover,
+.settings-panel input:-webkit-autofill:focus {
+  border-color: rgba(0, 212, 255, 0.42);
+  box-shadow: 0 0 0 1000px var(--steel-deep) inset;
+  -webkit-text-fill-color: var(--text-primary);
+}
+
 .runtime-source-panel {
   border-color: rgba(0, 212, 255, 0.22);
   background:
