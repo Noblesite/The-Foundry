@@ -30,6 +30,7 @@ import {
   InspectArchiveModelRequest,
   LoadArtifactIntoConstructRequest,
   LoadConstructRuntimeRequest,
+  ModelDownloadJobDto,
   MaterialChunkDto,
   QAPairDto,
   PreflightConstructRuntimeRequest,
@@ -64,6 +65,7 @@ import {
   MaterialChunk,
   MaterialSource,
   ModelArchiveEntry,
+  ModelDownloadJob,
   ModelPlatformProfile,
   ModelSearchResult,
   NavigationSection,
@@ -180,6 +182,8 @@ export interface FoundryRepository {
   inspectArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelInspectDto>;
   registerArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelRegisterDto>;
   downloadArchiveModel: (request: InspectArchiveModelRequest) => Promise<ArchiveModelDownloadDto>;
+  startModelDownloadJob: (request: InspectArchiveModelRequest) => Promise<ModelDownloadJob>;
+  getModelDownloadJob: (jobId: string) => Promise<ModelDownloadJob>;
 }
 
 const mockMaterialSources: MaterialSource[] = [
@@ -261,6 +265,7 @@ const mockPlatformProfile: ModelPlatformProfile = {
   },
 };
 const mockModelArchiveEntries: ModelArchiveEntry[] = [];
+const mockModelDownloadJobs: Record<string, ModelDownloadJob> = {};
 const mockArchiveModels: ModelSearchResult[] = [
   {
     repoId: "sshleifer/tiny-gpt2",
@@ -1407,6 +1412,53 @@ export const mockFoundryRepository: FoundryRepository = {
       archiveEntry,
     };
   },
+  startModelDownloadJob: async (request) => {
+    const job: ModelDownloadJob = {
+      id: `mdl-download-${Date.now()}`,
+      repoId: request.repoId,
+      revision: request.revision || "",
+      status: "queued",
+      phase: "queued",
+      progress: 8,
+      detail: `${request.repoId} is queued for mock Archive download.`,
+      archiveEntry: null,
+      error: null,
+    };
+    mockModelDownloadJobs[job.id] = job;
+    return { ...job };
+  },
+  getModelDownloadJob: async (jobId) => {
+    const job = mockModelDownloadJobs[jobId];
+    if (!job) {
+      throw new Error("Model download job was not found.");
+    }
+    if (job.status === "completed" || job.status === "failed") {
+      return { ...job };
+    }
+    const nextProgress = Math.min(100, job.progress + 34);
+    job.progress = nextProgress;
+    job.status = nextProgress >= 100 ? "completed" : "running";
+    job.phase =
+      nextProgress >= 100
+        ? "completed"
+        : nextProgress >= 75
+          ? "cataloging"
+          : nextProgress >= 35
+            ? "downloading"
+            : "inspecting";
+    job.detail =
+      job.phase === "completed"
+        ? `${job.repoId} is cached in the mock Archive.`
+        : `Mock ${job.phase} phase for ${job.repoId}.`;
+    if (job.status === "completed") {
+      const result = await mockFoundryRepository.downloadArchiveModel({
+        repoId: job.repoId,
+        revision: job.revision,
+      });
+      job.archiveEntry = result.archiveEntry;
+    }
+    return { ...job };
+  },
 };
 
 export const apiFoundryRepository: FoundryRepository = {
@@ -1699,6 +1751,19 @@ export const apiFoundryRepository: FoundryRepository = {
         request
       )
     ),
+  startModelDownloadJob: async (request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ModelDownloadJobDto>>(
+        foundryApiRoutes.startModelDownloadJob,
+        request
+      )
+    ),
+  getModelDownloadJob: async (jobId) =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<ModelDownloadJobDto>>(
+        foundryApiRoutes.modelDownloadJob(jobId)
+      )
+    ),
 };
 
 const constructApiOverrides: Pick<
@@ -1719,6 +1784,8 @@ const constructApiOverrides: Pick<
   | "inspectArchiveModel"
   | "registerArchiveModel"
   | "downloadArchiveModel"
+  | "startModelDownloadJob"
+  | "getModelDownloadJob"
 > = {
   getFoundryStatus: apiFoundryRepository.getFoundryStatus,
   chatWithConstruct: apiFoundryRepository.chatWithConstruct,
@@ -1736,6 +1803,8 @@ const constructApiOverrides: Pick<
   inspectArchiveModel: apiFoundryRepository.inspectArchiveModel,
   registerArchiveModel: apiFoundryRepository.registerArchiveModel,
   downloadArchiveModel: apiFoundryRepository.downloadArchiveModel,
+  startModelDownloadJob: apiFoundryRepository.startModelDownloadJob,
+  getModelDownloadJob: apiFoundryRepository.getModelDownloadJob,
 };
 
 export const constructApiFoundryRepository: FoundryRepository = {

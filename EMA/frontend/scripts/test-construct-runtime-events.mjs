@@ -83,9 +83,24 @@ assertIncludes(
   "Foundry status domain contract"
 );
 assertIncludes(
+  files.domain,
+  "export interface ModelDownloadJob",
+  "Model download job domain contract"
+);
+assertIncludes(
   files.repository,
   "getFoundryStatus:",
   "Repository status method"
+);
+assertIncludes(
+  files.repository,
+  "startModelDownloadJob:",
+  "Repository start model download job method"
+);
+assertIncludes(
+  files.repository,
+  "getModelDownloadJob:",
+  "Repository poll model download job method"
 );
 assertIncludes(
   files.repository,
@@ -186,6 +201,16 @@ assertIncludes(
   files.app,
   "updateModelPreparation",
   "App preparation activity transitions"
+);
+assertIncludes(
+  files.app,
+  "repository.startModelDownloadJob",
+  "App starts backend model download job"
+);
+assertIncludes(
+  files.app,
+  "repository.getModelDownloadJob",
+  "App polls backend model download job"
 );
 assertIncludes(
   files.settings,

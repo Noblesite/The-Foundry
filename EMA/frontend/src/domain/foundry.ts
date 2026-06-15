@@ -471,6 +471,18 @@ export interface ModelArchiveEntry {
   updatedAt: string;
 }
 
+export interface ModelDownloadJob {
+  id: string;
+  repoId: string;
+  revision: string;
+  status: "queued" | "running" | "completed" | "failed";
+  phase: "queued" | "inspecting" | "downloading" | "cataloging" | "completed" | "failed";
+  progress: number;
+  detail: string;
+  archiveEntry?: ModelArchiveEntry | null;
+  error?: string | null;
+}
+
 export interface ModelSearchResult {
   repoId: string;
   author?: string | null;

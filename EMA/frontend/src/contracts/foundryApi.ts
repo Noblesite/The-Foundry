@@ -18,6 +18,7 @@ import {
   MaterialKind,
   MaterialStatus,
   ModelArchiveEntry,
+  ModelDownloadJob,
   ModelPlatformProfile,
   ModelSearchResult,
   TrainingMethod,
@@ -77,6 +78,9 @@ export const foundryApiRoutes = {
   inspectArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/inspect`,
   registerArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/register`,
   downloadArchiveModel: `${FOUNDRY_API_VERSION}/archive/models/download`,
+  startModelDownloadJob: `${FOUNDRY_API_VERSION}/archive/models/download-jobs`,
+  modelDownloadJob: (jobId: string) =>
+    `${FOUNDRY_API_VERSION}/archive/models/download-jobs/${jobId}`,
   construct: (constructId: string) => `${FOUNDRY_API_VERSION}/constructs/${constructId}`,
   constructChat: (constructId: string) =>
     `${FOUNDRY_API_VERSION}/constructs/${constructId}/chat`,
@@ -391,6 +395,7 @@ export interface ArchiveModelRegisterDto extends ArchiveModelInspectDto {
 }
 
 export type ArchiveModelDownloadDto = ArchiveModelRegisterDto;
+export type ModelDownloadJobDto = ModelDownloadJob;
 
 export interface ConstructChatRequest {
   conversationId: string;

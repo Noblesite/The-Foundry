@@ -62,6 +62,11 @@ const loadWorkspaceSettings = (): WorkspaceSettings => {
 
 const clampPercent = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
 
+const wait = (durationMs: number) =>
+  new Promise((resolve) => {
+    window.setTimeout(resolve, durationMs);
+  });
+
 const deriveRuntimeMetrics = (
   baselineMetrics: RuntimeMetric[],
   runtime: ConstructRuntime | null,
@@ -277,33 +282,60 @@ const App: React.FC = () => {
       try {
         updateModelPreparation({
           state: "downloading",
-          label: "Downloading model",
-          detail: `${action.modelId} is being cached in the Archive.`,
-          progress: 35,
+          label: "Starting download",
+          detail: `${action.modelId} is being queued in the Archive.`,
+          progress: 8,
         });
-        const result = await repository.downloadArchiveModel({
+        let downloadJob = await repository.startModelDownloadJob({
           repoId: action.modelId,
           revision: action.revision,
           token: settings.huggingFaceToken || undefined,
         });
         updateModelPreparation({
+          state: "downloading",
+          label: downloadJob.phase === "queued" ? "Download queued" : "Downloading model",
+          detail: downloadJob.detail,
+          progress: downloadJob.progress,
+        });
+        while (downloadJob.status === "queued" || downloadJob.status === "running") {
+          await wait(900);
+          downloadJob = await repository.getModelDownloadJob(downloadJob.id);
+          updateModelPreparation({
+            state: downloadJob.phase === "cataloging" ? "handoff" : "downloading",
+            label:
+              downloadJob.phase === "cataloging"
+                ? "Cataloging model"
+                : downloadJob.phase === "inspecting"
+                  ? "Inspecting model"
+                  : "Downloading model",
+            detail: downloadJob.detail,
+            progress: downloadJob.progress,
+          });
+        }
+        if (downloadJob.status === "failed") {
+          throw new Error(downloadJob.error || downloadJob.detail);
+        }
+        if (!downloadJob.archiveEntry) {
+          throw new Error("Download completed without an Archive entry.");
+        }
+        updateModelPreparation({
           state: "handoff",
           label: "Preparing Construct handoff",
-          detail: `${result.archiveEntry.repoId} is cached. Opening Construct for preflight.`,
+          detail: `${downloadJob.archiveEntry.repoId} is cached. Opening Construct for preflight.`,
           progress: 82,
         });
-        upsertArchiveEntry(result.archiveEntry);
+        upsertArchiveEntry(downloadJob.archiveEntry);
         handleOpenConstructWithModel(
-          result.archiveEntry.localPath || result.archiveEntry.repoId,
-          result.archiveEntry.repoId
+          downloadJob.archiveEntry.localPath || downloadJob.archiveEntry.repoId,
+          downloadJob.archiveEntry.repoId
         );
         updateModelPreparation({
           state: "ready",
           label: "Model cached",
-          detail: `${result.archiveEntry.repoId} is cached and handed to Construct.`,
+          detail: `${downloadJob.archiveEntry.repoId} is cached and handed to Construct.`,
           progress: 100,
         });
-        setStatusToast(`${result.archiveEntry.repoId} cached and handed to Construct.`);
+        setStatusToast(`${downloadJob.archiveEntry.repoId} cached and handed to Construct.`);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Could not download model.";
         updateModelPreparation({

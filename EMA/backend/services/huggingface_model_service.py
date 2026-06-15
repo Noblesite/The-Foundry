@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 import platform
 import re
+import asyncio
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
+from uuid import uuid4
 
 import psutil
 
@@ -28,6 +30,7 @@ class HuggingFaceModelService:
             os.getenv("FOUNDRY_MODEL_ARCHIVE_DIR", str(DEFAULT_MODEL_ARCHIVE_DIR))
         )
         self.archive_dir.mkdir(parents=True, exist_ok=True)
+        self._download_jobs: Dict[str, Dict[str, Any]] = {}
 
     async def search_models(
         self,
@@ -175,12 +178,121 @@ class HuggingFaceModelService:
                 )
             raise
 
+    async def start_download_job(
+        self,
+        *,
+        repo_id: str,
+        revision: str,
+        token: Optional[str],
+    ) -> Dict[str, Any]:
+        safe_repo_id = repo_id.strip()
+        if not safe_repo_id:
+            raise ValueError("Model repository id cannot be empty.")
+
+        job = {
+            "id": f"mdl-download-{uuid4()}",
+            "repoId": safe_repo_id,
+            "revision": revision.strip(),
+            "status": "queued",
+            "phase": "queued",
+            "progress": 5,
+            "detail": "Download job queued.",
+            "archiveEntry": None,
+            "error": None,
+        }
+        self._download_jobs[job["id"]] = job
+        asyncio.create_task(
+            self._run_download_job(job["id"], token=self._effective_token(token))
+        )
+        return dict(job)
+
+    async def get_download_job(self, job_id: str) -> Dict[str, Any]:
+        job = self._download_jobs.get(job_id)
+        if job is None:
+            raise ValueError("Model download job was not found.")
+        return dict(job)
+
     async def list_archive_entries(self) -> list[Dict[str, Any]]:
         return await self.catalog_service.list_model_archive_entries()
 
-    async def _run_hf_query(self, fn, **kwargs):
-        import asyncio
+    async def _run_download_job(self, job_id: str, token: Optional[str]) -> None:
+        job = self._download_jobs[job_id]
+        try:
+            job.update({
+                "status": "running",
+                "phase": "inspecting",
+                "progress": 15,
+                "detail": f"Inspecting {job['repoId']} metadata.",
+            })
+            model = await self._run_hf_query(
+                self._inspect_model_sync,
+                repo_id=job["repoId"],
+                revision=job["revision"],
+                token=token,
+            )
+            job.update({
+                "phase": "downloading",
+                "progress": 35,
+                "detail": f"Downloading {model['repoId']} into the local Archive.",
+            })
+            local_path = await self._run_hf_query(
+                self._download_model_sync,
+                repo_id=job["repoId"],
+                revision=job["revision"],
+                token=token,
+            )
+            job.update({
+                "phase": "cataloging",
+                "progress": 88,
+                "detail": "Cataloging local model files.",
+            })
+            size_on_disk = self._directory_size(Path(local_path))
+            entry = await self.catalog_service.upsert_model_archive_entry(
+                repo_id=model["repoId"],
+                revision=model.get("revision") or job["revision"],
+                local_path=local_path,
+                source="huggingface",
+                status="cached",
+                size_on_disk_bytes=size_on_disk,
+                parameter_count=model.get("parameterCount"),
+                library_name=model.get("libraryName"),
+                pipeline_tag=model.get("pipelineTag"),
+                gated=bool(model.get("gated")),
+                private=bool(model.get("private")),
+            )
+            job.update({
+                "status": "completed",
+                "phase": "completed",
+                "progress": 100,
+                "detail": f"{model['repoId']} is cached in the local Archive.",
+                "archiveEntry": entry,
+            })
+        except Exception as error:
+            job.update({
+                "status": "failed",
+                "phase": "failed",
+                "progress": 100,
+                "detail": "Model download failed.",
+                "error": str(error),
+            })
+            try:
+                await self.catalog_service.upsert_model_archive_entry(
+                    repo_id=job["repoId"],
+                    revision=job["revision"],
+                    local_path="",
+                    source="huggingface",
+                    status="failed",
+                    size_on_disk_bytes=0,
+                    parameter_count=None,
+                    library_name=None,
+                    pipeline_tag=None,
+                    gated=False,
+                    private=False,
+                )
+            except Exception:
+                pass
 
+    async def _run_hf_query(self, fn, **kwargs):
         return await asyncio.to_thread(fn, **kwargs)
 
     def _search_models_sync(
