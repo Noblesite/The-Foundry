@@ -402,6 +402,27 @@ def run_huggingface_auth_contract_check() -> int:
     return 0
 
 
+def run_construct_memory_cleanup_contract_check() -> int:
+    construct_service = PACKAGE_ROOT / "backend" / "services" / "construct_inference_service.py"
+    service_source = construct_service.read_text(encoding="utf-8")
+
+    required_patterns = (
+        "_clean_runtime_memory",
+        "gc.collect()",
+        "torch.cuda.empty_cache()",
+        "torch.cuda.ipc_collect()",
+        "torch.mps.empty_cache()",
+        "conservative headroom budget",
+        "exceeds {available}GB available",
+    )
+    missing = [pattern for pattern in required_patterns if pattern not in service_source]
+    if missing:
+        return fail("Construct runtime memory cleanup contract is missing: " + ", ".join(missing))
+
+    print("OK: Construct runtime memory cleanup contract is present.")
+    return 0
+
+
 def run_chat_service_fake_engine_check() -> int:
     if str(PACKAGE_ROOT) not in sys.path:
         sys.path.insert(0, str(PACKAGE_ROOT))
@@ -464,6 +485,7 @@ def main() -> int:
         run_foundry_runtime_status_contract_check,
         run_model_download_job_contract_check,
         run_huggingface_auth_contract_check,
+        run_construct_memory_cleanup_contract_check,
         run_chat_service_fake_engine_check,
     )
     failures = sum(check() for check in checks)

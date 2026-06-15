@@ -75,6 +75,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   const [isEvictingArchiveEntry, setIsEvictingArchiveEntry] = useState(false);
   const [selectedInventoryEntryId, setSelectedInventoryEntryId] = useState("");
   const [modelPreflight, setModelPreflight] = useState<ArchiveModelPreflightDto | null>(null);
+  const [allowPreflightOverride, setAllowPreflightOverride] = useState(false);
   const [defaultBaseModelTarget, setDefaultBaseModelTarget] = useState(defaultBaseModel);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -193,7 +194,37 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
 
   useEffect(() => {
     setModelPreflight(null);
+    setAllowPreflightOverride(false);
   }, [selectedModel?.repoId, selectedModel?.revision]);
+
+  const downloadGateState = useMemo(() => {
+    if (!selectedModel) {
+      return {
+        allowed: false,
+        blocked: true,
+        message: "Select a model before queueing an Archive download.",
+      };
+    }
+    if (!modelPreflight) {
+      return {
+        allowed: allowPreflightOverride,
+        blocked: true,
+        message: "Run model preflight before queueing the Archive download.",
+      };
+    }
+    if (modelPreflight.canDownload) {
+      return {
+        allowed: true,
+        blocked: false,
+        message: modelPreflight.message,
+      };
+    }
+    return {
+      allowed: allowPreflightOverride,
+      blocked: true,
+      message: modelPreflight.message,
+    };
+  }, [allowPreflightOverride, modelPreflight, selectedModel]);
 
   const registeredModelIds = useMemo(
     () => new Set(archiveEntries.map((entry) => entry.repoId)),
@@ -396,7 +427,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   };
 
   const downloadSelectedModel = async () => {
-    if (!selectedModel) {
+    if (!selectedModel || !downloadGateState.allowed) {
       return;
     }
 
@@ -824,6 +855,20 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                     <i className="fas fa-list-check" aria-hidden="true" />
                     {isPreflightingModel ? "Checking" : "Preflight Model"}
                   </button>
+                  {downloadGateState.blocked && (
+                    <div className="model-download-gate">
+                      <p>{downloadGateState.message}</p>
+                      <label className="toggle-row" htmlFor="preflight-override">
+                        <span>Engineer override</span>
+                        <input
+                          checked={allowPreflightOverride}
+                          id="preflight-override"
+                          onChange={(event) => setAllowPreflightOverride(event.target.checked)}
+                          type="checkbox"
+                        />
+                      </label>
+                    </div>
+                  )}
                   <button
                     className="button-primary"
                     disabled={isRegisteringModel}
@@ -839,7 +884,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                   </button>
                   <button
                     className="button-secondary"
-                    disabled={isDownloadingModel}
+                    disabled={isDownloadingModel || !downloadGateState.allowed}
                     onClick={() => void downloadSelectedModel()}
                     type="button"
                   >

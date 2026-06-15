@@ -840,17 +840,20 @@ class HuggingFaceModelService:
         parameter_estimate = int(parameter_count * bytes_per_parameter) if parameter_count else 0
         base_estimate = max(parameter_estimate, size_bytes)
         estimated = int(base_estimate * 1.35)
-        usable = int(available * (0.78 if profile["accelerator"] == "mps" else 0.85))
+        conservative_budget = int(available * (0.78 if profile["accelerator"] == "mps" else 0.85))
 
-        if estimated <= usable * 0.75:
+        if estimated <= conservative_budget * 0.75:
             status = "fits"
             reason = "Estimated memory fits with comfortable runtime headroom."
-        elif estimated <= usable:
+        elif estimated <= available:
             status = "tight"
-            reason = "Estimated memory may fit, but context length and batch size should stay conservative."
+            reason = (
+                "Estimated memory is within available memory, but exceeds the conservative "
+                "runtime headroom budget. Keep context length and batch size conservative."
+            )
         else:
             status = "too-large"
-            reason = "Estimated memory exceeds the conservative runtime budget for this machine."
+            reason = "Estimated memory exceeds currently available memory for this machine."
 
         if profile["accelerator"] == "cpu":
             reason = f"{reason} CPU inference may be slow without GPU acceleration."

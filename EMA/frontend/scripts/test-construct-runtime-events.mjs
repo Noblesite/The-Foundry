@@ -107,6 +107,16 @@ assertIncludes(
 );
 assertIncludes(
   files.artifacts,
+  "downloadGateState",
+  "Artifacts gates Archive download on model preflight"
+);
+assertIncludes(
+  files.artifacts,
+  "Engineer override",
+  "Artifacts exposes an engineer override for blocked preflight"
+);
+assertIncludes(
+  files.artifacts,
   "Using anonymous Hugging Face access",
   "Artifacts identifies anonymous Hugging Face mode"
 );

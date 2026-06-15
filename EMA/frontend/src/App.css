@@ -3153,6 +3153,24 @@ input[type="checkbox"] {
   gap: 0.55rem;
 }
 
+.model-download-gate {
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid rgba(255, 138, 0, 0.26);
+  border-radius: 8px;
+  padding: 0.65rem;
+  background: rgba(255, 138, 0, 0.06);
+}
+
+.model-download-gate p {
+  color: var(--text-secondary);
+}
+
+.model-download-gate .toggle-row {
+  border-top: 1px solid rgba(255, 138, 0, 0.18);
+  padding-top: 0.55rem;
+}
+
 .archive-jobs-panel {
   display: grid;
   gap: 0.82rem;

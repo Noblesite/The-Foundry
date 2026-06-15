@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import os
 import time
 from dataclasses import dataclass
@@ -299,15 +300,7 @@ class ConstructInferenceService:
             runtime_status="configured" if self.mode == "transformers" else "fallback",
             source="backend",
         )
-        try:
-            import torch
-
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-                torch.mps.empty_cache()
-        except Exception:
-            pass
+        self._clean_runtime_memory()
         return self.runtime_payload()
 
     async def probe_runtime(
@@ -386,6 +379,7 @@ class ConstructInferenceService:
             )
             return result
         finally:
+            self._clean_runtime_memory()
             self.device_preference = previous_device
 
     async def stream_tokens(
@@ -479,8 +473,7 @@ class ConstructInferenceService:
             yield token
             await asyncio.sleep(0)
 
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        self._clean_runtime_memory(torch)
 
     async def _load_transformers_model(self, model_name: str):
         if model_name in self._model_cache:
@@ -491,6 +484,11 @@ class ConstructInferenceService:
             if model_name in self._model_cache:
                 cached = self._model_cache[model_name]
                 return cached["tokenizer"], cached["model"]
+
+            if self._model_cache:
+                self._model_cache.clear()
+                self._active_loaded_model_id = ""
+                self._clean_runtime_memory()
 
             tokenizer, model = await asyncio.to_thread(self._load_transformers_model_sync, model_name)
             self._model_cache[model_name] = {"tokenizer": tokenizer, "model": model}
@@ -695,23 +693,41 @@ class ConstructInferenceService:
     def _fit_status(self, estimated_bytes: int, available_bytes: int) -> str:
         if not estimated_bytes or not available_bytes:
             return "unknown"
-        usable = int(available_bytes * 0.78)
-        if estimated_bytes <= usable * 0.7:
+        conservative_budget = int(available_bytes * 0.78)
+        if estimated_bytes <= conservative_budget * 0.7:
             return "fits"
-        if estimated_bytes <= usable:
+        if estimated_bytes <= available_bytes:
             return "tight"
         return "too-large"
 
     def _memory_fit_detail(self, status: str, estimated_bytes: int, available_bytes: int) -> str:
         estimated = round(estimated_bytes / (1024**3), 2) if estimated_bytes else 0
         available = round(available_bytes / (1024**3), 2) if available_bytes else 0
+        conservative = round((available_bytes * 0.78) / (1024**3), 2) if available_bytes else 0
         if status == "fits":
             return f"Estimated load is {estimated}GB with {available}GB available."
         if status == "tight":
-            return f"Estimated load is {estimated}GB against {available}GB available; expect limited headroom."
+            return f"Estimated load is {estimated}GB with {available}GB available; it exceeds the {conservative}GB conservative headroom budget, so expect limited runtime margin."
         if status == "too-large":
-            return f"Estimated load is {estimated}GB and exceeds the conservative budget from {available}GB available."
+            return f"Estimated load is {estimated}GB and exceeds {available}GB available."
         return "Could not calculate a reliable memory estimate from config metadata."
+
+    def _clean_runtime_memory(self, torch_module=None) -> None:
+        gc.collect()
+        try:
+            torch = torch_module
+            if torch is None:
+                import torch as imported_torch
+
+                torch = imported_torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
+            if hasattr(torch, "mps") and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+        except Exception:
+            pass
 
     def _loaded_device(self, model_id: str) -> str:
         cached = self._model_cache.get(model_id)
