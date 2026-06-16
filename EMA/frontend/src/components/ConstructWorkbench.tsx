@@ -58,6 +58,7 @@ interface ResponseInspection {
 type RuntimeLoadPhase = "idle" | "configuring" | "loading" | "ready" | "failed";
 type RuntimeSmokeStatus = "idle" | "loading" | "streaming" | "passed" | "failed";
 type RuntimeHistoryFilter = "all" | "smoke" | "load" | "preflight" | "memory" | "failures";
+type RuntimeValidationStatusFilter = "all" | ConstructRuntimeValidation["status"];
 
 interface RuntimeSmokeResult {
   modelId: string;
@@ -81,6 +82,8 @@ const RUNTIME_HISTORY_FILTERS: Array<{ id: RuntimeHistoryFilter; label: string }
   { id: "memory", label: "Memory" },
   { id: "failures", label: "Failures" },
 ];
+
+const ALL_VALIDATION_FILTER = "all";
 
 const smokeResultStorageKey = (constructId: string, artifactId: string) =>
   `${SMOKE_RESULT_STORAGE_PREFIX}.${constructId}.${artifactId}`;
@@ -228,6 +231,11 @@ const formatRuntimeEventMetadata = (event: ConstructRuntimeEvent | null) =>
 const formatRuntimeValidationMetadata = (validation: ConstructRuntimeValidation | null) =>
   JSON.stringify(validation?.metadata || {}, null, 2);
 
+const uniqueSortedValues = (values: string[]) =>
+  Array.from(new Set(values.filter(Boolean))).sort((left, right) =>
+    left.localeCompare(right)
+  );
+
 const downloadJsonFile = (fileName: string, data: unknown) => {
   const blob = new Blob([JSON.stringify(data, null, 2)], {
     type: "application/json",
@@ -340,6 +348,12 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [runtimeTimeline, setRuntimeTimeline] = useState<ConstructRuntimeEvent[]>([]);
   const [runtimeValidations, setRuntimeValidations] = useState<ConstructRuntimeValidation[]>([]);
   const [runtimeHistoryFilter, setRuntimeHistoryFilter] = useState<RuntimeHistoryFilter>("all");
+  const [runtimeValidationModelFilter, setRuntimeValidationModelFilter] =
+    useState<string>(ALL_VALIDATION_FILTER);
+  const [runtimeValidationDeviceFilter, setRuntimeValidationDeviceFilter] =
+    useState<string>(ALL_VALIDATION_FILTER);
+  const [runtimeValidationStatusFilter, setRuntimeValidationStatusFilter] =
+    useState<RuntimeValidationStatusFilter>("all");
   const [selectedRuntimeEvent, setSelectedRuntimeEvent] =
     useState<ConstructRuntimeEvent | null>(null);
   const [selectedRuntimeValidation, setSelectedRuntimeValidation] =
@@ -642,7 +656,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setProbeResult(null);
     setRuntimeTimeline([]);
     setRuntimeValidations([]);
-      setSelectedRuntimeEvent(null);
+    setRuntimeValidationModelFilter(ALL_VALIDATION_FILTER);
+    setRuntimeValidationDeviceFilter(ALL_VALIDATION_FILTER);
+    setRuntimeValidationStatusFilter("all");
+    setSelectedRuntimeEvent(null);
       setSelectedRuntimeValidation(null);
       setIsConfirmingHistoryClear(false);
     setRuntimeHistoryMessage(null);
@@ -1538,6 +1555,47 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       ),
     [runtimeHistoryFilter, runtimeTimeline]
   );
+  const runtimeValidationModelOptions = useMemo(
+    () => uniqueSortedValues(runtimeValidations.map((validation) => validation.modelId)),
+    [runtimeValidations]
+  );
+  const runtimeValidationDeviceOptions = useMemo(
+    () => uniqueSortedValues(runtimeValidations.map((validation) => validation.device)),
+    [runtimeValidations]
+  );
+  const runtimeValidationCounts = useMemo(
+    () => ({
+      all: runtimeValidations.length,
+      passed: runtimeValidations.filter((validation) => validation.status === "passed").length,
+      failed: runtimeValidations.filter((validation) => validation.status === "failed").length,
+    }),
+    [runtimeValidations]
+  );
+  const filteredRuntimeValidations = useMemo(
+    () =>
+      runtimeValidations.filter((validation) => {
+        const modelMatches =
+          runtimeValidationModelFilter === ALL_VALIDATION_FILTER ||
+          validation.modelId === runtimeValidationModelFilter;
+        const deviceMatches =
+          runtimeValidationDeviceFilter === ALL_VALIDATION_FILTER ||
+          validation.device === runtimeValidationDeviceFilter;
+        const statusMatches =
+          runtimeValidationStatusFilter === "all" ||
+          validation.status === runtimeValidationStatusFilter;
+        return modelMatches && deviceMatches && statusMatches;
+      }),
+    [
+      runtimeValidationDeviceFilter,
+      runtimeValidationModelFilter,
+      runtimeValidationStatusFilter,
+      runtimeValidations,
+    ]
+  );
+  const runtimeValidationPassRate = runtimeValidations.length
+    ? Math.round((runtimeValidationCounts.passed / runtimeValidations.length) * 100)
+    : 0;
+  const latestRuntimeValidation = runtimeValidations[0] || null;
   const readinessBlocksLoad = readinessSummary?.status === "blocked";
   const currentReadinessTarget = preflightResult?.modelId || runtimeLoadTarget;
   const readinessNeedsConfirmation =
@@ -2012,45 +2070,150 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                     <p className="panel-kicker">Runtime Validation</p>
                     <h3>Smoke history</h3>
                   </div>
-                  <span>{runtimeValidations.length} runs</span>
+                  <span>
+                    {filteredRuntimeValidations.length} of {runtimeValidations.length} runs
+                  </span>
                 </div>
                 {runtimeValidations.length > 0 ? (
-                  <div className="runtime-validation-list">
-                    {runtimeValidations.slice(0, 5).map((validation) => (
-                      <button
-                        aria-label={`Inspect validation details for ${shortModelId(
-                          validation.modelId
-                        )} on ${validation.device}`}
-                        className={`runtime-validation-row is-${validation.status}`}
-                        key={validation.id}
-                        onClick={() => setSelectedRuntimeValidation(validation)}
-                        title="Inspect validation details"
-                        type="button"
-                      >
-                        <div>
-                          <strong>{shortModelId(validation.modelId)}</strong>
-                          <span>{validation.device}</span>
-                        </div>
-                        <div>
-                          <strong>{validation.status}</strong>
-                          <span>{formatRuntimeTimestamp(validation.createdAt)}</span>
-                        </div>
-                        <div>
-                          <strong>{validation.totalTokens}</strong>
-                          <span>{validation.durationSeconds}s</span>
-                        </div>
-                        <div>
-                          <strong>{validation.cleanupStatus}</strong>
-                          <span>
-                            {validation.memoryAvailableGb !== undefined &&
-                            validation.memoryAvailableGb !== null
-                              ? `${validation.memoryAvailableGb} GB free`
-                              : validation.error || "no memory sample"}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                  <>
+                    <div className="runtime-validation-summary">
+                      <div>
+                        <span>Models</span>
+                        <strong>{runtimeValidationModelOptions.length}</strong>
+                      </div>
+                      <div>
+                        <span>Devices</span>
+                        <strong>{runtimeValidationDeviceOptions.length}</strong>
+                      </div>
+                      <div>
+                        <span>Pass rate</span>
+                        <strong>{runtimeValidationPassRate}%</strong>
+                      </div>
+                      <div>
+                        <span>Latest</span>
+                        <strong>
+                          {latestRuntimeValidation
+                            ? formatRuntimeTimestamp(latestRuntimeValidation.createdAt)
+                            : "n/a"}
+                        </strong>
+                      </div>
+                    </div>
+                    <div className="runtime-validation-filters" aria-label="Validation filters">
+                      <div>
+                        <span>Model</span>
+                        <button
+                          className={`runtime-validation-filter ${
+                            runtimeValidationModelFilter === ALL_VALIDATION_FILTER
+                              ? "is-active"
+                              : ""
+                          }`}
+                          onClick={() => setRuntimeValidationModelFilter(ALL_VALIDATION_FILTER)}
+                          type="button"
+                        >
+                          All
+                        </button>
+                        {runtimeValidationModelOptions.map((modelId) => (
+                          <button
+                            className={`runtime-validation-filter ${
+                              runtimeValidationModelFilter === modelId ? "is-active" : ""
+                            }`}
+                            key={modelId}
+                            onClick={() => setRuntimeValidationModelFilter(modelId)}
+                            title={modelId}
+                            type="button"
+                          >
+                            {shortModelId(modelId)}
+                          </button>
+                        ))}
+                      </div>
+                      <div>
+                        <span>Device</span>
+                        <button
+                          className={`runtime-validation-filter ${
+                            runtimeValidationDeviceFilter === ALL_VALIDATION_FILTER
+                              ? "is-active"
+                              : ""
+                          }`}
+                          onClick={() => setRuntimeValidationDeviceFilter(ALL_VALIDATION_FILTER)}
+                          type="button"
+                        >
+                          All
+                        </button>
+                        {runtimeValidationDeviceOptions.map((device) => (
+                          <button
+                            className={`runtime-validation-filter ${
+                              runtimeValidationDeviceFilter === device ? "is-active" : ""
+                            }`}
+                            key={device}
+                            onClick={() => setRuntimeValidationDeviceFilter(device)}
+                            type="button"
+                          >
+                            {device}
+                          </button>
+                        ))}
+                      </div>
+                      <div>
+                        <span>Status</span>
+                        {(["all", "passed", "failed"] as RuntimeValidationStatusFilter[]).map(
+                          (status) => (
+                            <button
+                              className={`runtime-validation-filter ${
+                                runtimeValidationStatusFilter === status ? "is-active" : ""
+                              }`}
+                              key={status}
+                              onClick={() => setRuntimeValidationStatusFilter(status)}
+                              type="button"
+                            >
+                              {status}
+                              <strong>{runtimeValidationCounts[status]}</strong>
+                            </button>
+                          )
+                        )}
+                      </div>
+                    </div>
+                    {filteredRuntimeValidations.length > 0 ? (
+                      <div className="runtime-validation-list">
+                        {filteredRuntimeValidations.slice(0, 5).map((validation) => (
+                          <button
+                            aria-label={`Inspect validation details for ${shortModelId(
+                              validation.modelId
+                            )} on ${validation.device}`}
+                            className={`runtime-validation-row is-${validation.status}`}
+                            key={validation.id}
+                            onClick={() => setSelectedRuntimeValidation(validation)}
+                            title="Inspect validation details"
+                            type="button"
+                          >
+                            <div>
+                              <strong>{shortModelId(validation.modelId)}</strong>
+                              <span>{validation.device}</span>
+                            </div>
+                            <div>
+                              <strong>{validation.status}</strong>
+                              <span>{formatRuntimeTimestamp(validation.createdAt)}</span>
+                            </div>
+                            <div>
+                              <strong>{validation.totalTokens}</strong>
+                              <span>{validation.durationSeconds}s</span>
+                            </div>
+                            <div>
+                              <strong>{validation.cleanupStatus}</strong>
+                              <span>
+                                {validation.memoryAvailableGb !== undefined &&
+                                validation.memoryAvailableGb !== null
+                                  ? `${validation.memoryAvailableGb} GB free`
+                                  : validation.error || "no memory sample"}
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="runtime-validation-empty">
+                        No validation runs match these filters.
+                      </p>
+                    )}
+                  </>
                 ) : (
                   <p className="runtime-validation-empty">
                     Run the smoke test to catalog model/device validation history.

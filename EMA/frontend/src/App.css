@@ -1984,6 +1984,91 @@ input[type="checkbox"] {
   gap: 0.44rem;
 }
 
+.runtime-validation-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.25rem, 1fr));
+  gap: 0.42rem;
+}
+
+.runtime-validation-summary div {
+  display: grid;
+  gap: 0.14rem;
+  border: 1px solid rgba(119, 140, 152, 0.16);
+  border-radius: 8px;
+  padding: 0.48rem;
+  background: rgba(24, 33, 40, 0.4);
+}
+
+.runtime-validation-summary span,
+.runtime-validation-filters > div > span {
+  color: var(--text-dim);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.runtime-validation-summary strong {
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.runtime-validation-filters {
+  display: grid;
+  gap: 0.52rem;
+}
+
+.runtime-validation-filters > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.34rem;
+  align-items: center;
+}
+
+.runtime-validation-filter {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+  min-height: 1.72rem;
+  border: 1px solid rgba(119, 140, 152, 0.2);
+  border-radius: 999px;
+  padding: 0.24rem 0.46rem;
+  background: rgba(13, 17, 23, 0.62);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.68rem;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.runtime-validation-filter:hover,
+.runtime-validation-filter:focus-visible {
+  border-color: rgba(0, 212, 255, 0.42);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.runtime-validation-filter.is-active {
+  border-color: rgba(0, 212, 255, 0.52);
+  background: rgba(0, 212, 255, 0.12);
+  color: var(--arc-blue);
+}
+
+.runtime-validation-filter strong {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1rem;
+  min-height: 1rem;
+  border-radius: 999px;
+  background: rgba(119, 140, 152, 0.14);
+  color: var(--text-primary);
+  font-size: 0.6rem;
+}
+
 .runtime-validation-row {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 0.7fr) minmax(0, 1fr);

@@ -302,9 +302,39 @@ assertIncludes(
   "Runtime validation rows are inspectable"
 );
 assertIncludes(
+  files.construct,
+  "runtimeValidationModelFilter",
+  "Runtime validation history can filter by model"
+);
+assertIncludes(
+  files.construct,
+  "runtimeValidationDeviceFilter",
+  "Runtime validation history can filter by device"
+);
+assertIncludes(
+  files.construct,
+  "runtimeValidationStatusFilter",
+  "Runtime validation history can filter by status"
+);
+assertIncludes(
+  files.construct,
+  "runtimeValidationPassRate",
+  "Runtime validation history summarizes pass rate"
+);
+assertIncludes(
   files.styles,
   ".runtime-validation-card",
   "Runtime validation history is styled"
+);
+assertIncludes(
+  files.styles,
+  ".runtime-validation-filter",
+  "Runtime validation filters are styled"
+);
+assertIncludes(
+  files.styles,
+  ".runtime-validation-summary",
+  "Runtime validation summary is styled"
 );
 assertIncludes(
   files.styles,
