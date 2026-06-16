@@ -18,6 +18,8 @@ from uuid import uuid4
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_MODEL_ARCHIVE_DIR = BASE_DIR / "runtime" / "models" / "huggingface"
 DEFAULT_CATALOG_DB_PATH = BASE_DIR / "runtime" / "foundry_catalog.db"
+DEFAULT_RUNTIME_EVENT_RETENTION_LIMIT = 200
+DEFAULT_RUNTIME_EVENT_LIST_LIMIT = 50
 
 
 @dataclass
@@ -49,6 +51,14 @@ class ConstructInferenceService:
         )
         self.runtime_event_db_path = Path(
             os.getenv("FOUNDRY_CATALOG_DB_PATH", str(DEFAULT_CATALOG_DB_PATH))
+        )
+        self.runtime_event_retention_limit = self._positive_int_env(
+            "FOUNDRY_CONSTRUCT_RUNTIME_EVENT_RETENTION_LIMIT",
+            DEFAULT_RUNTIME_EVENT_RETENTION_LIMIT,
+        )
+        self.runtime_event_list_limit = self._positive_int_env(
+            "FOUNDRY_CONSTRUCT_RUNTIME_EVENT_LIST_LIMIT",
+            DEFAULT_RUNTIME_EVENT_LIST_LIMIT,
         )
         self.allow_remote_model_download = (
             os.getenv("FOUNDRY_CONSTRUCT_ALLOW_REMOTE_MODEL_DOWNLOAD", "0").strip().lower()
@@ -179,6 +189,16 @@ class ConstructInferenceService:
         self._persist_runtime_event(event)
         return event
 
+    def _positive_int_env(self, name: str, default: int) -> int:
+        raw_value = os.getenv(name, "").strip()
+        if not raw_value:
+            return default
+        try:
+            value = int(raw_value)
+        except ValueError:
+            return default
+        return value if value > 0 else default
+
     def _connect_runtime_event_store(self) -> sqlite3.Connection:
         self.runtime_event_db_path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.runtime_event_db_path)
@@ -214,6 +234,7 @@ class ConstructInferenceService:
                     ON construct_runtime_events(created_at DESC, timestamp DESC)
                     """
                 )
+                self._prune_runtime_events(connection)
         except sqlite3.Error:
             return
 
@@ -253,8 +274,23 @@ class ConstructInferenceService:
                         json.dumps(event.get("metadata") or {}),
                     ),
                 )
+                self._prune_runtime_events(connection)
         except (sqlite3.Error, TypeError, ValueError):
             return
+
+    def _prune_runtime_events(self, connection: sqlite3.Connection) -> None:
+        connection.execute(
+            """
+            DELETE FROM construct_runtime_events
+            WHERE id NOT IN (
+                SELECT id
+                FROM construct_runtime_events
+                ORDER BY created_at DESC, timestamp DESC, rowid DESC
+                LIMIT ?
+            )
+            """,
+            (self.runtime_event_retention_limit,),
+        )
 
     def _list_persisted_runtime_events(self) -> Optional[list[Dict[str, Any]]]:
         try:
@@ -275,9 +311,10 @@ class ConstructInferenceService:
                         source,
                         metadata_json
                     FROM construct_runtime_events
-                    ORDER BY created_at DESC, timestamp DESC
-                    LIMIT 50
-                    """
+                    ORDER BY created_at DESC, timestamp DESC, rowid DESC
+                    LIMIT ?
+                    """,
+                    (self.runtime_event_list_limit,),
                 ).fetchall()
             return [self._runtime_event_from_row(row) for row in rows]
         except sqlite3.Error:
