@@ -212,6 +212,26 @@ assertIncludes(
 );
 assertIncludes(
   files.construct,
+  "SMOKE_RESULT_STORAGE_PREFIX",
+  "Construct smoke test has a persisted session result key"
+);
+assertIncludes(
+  files.construct,
+  "loadPersistedSmokeResult",
+  "Construct smoke test restores the last passed result"
+);
+assertIncludes(
+  files.construct,
+  "persistSmokeResult(event.construct.id, event.artifact.id, smokeResult)",
+  "Construct smoke test persists successful live results"
+);
+assertIncludes(
+  files.construct,
+  "Last smoke test passed",
+  "Construct smoke test explains restored session history"
+);
+assertIncludes(
+  files.construct,
   "window.setInterval(pollTimeline, 5000)",
   "Construct timeline polling uses a calmer cadence"
 );

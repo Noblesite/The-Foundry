@@ -64,11 +64,63 @@ interface RuntimeSmokeResult {
   durationSeconds: number;
   cleanupStatus: string;
   memoryAvailableGb?: number;
+  completedAt: string;
 }
 
 const LOCAL_SMOKE_MODEL_ID = "sshleifer/tiny-gpt2";
 const LOCAL_SMOKE_PROMPT =
   "Runtime smoke test: reply with one short sentence from The Foundry.";
+const SMOKE_RESULT_STORAGE_PREFIX = "foundry.construct.smokeResult";
+
+const smokeResultStorageKey = (constructId: string, artifactId: string) =>
+  `${SMOKE_RESULT_STORAGE_PREFIX}.${constructId}.${artifactId}`;
+
+const isRuntimeSmokeResult = (value: unknown): value is RuntimeSmokeResult => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Partial<RuntimeSmokeResult>;
+  return (
+    typeof candidate.modelId === "string" &&
+    typeof candidate.device === "string" &&
+    typeof candidate.totalTokens === "number" &&
+    typeof candidate.durationSeconds === "number" &&
+    typeof candidate.cleanupStatus === "string" &&
+    typeof candidate.completedAt === "string" &&
+    (candidate.memoryAvailableGb === undefined || typeof candidate.memoryAvailableGb === "number")
+  );
+};
+
+const loadPersistedSmokeResult = (
+  constructId: string,
+  artifactId: string
+): RuntimeSmokeResult | null => {
+  try {
+    const rawResult = window.localStorage.getItem(smokeResultStorageKey(constructId, artifactId));
+    if (!rawResult) {
+      return null;
+    }
+    const parsedResult: unknown = JSON.parse(rawResult);
+    return isRuntimeSmokeResult(parsedResult) ? parsedResult : null;
+  } catch {
+    return null;
+  }
+};
+
+const persistSmokeResult = (
+  constructId: string,
+  artifactId: string,
+  result: RuntimeSmokeResult
+) => {
+  try {
+    window.localStorage.setItem(
+      smokeResultStorageKey(constructId, artifactId),
+      JSON.stringify(result)
+    );
+  } catch {
+    // Best-effort session history only; runtime behavior should not depend on storage.
+  }
+};
 
 const mergeRuntimeTimelineEvents = (
   current: ConstructRuntimeEvent[],
@@ -219,11 +271,14 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setRuntimeDetail("Using deterministic simulated token streaming.");
     setRuntimeLoadPhase("idle");
     setRuntimeLoadTarget(configuredModelTarget || artifact.baseModel);
-    setRuntimeSmokeStatus("idle");
+    const persistedSmokeResult = loadPersistedSmokeResult(construct.id, artifact.id);
+    setRuntimeSmokeStatus(persistedSmokeResult ? "passed" : "idle");
     setRuntimeSmokeMessage(
-      "Load the current model, stream a short reply, and inspect the runtime contract."
+      persistedSmokeResult
+        ? `Last smoke test passed on ${persistedSmokeResult.device}. Run again to verify the current runtime.`
+        : "Load the current model, stream a short reply, and inspect the runtime contract."
     );
-    setRuntimeSmokeResult(null);
+    setRuntimeSmokeResult(persistedSmokeResult);
     setRuntimeMemoryReleaseMessage(null);
     setHandoffNotice(null);
     setPreflightResult(null);
@@ -820,11 +875,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
             const diagnostics = (eventRuntime?.diagnostics || {}) as Record<string, unknown>;
             const cleanup = (diagnostics.memoryCleanup || {}) as Record<string, unknown>;
             const memory = (diagnostics.memory || {}) as Record<string, unknown>;
-            setRuntimeSmokeStatus("passed");
-            setRuntimeSmokeMessage(
-              `Smoke test passed on ${eventRuntime?.device || runtime?.device || settings.constructDevice}.`
-            );
-            setRuntimeSmokeResult({
+            const smokeResult: RuntimeSmokeResult = {
               modelId: eventRuntime?.modelId || runtime?.modelId || activeArtifact.baseModel,
               device: eventRuntime?.device || runtime?.device || settings.constructDevice,
               totalTokens: event.totalTokens,
@@ -835,7 +886,14 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 typeof cleanup.status === "string" ? cleanup.status : memoryCleanupStatus,
               memoryAvailableGb:
                 typeof memory.availableGb === "number" ? memory.availableGb : undefined,
-            });
+              completedAt: new Date().toISOString(),
+            };
+            setRuntimeSmokeStatus("passed");
+            setRuntimeSmokeMessage(
+              `Smoke test passed on ${smokeResult.device}.`
+            );
+            setRuntimeSmokeResult(smokeResult);
+            persistSmokeResult(event.construct.id, event.artifact.id, smokeResult);
             addRuntimeTimelineEvent({
               type: "smoke",
               status: "passed",
@@ -1443,6 +1501,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                         ? `${runtimeSmokeResult.memoryAvailableGb} GB`
                         : "n/a"}
                     </strong>
+                  </div>
+                  <div>
+                    <span>Saved</span>
+                    <strong>{formatRuntimeTimestamp(runtimeSmokeResult.completedAt)}</strong>
                   </div>
                 </article>
               )}
