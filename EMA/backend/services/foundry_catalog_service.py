@@ -262,6 +262,22 @@ class FoundryCatalogService:
                 FOREIGN KEY(archive_entry_id) REFERENCES model_archive_entries(id)
             );
 
+            CREATE TABLE IF NOT EXISTS construct_runtime_validations (
+                id TEXT PRIMARY KEY,
+                construct_id TEXT,
+                artifact_id TEXT,
+                model_id TEXT NOT NULL,
+                device TEXT NOT NULL,
+                status TEXT NOT NULL,
+                total_tokens INTEGER NOT NULL DEFAULT 0,
+                duration_seconds REAL NOT NULL DEFAULT 0,
+                cleanup_status TEXT NOT NULL DEFAULT 'unknown',
+                memory_available_gb REAL,
+                error TEXT,
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE TABLE IF NOT EXISTS navigation_items (
                 id TEXT PRIMARY KEY,
                 label TEXT NOT NULL,
@@ -312,6 +328,8 @@ class FoundryCatalogService:
                 ON model_archive_entries(source, repo_id, revision);
             CREATE INDEX IF NOT EXISTS idx_model_archive_status_updated
                 ON model_archive_entries(status, updated_at);
+            CREATE INDEX IF NOT EXISTS idx_construct_runtime_validations_recent
+                ON construct_runtime_validations(created_at DESC, model_id, device);
             """
         )
         self._ensure_forge_contract_columns(connection)
@@ -2901,6 +2919,99 @@ class FoundryCatalogService:
                 return [self._model_download_job_from_row(connection, row) for row in rows]
 
         return await self._run_query(query)
+
+    async def list_construct_runtime_validations(self) -> List[Dict[str, Any]]:
+        def query():
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM construct_runtime_validations
+                    ORDER BY datetime(created_at) DESC
+                    LIMIT 25
+                    """
+                ).fetchall()
+                return [self._construct_runtime_validation_from_row(row) for row in rows]
+
+        return await self._run_query(query)
+
+    async def create_construct_runtime_validation(
+        self,
+        *,
+        construct_id: Optional[str],
+        artifact_id: Optional[str],
+        model_id: str,
+        device: str,
+        status: str,
+        total_tokens: int = 0,
+        duration_seconds: float = 0,
+        cleanup_status: str = "unknown",
+        memory_available_gb: Optional[float] = None,
+        error: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        validation_id = f"rtv-{uuid4().hex[:12]}"
+        safe_status = status if status in {"passed", "failed"} else "failed"
+        async with self._write_lock:
+            with self._connect() as connection:
+                connection.execute(
+                    """
+                    INSERT INTO construct_runtime_validations (
+                        id,
+                        construct_id,
+                        artifact_id,
+                        model_id,
+                        device,
+                        status,
+                        total_tokens,
+                        duration_seconds,
+                        cleanup_status,
+                        memory_available_gb,
+                        error,
+                        metadata_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        validation_id,
+                        construct_id,
+                        artifact_id,
+                        model_id,
+                        device,
+                        safe_status,
+                        max(0, int(total_tokens or 0)),
+                        max(0.0, float(duration_seconds or 0)),
+                        cleanup_status or "unknown",
+                        memory_available_gb,
+                        error,
+                        json.dumps(metadata or {}),
+                    ),
+                )
+                row = connection.execute(
+                    "SELECT * FROM construct_runtime_validations WHERE id = ?",
+                    (validation_id,),
+                ).fetchone()
+                return self._construct_runtime_validation_from_row(row)
+
+    def _construct_runtime_validation_from_row(self, row: sqlite3.Row) -> Dict[str, Any]:
+        try:
+            metadata = json.loads(row["metadata_json"] or "{}")
+        except (TypeError, ValueError):
+            metadata = {}
+        return {
+            "id": row["id"],
+            "constructId": row["construct_id"],
+            "artifactId": row["artifact_id"],
+            "modelId": row["model_id"],
+            "device": row["device"],
+            "status": row["status"],
+            "totalTokens": row["total_tokens"],
+            "durationSeconds": row["duration_seconds"],
+            "cleanupStatus": row["cleanup_status"],
+            "memoryAvailableGb": row["memory_available_gb"],
+            "error": row["error"],
+            "metadata": metadata if isinstance(metadata, dict) else {},
+            "createdAt": row["created_at"],
+        }
 
     async def get_model_download_job(self, job_id: str) -> Optional[Dict[str, Any]]:
         def query():

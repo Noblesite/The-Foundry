@@ -393,6 +393,27 @@ export interface ConstructRuntimeHistoryExport {
   events: ConstructRuntimeEvent[];
 }
 
+export interface ConstructRuntimeValidation {
+  id: string;
+  constructId?: string | null;
+  artifactId?: string | null;
+  modelId: string;
+  device: string;
+  status: "passed" | "failed";
+  totalTokens: number;
+  durationSeconds: number;
+  cleanupStatus: string;
+  memoryAvailableGb?: number | null;
+  error?: string | null;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export type CreateConstructRuntimeValidationRequest = Omit<
+  ConstructRuntimeValidation,
+  "id" | "createdAt"
+>;
+
 export type CreateConstructRuntimeEventRequest = Omit<
   ConstructRuntimeEvent,
   "id" | "timestamp" | "source"

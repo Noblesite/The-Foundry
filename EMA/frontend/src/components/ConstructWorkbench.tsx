@@ -10,6 +10,7 @@ import {
   ConstructRuntimeEvent,
   ConstructRuntimePreflightResult,
   ConstructRuntimeProbeResult,
+  ConstructRuntimeValidation,
   CreateConstructRuntimeEventRequest,
   FoundryRuntimeStatus,
   ModelArchiveEntry,
@@ -333,6 +334,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [readinessGateMessage, setReadinessGateMessage] = useState<string | null>(null);
   const [confirmedCautionTarget, setConfirmedCautionTarget] = useState<string | null>(null);
   const [runtimeTimeline, setRuntimeTimeline] = useState<ConstructRuntimeEvent[]>([]);
+  const [runtimeValidations, setRuntimeValidations] = useState<ConstructRuntimeValidation[]>([]);
   const [runtimeHistoryFilter, setRuntimeHistoryFilter] = useState<RuntimeHistoryFilter>("all");
   const [selectedRuntimeEvent, setSelectedRuntimeEvent] =
     useState<ConstructRuntimeEvent | null>(null);
@@ -358,6 +360,16 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         setRuntimeTimeline((current) => mergeRuntimeTimelineEvents(current, events));
       }
       return events;
+    } catch {
+      return [];
+    }
+  }, [repository]);
+
+  const refreshRuntimeValidations = useCallback(async () => {
+    try {
+      const validations = await repository.listConstructRuntimeValidations();
+      setRuntimeValidations(validations);
+      return validations;
     } catch {
       return [];
     }
@@ -395,6 +407,21 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         });
     },
     [activeArtifact.id, activeConstruct.id, repository, runtime?.status]
+  );
+
+  const recordRuntimeValidation = useCallback(
+    async (
+      request: Omit<ConstructRuntimeValidation, "id" | "createdAt" | "constructId" | "artifactId">
+    ) => {
+      const validation = await repository.createConstructRuntimeValidation({
+        ...request,
+        constructId: activeConstruct.id,
+        artifactId: activeArtifact.id,
+      });
+      setRuntimeValidations((current) => [validation, ...current].slice(0, 25));
+      return validation;
+    },
+    [activeArtifact.id, activeConstruct.id, repository]
   );
 
   const downloadRuntimeHistoryExport = useCallback(async () => {
@@ -602,6 +629,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setConfirmedCautionTarget(null);
     setProbeResult(null);
     setRuntimeTimeline([]);
+    setRuntimeValidations([]);
     setSelectedRuntimeEvent(null);
     setIsConfirmingHistoryClear(false);
     setRuntimeHistoryMessage(null);
@@ -663,10 +691,11 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           ]);
         }
       });
+    void refreshRuntimeValidations();
     return () => {
       isCurrent = false;
     };
-  }, [artifact, configuredModelTarget, construct, repository]);
+  }, [artifact, configuredModelTarget, construct, refreshRuntimeValidations, repository]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -1226,6 +1255,20 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
             );
             setRuntimeSmokeResult(smokeResult);
             persistSmokeResult(event.construct.id, event.artifact.id, smokeResult);
+            void recordRuntimeValidation({
+              modelId: smokeResult.modelId,
+              device: smokeResult.device,
+              status: "passed",
+              totalTokens: smokeResult.totalTokens,
+              durationSeconds: smokeResult.durationSeconds,
+              cleanupStatus: smokeResult.cleanupStatus,
+              memoryAvailableGb: smokeResult.memoryAvailableGb,
+              error: null,
+              metadata: {
+                source: "construct-smoke-test",
+                prompt: LOCAL_SMOKE_PROMPT,
+              },
+            });
             addRuntimeTimelineEvent({
               type: "smoke",
               status: "passed",
@@ -1242,9 +1285,27 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           return;
         }
         if (options?.smokeTest) {
+          const failedModelId = runtime?.modelId || activeArtifact.baseModel;
+          const failedDevice = runtime?.device || settings.constructDevice;
           setRuntimeSmokeStatus("failed");
           setRuntimeSmokeMessage(event.message);
           setRuntimeSmokeResult(null);
+          void recordRuntimeValidation({
+            modelId: failedModelId,
+            device: failedDevice,
+            status: "failed",
+            totalTokens: 0,
+            durationSeconds: Number(
+              ((performance.now() - (options.smokeStartedAt || performance.now())) / 1000).toFixed(2)
+            ),
+            cleanupStatus: memoryCleanupStatus,
+            memoryAvailableGb: undefined,
+            error: event.message,
+            metadata: {
+              source: "construct-smoke-test",
+              prompt: LOCAL_SMOKE_PROMPT,
+            },
+          });
           addRuntimeTimelineEvent({
             type: "smoke",
             status: "failed",
@@ -1256,11 +1317,29 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       });
     } catch (chatError: unknown) {
       if (options?.smokeTest) {
+        const failedModelId = runtime?.modelId || activeArtifact.baseModel;
+        const failedDevice = runtime?.device || settings.constructDevice;
         setRuntimeSmokeStatus("failed");
         setRuntimeSmokeMessage(
           chatError instanceof Error ? chatError.message : "Runtime smoke test failed."
         );
         setRuntimeSmokeResult(null);
+        void recordRuntimeValidation({
+          modelId: failedModelId,
+          device: failedDevice,
+          status: "failed",
+          totalTokens: 0,
+          durationSeconds: Number(
+            ((performance.now() - (options.smokeStartedAt || performance.now())) / 1000).toFixed(2)
+          ),
+          cleanupStatus: memoryCleanupStatus,
+          memoryAvailableGb: undefined,
+          error: chatError instanceof Error ? chatError.message : "Runtime smoke test failed.",
+          metadata: {
+            source: "construct-smoke-test",
+            prompt: LOCAL_SMOKE_PROMPT,
+          },
+        });
         addRuntimeTimelineEvent({
           type: "smoke",
           status: "failed",
@@ -1914,6 +1993,51 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                   </div>
                 </article>
               )}
+              <article className="runtime-validation-card">
+                <div className="runtime-validation-header">
+                  <div>
+                    <p className="panel-kicker">Runtime Validation</p>
+                    <h3>Smoke history</h3>
+                  </div>
+                  <span>{runtimeValidations.length} runs</span>
+                </div>
+                {runtimeValidations.length > 0 ? (
+                  <div className="runtime-validation-list">
+                    {runtimeValidations.slice(0, 5).map((validation) => (
+                      <div
+                        className={`runtime-validation-row is-${validation.status}`}
+                        key={validation.id}
+                      >
+                        <div>
+                          <strong>{shortModelId(validation.modelId)}</strong>
+                          <span>{validation.device}</span>
+                        </div>
+                        <div>
+                          <strong>{validation.status}</strong>
+                          <span>{formatRuntimeTimestamp(validation.createdAt)}</span>
+                        </div>
+                        <div>
+                          <strong>{validation.totalTokens}</strong>
+                          <span>{validation.durationSeconds}s</span>
+                        </div>
+                        <div>
+                          <strong>{validation.cleanupStatus}</strong>
+                          <span>
+                            {validation.memoryAvailableGb !== undefined &&
+                            validation.memoryAvailableGb !== null
+                              ? `${validation.memoryAvailableGb} GB free`
+                              : validation.error || "no memory sample"}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="runtime-validation-empty">
+                    Run the smoke test to catalog model/device validation history.
+                  </p>
+                )}
+              </article>
               <div className="runtime-probe-grid">
                 <label className="field-label" htmlFor="runtime-probe-model">Tiny model probe</label>
                 <input

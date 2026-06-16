@@ -17,6 +17,7 @@ import {
   ConstructDto,
   ConstructChatRequest,
   ConstructChatResponseDto,
+  ConstructRuntimeValidationDto,
   ConstructRuntimePreflightDto,
   ConstructRuntimeProbeDto,
   CreateTrialRequest,
@@ -58,9 +59,11 @@ import {
   ConstructRuntimeEvent,
   ConstructRuntime,
   ConstructRuntimeHistoryExport,
+  ConstructRuntimeValidation,
   ConstructRuntimePreflightResult,
   ConstructRuntimeProbeResult,
   CreateConstructRuntimeEventRequest,
+  CreateConstructRuntimeValidationRequest,
   DashboardSummary,
   FoundryNavigationItem,
   ForgeEvaluationReport,
@@ -176,6 +179,10 @@ export interface FoundryRepository {
   ) => Promise<ConstructRuntimeEvent>;
   exportConstructRuntimeEvents: () => Promise<ExportConstructRuntimeEventsDto>;
   clearConstructRuntimeEvents: () => Promise<ClearConstructRuntimeEventsDto>;
+  listConstructRuntimeValidations: () => Promise<ConstructRuntimeValidation[]>;
+  createConstructRuntimeValidation: (
+    request: CreateConstructRuntimeValidationRequest
+  ) => Promise<ConstructRuntimeValidation>;
   configureConstructRuntime: (
     request: ConfigureConstructRuntimeRequest
   ) => Promise<ConstructRuntime>;
@@ -393,6 +400,7 @@ const mockArchiveModels: ModelSearchResult[] = [
 ];
 let mockConstruct: Construct = mockDashboardSummary.construct;
 let mockConstructRuntimeEvents: ConstructRuntimeEvent[] = [];
+let mockConstructRuntimeValidations: ConstructRuntimeValidation[] = [];
 let mockRuntimeLoadEvent: Record<string, unknown> = {
   status: "idle",
   modelId: "active Artifact base model",
@@ -1295,6 +1303,16 @@ export const mockFoundryRepository: FoundryRepository = {
       clearedAt: new Date().toISOString(),
     };
   },
+  listConstructRuntimeValidations: async () => mockConstructRuntimeValidations,
+  createConstructRuntimeValidation: async (request) => {
+    const validation: ConstructRuntimeValidation = {
+      ...request,
+      id: `rtv-${Date.now()}-${mockConstructRuntimeValidations.length}`,
+      createdAt: new Date().toISOString(),
+    };
+    mockConstructRuntimeValidations = [validation, ...mockConstructRuntimeValidations].slice(0, 25);
+    return validation;
+  },
   configureConstructRuntime: async (request) => {
     mockRuntimeLoadEvent = {
       status: "configured",
@@ -2042,6 +2060,33 @@ export const apiFoundryRepository: FoundryRepository = {
       };
     }
   },
+  listConstructRuntimeValidations: async () => {
+    try {
+      return unwrap(
+        await apiClient.get<ApiEnvelope<ConstructRuntimeValidationDto[]>>(
+          foundryApiRoutes.constructRuntimeValidations
+        )
+      );
+    } catch {
+      return [];
+    }
+  },
+  createConstructRuntimeValidation: async (request) => {
+    try {
+      return unwrap(
+        await apiClient.post<ApiEnvelope<ConstructRuntimeValidationDto>>(
+          foundryApiRoutes.constructRuntimeValidations,
+          request
+        )
+      );
+    } catch {
+      return {
+        ...request,
+        id: `rtv-local-${Date.now()}`,
+        createdAt: new Date().toISOString(),
+      };
+    }
+  },
   configureConstructRuntime: async (request) =>
     unwrap(
       await apiClient.post<ApiEnvelope<ConstructRuntime>>(
@@ -2188,6 +2233,8 @@ const constructApiOverrides: Pick<
   | "recordConstructRuntimeEvent"
   | "exportConstructRuntimeEvents"
   | "clearConstructRuntimeEvents"
+  | "listConstructRuntimeValidations"
+  | "createConstructRuntimeValidation"
   | "configureConstructRuntime"
   | "loadConstructRuntime"
   | "preflightConstructRuntime"
@@ -2216,6 +2263,8 @@ const constructApiOverrides: Pick<
   recordConstructRuntimeEvent: apiFoundryRepository.recordConstructRuntimeEvent,
   exportConstructRuntimeEvents: apiFoundryRepository.exportConstructRuntimeEvents,
   clearConstructRuntimeEvents: apiFoundryRepository.clearConstructRuntimeEvents,
+  listConstructRuntimeValidations: apiFoundryRepository.listConstructRuntimeValidations,
+  createConstructRuntimeValidation: apiFoundryRepository.createConstructRuntimeValidation,
   configureConstructRuntime: apiFoundryRepository.configureConstructRuntime,
   loadConstructRuntime: apiFoundryRepository.loadConstructRuntime,
   preflightConstructRuntime: apiFoundryRepository.preflightConstructRuntime,

@@ -1952,6 +1952,74 @@ input[type="checkbox"] {
   overflow-wrap: anywhere;
 }
 
+.runtime-validation-card {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid rgba(0, 212, 255, 0.16);
+  border-radius: 8px;
+  padding: 0.72rem;
+  background: rgba(13, 17, 23, 0.44);
+}
+
+.runtime-validation-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.runtime-validation-header h3 {
+  margin: 0.15rem 0 0;
+  font-size: 0.98rem;
+}
+
+.runtime-validation-header span,
+.runtime-validation-empty {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+
+.runtime-validation-list {
+  display: grid;
+  gap: 0.44rem;
+}
+
+.runtime-validation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 0.7fr) minmax(0, 1fr);
+  gap: 0.5rem;
+  padding: 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.runtime-validation-row.is-passed {
+  border-color: rgba(0, 212, 255, 0.25);
+}
+
+.runtime-validation-row.is-failed {
+  border-color: rgba(255, 138, 0, 0.34);
+}
+
+.runtime-validation-row strong,
+.runtime-validation-row span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.runtime-validation-row strong {
+  color: var(--text-primary);
+  font-size: 0.76rem;
+}
+
+.runtime-validation-row span {
+  margin-top: 0.16rem;
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
 .runtime-probe-grid {
   display: grid;
   gap: 0.45rem;

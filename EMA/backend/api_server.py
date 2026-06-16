@@ -118,6 +118,19 @@ class ConstructRuntimeEventInput(BaseModel):
     source: Literal["frontend", "mock", "backend"] = "frontend"
     metadata: dict[str, Any] | None = None
 
+class ConstructRuntimeValidationInput(BaseModel):
+    constructId: str | None = None
+    artifactId: str | None = None
+    modelId: str
+    device: str
+    status: Literal["passed", "failed"]
+    totalTokens: int = 0
+    durationSeconds: float = 0
+    cleanupStatus: str = "unknown"
+    memoryAvailableGb: float | None = None
+    error: str | None = None
+    metadata: dict[str, Any] | None = None
+
 class SearchArchiveModelsInput(BaseModel):
     query: str = ""
     pipelineTag: str = "text-generation"
@@ -301,6 +314,32 @@ async def record_foundry_construct_runtime_event_endpoint(data: ConstructRuntime
 @app.post("/api/v1/constructs/runtime/events/clear")
 async def clear_foundry_construct_runtime_events_endpoint():
     return api_envelope(construct_inference_service.clear_runtime_events())
+
+
+@app.get("/api/v1/constructs/runtime/validations")
+async def foundry_construct_runtime_validations_endpoint():
+    return api_envelope(await foundry_catalog_service.list_construct_runtime_validations())
+
+
+@app.post("/api/v1/constructs/runtime/validations")
+async def create_foundry_construct_runtime_validation_endpoint(data: ConstructRuntimeValidationInput):
+    if not data.modelId.strip():
+        raise HTTPException(status_code=400, detail="Validation model id cannot be empty.")
+    return api_envelope(
+        await foundry_catalog_service.create_construct_runtime_validation(
+            construct_id=data.constructId,
+            artifact_id=data.artifactId,
+            model_id=data.modelId,
+            device=data.device,
+            status=data.status,
+            total_tokens=data.totalTokens,
+            duration_seconds=data.durationSeconds,
+            cleanup_status=data.cleanupStatus,
+            memory_available_gb=data.memoryAvailableGb,
+            error=data.error,
+            metadata=data.metadata,
+        )
+    )
 
 
 @app.get("/api/v1/forges/runtime")

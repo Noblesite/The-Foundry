@@ -153,6 +153,11 @@ assertIncludes(
 );
 assertIncludes(
   files.domain,
+  "export interface ConstructRuntimeValidation",
+  "Runtime validation domain contract"
+);
+assertIncludes(
+  files.domain,
   "metadata?: Record<string, unknown>",
   "Runtime event contract supports structured metadata"
 );
@@ -182,6 +187,16 @@ assertIncludes(
   "Repository clear runtime history method"
 );
 assertIncludes(
+  files.repository,
+  "listConstructRuntimeValidations:",
+  "Repository list runtime validations method"
+);
+assertIncludes(
+  files.repository,
+  "createConstructRuntimeValidation:",
+  "Repository create runtime validation method"
+);
+assertIncludes(
   files.contracts,
   "exportConstructRuntimeEvents:",
   "Frontend contract exposes runtime history export route"
@@ -190,6 +205,11 @@ assertIncludes(
   files.contracts,
   "clearConstructRuntimeEvents:",
   "Frontend contract exposes runtime history clear route"
+);
+assertIncludes(
+  files.contracts,
+  "constructRuntimeValidations:",
+  "Frontend contract exposes runtime validation route"
 );
 assertIncludes(
   files.repository,
@@ -250,6 +270,21 @@ assertIncludes(
   files.construct,
   "runtimeSmokeResult",
   "Construct smoke test stores a final result summary"
+);
+assertIncludes(
+  files.construct,
+  "recordRuntimeValidation",
+  "Construct smoke test records durable runtime validation"
+);
+assertIncludes(
+  files.construct,
+  "Runtime Validation",
+  "Construct workbench renders runtime validation history"
+);
+assertIncludes(
+  files.styles,
+  ".runtime-validation-card",
+  "Runtime validation history is styled"
 );
 assertIncludes(
   files.construct,

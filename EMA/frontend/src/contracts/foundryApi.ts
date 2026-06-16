@@ -9,6 +9,7 @@ import {
   ConstructChatErrorEvent,
   ConstructChatStreamEvent,
   ConstructRuntimeHistoryExport,
+  ConstructRuntimeValidation,
   ConstructRuntimePreflightResult,
   ForgeTrainingContract,
   ForgePurpose,
@@ -77,6 +78,7 @@ export const foundryApiRoutes = {
   constructRuntimeEvents: `${FOUNDRY_API_VERSION}/constructs/runtime/events`,
   exportConstructRuntimeEvents: `${FOUNDRY_API_VERSION}/constructs/runtime/events/export`,
   clearConstructRuntimeEvents: `${FOUNDRY_API_VERSION}/constructs/runtime/events/clear`,
+  constructRuntimeValidations: `${FOUNDRY_API_VERSION}/constructs/runtime/validations`,
   modelArchive: `${FOUNDRY_API_VERSION}/archive/models`,
   testHuggingFaceAuth: `${FOUNDRY_API_VERSION}/archive/huggingface/auth/test`,
   searchArchiveModels: `${FOUNDRY_API_VERSION}/archive/models/search`,
@@ -122,6 +124,7 @@ export interface ClearConstructRuntimeEventsDto {
 }
 
 export type ExportConstructRuntimeEventsDto = ConstructRuntimeHistoryExport;
+export type ConstructRuntimeValidationDto = ConstructRuntimeValidation;
 
 export interface WorkshopDto {
   id: string;

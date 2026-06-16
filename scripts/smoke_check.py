@@ -203,8 +203,10 @@ def run_trial_contract_check() -> int:
 def run_construct_runtime_event_contract_check() -> int:
     api_server = PACKAGE_ROOT / "backend" / "api_server.py"
     construct_service = PACKAGE_ROOT / "backend" / "services" / "construct_inference_service.py"
+    catalog_service = PACKAGE_ROOT / "backend" / "services" / "foundry_catalog_service.py"
     api_source = api_server.read_text(encoding="utf-8")
     service_source = construct_service.read_text(encoding="utf-8")
+    catalog_source = catalog_service.read_text(encoding="utf-8")
 
     required_api_patterns = (
         "ConstructRuntimeEventInput",
@@ -212,10 +214,14 @@ def run_construct_runtime_event_contract_check() -> int:
         "/api/v1/constructs/runtime/events",
         "/api/v1/constructs/runtime/events/export",
         "/api/v1/constructs/runtime/events/clear",
+        "/api/v1/constructs/runtime/validations",
+        "ConstructRuntimeValidationInput",
         "foundry_construct_runtime_events_endpoint",
         "export_foundry_construct_runtime_events_endpoint",
         "record_foundry_construct_runtime_event_endpoint",
         "clear_foundry_construct_runtime_events_endpoint",
+        "foundry_construct_runtime_validations_endpoint",
+        "create_foundry_construct_runtime_validation_endpoint",
     )
     missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
     if missing_api:
@@ -249,6 +255,21 @@ def run_construct_runtime_event_contract_check() -> int:
         return fail(
             "ConstructInferenceService event contract is missing: "
             + ", ".join(missing_service)
+        )
+
+    required_catalog_patterns = (
+        "construct_runtime_validations",
+        "list_construct_runtime_validations",
+        "create_construct_runtime_validation",
+        "_construct_runtime_validation_from_row",
+    )
+    missing_catalog = [
+        pattern for pattern in required_catalog_patterns if pattern not in catalog_source
+    ]
+    if missing_catalog:
+        return fail(
+            "Construct runtime validation catalog contract is missing: "
+            + ", ".join(missing_catalog)
         )
 
     print("OK: Construct runtime event contract is present.")
