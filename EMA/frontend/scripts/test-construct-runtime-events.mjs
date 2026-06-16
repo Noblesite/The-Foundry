@@ -251,6 +251,26 @@ assertIncludes(
   "Construct timeline polling uses a calmer cadence"
 );
 assertIncludes(
+  files.construct,
+  "RUNTIME_HISTORY_FILTERS",
+  "Construct runtime history exposes filter chips"
+);
+assertIncludes(
+  files.construct,
+  "runtimeHistoryCounts",
+  "Construct runtime history shows per-filter counts"
+);
+assertIncludes(
+  files.construct,
+  "filteredRuntimeTimeline",
+  "Construct runtime history filters visible events"
+);
+assertIncludes(
+  files.construct,
+  "No matching events",
+  "Construct runtime history has a filtered empty state"
+);
+assertIncludes(
   files.app,
   "const handleConstructRuntimeChanged = useCallback",
   "App stabilizes runtime changed callback to avoid repeated runtime refreshes"
@@ -374,6 +394,11 @@ assertIncludes(
   files.construct,
   ".listConstructRuntimeEvents()",
   "Construct timeline hydration"
+);
+assertIncludes(
+  files.construct,
+  "events.slice(0, 50)",
+  "Construct timeline hydrates the backend event list limit"
 );
 assertIncludes(
   files.construct,

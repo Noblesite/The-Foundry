@@ -2025,9 +2025,76 @@ input[type="checkbox"] {
   pointer-events: none;
 }
 
+.runtime-history-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  align-items: center;
+}
+
+.runtime-history-heading span {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.runtime-history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.38rem;
+  position: relative;
+  z-index: 1;
+}
+
+.runtime-history-filter {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  gap: 0.34rem;
+  align-items: center;
+  border: 1px solid rgba(119, 140, 152, 0.2);
+  border-radius: 999px;
+  padding: 0.34rem 0.48rem;
+  background: rgba(13, 17, 23, 0.62);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.7rem;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.runtime-history-filter:hover,
+.runtime-history-filter:focus-visible {
+  border-color: rgba(0, 212, 255, 0.42);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.runtime-history-filter.is-active {
+  border-color: rgba(0, 212, 255, 0.52);
+  background: rgba(0, 212, 255, 0.12);
+  color: var(--arc-blue);
+}
+
+.runtime-history-filter strong {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.25rem;
+  min-height: 1.25rem;
+  border-radius: 999px;
+  background: rgba(119, 140, 152, 0.13);
+  color: var(--text-primary);
+  font-size: 0.66rem;
+}
+
 .runtime-timeline-list {
   display: grid;
   gap: 0.58rem;
+  max-height: 29rem;
+  overflow-y: auto;
+  padding-right: 0.15rem;
 }
 
 .runtime-timeline-event {
@@ -2099,11 +2166,54 @@ input[type="checkbox"] {
   white-space: nowrap;
 }
 
+.runtime-timeline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+  margin-top: 0.28rem;
+}
+
+.runtime-timeline-meta span {
+  border: 1px solid rgba(119, 140, 152, 0.16);
+  border-radius: 999px;
+  padding: 0.12rem 0.34rem;
+  background: rgba(119, 140, 152, 0.08);
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  text-transform: uppercase;
+}
+
 .runtime-timeline-event p {
   margin: 0.18rem 0 0;
   color: var(--text-secondary);
   font-size: 0.74rem;
   line-height: 1.45;
+}
+
+.runtime-history-empty {
+  position: relative;
+  z-index: 1;
+  border: 1px dashed rgba(119, 140, 152, 0.28);
+  border-radius: 8px;
+  padding: 0.72rem;
+  background: rgba(13, 17, 23, 0.46);
+}
+
+.runtime-history-empty strong,
+.runtime-history-empty span {
+  display: block;
+}
+
+.runtime-history-empty strong {
+  color: var(--text-primary);
+  font-size: 0.8rem;
+}
+
+.runtime-history-empty span {
+  margin-top: 0.2rem;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.4;
 }
 
 .construct-inspector-grid {

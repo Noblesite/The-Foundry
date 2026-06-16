@@ -56,6 +56,7 @@ interface ResponseInspection {
 
 type RuntimeLoadPhase = "idle" | "configuring" | "loading" | "ready" | "failed";
 type RuntimeSmokeStatus = "idle" | "loading" | "streaming" | "passed" | "failed";
+type RuntimeHistoryFilter = "all" | "smoke" | "load" | "preflight" | "memory" | "failures";
 
 interface RuntimeSmokeResult {
   modelId: string;
@@ -71,6 +72,14 @@ const LOCAL_SMOKE_MODEL_ID = "sshleifer/tiny-gpt2";
 const LOCAL_SMOKE_PROMPT =
   "Runtime smoke test: reply with one short sentence from The Foundry.";
 const SMOKE_RESULT_STORAGE_PREFIX = "foundry.construct.smokeResult";
+const RUNTIME_HISTORY_FILTERS: Array<{ id: RuntimeHistoryFilter; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "smoke", label: "Smoke" },
+  { id: "load", label: "Loads" },
+  { id: "preflight", label: "Preflight" },
+  { id: "memory", label: "Memory" },
+  { id: "failures", label: "Failures" },
+];
 
 const smokeResultStorageKey = (constructId: string, artifactId: string) =>
   `${SMOKE_RESULT_STORAGE_PREFIX}.${constructId}.${artifactId}`;
@@ -163,7 +172,42 @@ const mergeRuntimeTimelineEvents = (
   });
   return Array.from(byId.values())
     .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
-    .slice(0, 10);
+    .slice(0, 50);
+};
+
+const runtimeHistoryMatchesFilter = (
+  event: ConstructRuntimeEvent,
+  filter: RuntimeHistoryFilter
+) => {
+  if (filter === "all") {
+    return true;
+  }
+  if (filter === "failures") {
+    return event.status === "failed";
+  }
+  if (filter === "load") {
+    return ["handoff", "configure", "load", "probe"].includes(event.type);
+  }
+  if (filter === "memory") {
+    return event.type === "unload";
+  }
+  return event.type === filter;
+};
+
+const runtimeHistoryEventLabel = (event: ConstructRuntimeEvent) => {
+  if (event.type === "unload" && event.title.toLowerCase().includes("memory")) {
+    return "Memory";
+  }
+  const labels: Record<ConstructRuntimeEvent["type"], string> = {
+    handoff: "Handoff",
+    preflight: "Preflight",
+    configure: "Configure",
+    load: "Load",
+    unload: "Unload",
+    probe: "Probe",
+    smoke: "Smoke",
+  };
+  return labels[event.type];
 };
 
 interface ConstructWorkbenchProps {
@@ -229,6 +273,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [readinessGateMessage, setReadinessGateMessage] = useState<string | null>(null);
   const [confirmedCautionTarget, setConfirmedCautionTarget] = useState<string | null>(null);
   const [runtimeTimeline, setRuntimeTimeline] = useState<ConstructRuntimeEvent[]>([]);
+  const [runtimeHistoryFilter, setRuntimeHistoryFilter] = useState<RuntimeHistoryFilter>("all");
   const [isSending, setIsSending] = useState(false);
   const [lastInspection, setLastInspection] = useState<ResponseInspection | null>(null);
   const [trialVerdict, setTrialVerdict] = useState<TrialVerdict | null>(null);
@@ -324,7 +369,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           return;
         }
         if (events.length > 0) {
-          setRuntimeTimeline(events.slice(0, 10));
+          setRuntimeTimeline(events.slice(0, 50));
           const backendSmokeResult = latestSmokeResultFromRuntimeEvents(
             events,
             construct.id,
@@ -1099,6 +1144,33 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     () => (preflightResult ? buildRuntimeReadinessSummary(preflightResult) : null),
     [preflightResult]
   );
+  const runtimeHistoryCounts = useMemo(
+    () =>
+      RUNTIME_HISTORY_FILTERS.reduce<Record<RuntimeHistoryFilter, number>>(
+        (counts, filter) => ({
+          ...counts,
+          [filter.id]: runtimeTimeline.filter((event) =>
+            runtimeHistoryMatchesFilter(event, filter.id)
+          ).length,
+        }),
+        {
+          all: 0,
+          smoke: 0,
+          load: 0,
+          preflight: 0,
+          memory: 0,
+          failures: 0,
+        }
+      ),
+    [runtimeTimeline]
+  );
+  const filteredRuntimeTimeline = useMemo(
+    () =>
+      runtimeTimeline.filter((event) =>
+        runtimeHistoryMatchesFilter(event, runtimeHistoryFilter)
+      ),
+    [runtimeHistoryFilter, runtimeTimeline]
+  );
   const readinessBlocksLoad = readinessSummary?.status === "blocked";
   const currentReadinessTarget = preflightResult?.modelId || runtimeLoadTarget;
   const readinessNeedsConfirmation =
@@ -1703,37 +1775,67 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
 
           <article className="construct-inspector-card panel-glass runtime-timeline-card">
             <p className="panel-kicker">Runtime Timeline</p>
-            <h2>Load Sequence</h2>
-            <div className="runtime-timeline-list" aria-label="Construct runtime event timeline">
-              {runtimeTimeline.map((event) => (
-                <div
-                  className={`runtime-timeline-event is-${event.status} event-${event.type}`}
-                  key={event.id}
+            <div className="runtime-history-heading">
+              <h2>Runtime History</h2>
+              <span>{runtimeTimeline.length} events</span>
+            </div>
+            <div className="runtime-history-filters" aria-label="Runtime history filters">
+              {RUNTIME_HISTORY_FILTERS.map((filter) => (
+                <button
+                  className={`runtime-history-filter ${
+                    runtimeHistoryFilter === filter.id ? "is-active" : ""
+                  }`}
+                  key={filter.id}
+                  onClick={() => setRuntimeHistoryFilter(filter.id)}
+                  type="button"
                 >
-                  <span className="runtime-timeline-dot" aria-hidden="true">
-                    <i
-                      className={`fas ${
-                        event.status === "passed"
-                          ? "fa-check"
-                          : event.status === "failed"
-                          ? "fa-xmark"
-                          : event.status === "warning"
-                          ? "fa-triangle-exclamation"
-                          : event.status === "running"
-                          ? "fa-spinner"
-                          : "fa-circle-info"
-                      }`}
-                    />
-                  </span>
-                  <div>
-                    <div className="runtime-timeline-title">
-                      <strong>{event.title}</strong>
-                      <time dateTime={event.timestamp}>{formatTimelineTime(event.timestamp)}</time>
-                    </div>
-                    <p>{event.detail}</p>
-                  </div>
-                </div>
+                  <span>{filter.label}</span>
+                  <strong>{runtimeHistoryCounts[filter.id]}</strong>
+                </button>
               ))}
+            </div>
+            <div className="runtime-timeline-list" aria-label="Construct runtime event timeline">
+              {filteredRuntimeTimeline.length > 0 ? (
+                filteredRuntimeTimeline.map((event) => (
+                  <div
+                    className={`runtime-timeline-event is-${event.status} event-${event.type}`}
+                    key={event.id}
+                  >
+                    <span className="runtime-timeline-dot" aria-hidden="true">
+                      <i
+                        className={`fas ${
+                          event.status === "passed"
+                            ? "fa-check"
+                            : event.status === "failed"
+                            ? "fa-xmark"
+                            : event.status === "warning"
+                            ? "fa-triangle-exclamation"
+                            : event.status === "running"
+                            ? "fa-spinner"
+                            : "fa-circle-info"
+                        }`}
+                      />
+                    </span>
+                    <div>
+                      <div className="runtime-timeline-title">
+                        <strong>{event.title}</strong>
+                        <time dateTime={event.timestamp}>{formatTimelineTime(event.timestamp)}</time>
+                      </div>
+                      <div className="runtime-timeline-meta">
+                        <span>{runtimeHistoryEventLabel(event)}</span>
+                        <span>{event.status}</span>
+                        <span>{event.source}</span>
+                      </div>
+                      <p>{event.detail}</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="runtime-history-empty">
+                  <strong>No matching events</strong>
+                  <span>Run a smoke test, load, preflight, or memory release to populate this view.</span>
+                </div>
+              )}
             </div>
           </article>
 
