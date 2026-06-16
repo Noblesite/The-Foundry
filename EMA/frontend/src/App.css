@@ -1968,15 +1968,31 @@ input[type="checkbox"] {
   align-items: flex-start;
 }
 
+.runtime-validation-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+  justify-content: flex-end;
+}
+
+.runtime-validation-header-actions .button-secondary {
+  width: auto;
+}
+
 .runtime-validation-header h3 {
   margin: 0.15rem 0 0;
   font-size: 0.98rem;
 }
 
 .runtime-validation-header span,
-.runtime-validation-empty {
+.runtime-validation-empty,
+.runtime-validation-export-message {
   color: var(--text-dim);
   font-size: 0.72rem;
+}
+
+.runtime-validation-export-message {
+  margin: 0;
 }
 
 .runtime-validation-list {

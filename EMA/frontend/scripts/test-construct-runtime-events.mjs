@@ -163,6 +163,11 @@ assertIncludes(
 );
 assertIncludes(
   files.domain,
+  "export interface ConstructRuntimeValidationExport",
+  "Runtime validation export contract"
+);
+assertIncludes(
+  files.domain,
   "export interface ConstructRuntimeValidationQuery",
   "Runtime validation query contract"
 );
@@ -348,8 +353,28 @@ assertIncludes(
 );
 assertIncludes(
   files.repository,
+  "exportConstructRuntimeValidations:",
+  "Repository exports filtered runtime validations"
+);
+assertIncludes(
+  files.contracts,
+  "exportConstructRuntimeValidations:",
+  "Frontend contract exposes runtime validation export route"
+);
+assertIncludes(
+  files.repository,
   "pageSize: query.pageSize",
   "Repository sends validation pagination query params"
+);
+assertIncludes(
+  files.construct,
+  "downloadRuntimeValidationExport",
+  "Construct workbench downloads filtered validation exports"
+);
+assertIncludes(
+  files.construct,
+  "foundry-runtime-validations",
+  "Runtime validation export uses a Foundry filename"
 );
 assertIncludes(
   files.styles,
@@ -370,6 +395,11 @@ assertIncludes(
   files.styles,
   ".runtime-validation-pagination",
   "Runtime validation pagination is styled"
+);
+assertIncludes(
+  files.styles,
+  ".runtime-validation-header-actions",
+  "Runtime validation export action is styled"
 );
 assertIncludes(
   files.styles,

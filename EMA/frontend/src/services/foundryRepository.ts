@@ -26,6 +26,7 @@ import {
   ExportEvaluationSamplesDto,
   ExportEvaluationSamplesRequest,
   ExportConstructRuntimeEventsDto,
+  ExportConstructRuntimeValidationsDto,
   ExportQAPairsDto,
   ExportQAPairsRequest,
   ExportTrialsDto,
@@ -61,6 +62,7 @@ import {
   ConstructRuntime,
   ConstructRuntimeHistoryExport,
   ConstructRuntimeValidation,
+  ConstructRuntimeValidationExport,
   ConstructRuntimeValidationPage,
   ConstructRuntimeValidationQuery,
   ConstructRuntimePreflightResult,
@@ -161,6 +163,30 @@ const constructRuntimeValidationPage = (
   };
 };
 
+const constructRuntimeValidationExport = (
+  validations: ConstructRuntimeValidation[],
+  query: Omit<ConstructRuntimeValidationQuery, "page" | "pageSize"> = {}
+): ConstructRuntimeValidationExport => {
+  const filtered = validations.filter((validation) => {
+    const modelMatches = !query.modelId || validation.modelId === query.modelId;
+    const deviceMatches = !query.device || validation.device === query.device;
+    const statusMatches = !query.status || validation.status === query.status;
+    return modelMatches && deviceMatches && statusMatches;
+  });
+  return {
+    contractVersion: "foundry.construct.runtime-validations-export.v1",
+    exportedAt: new Date().toISOString(),
+    format: "json",
+    validationCount: filtered.length,
+    filters: {
+      modelId: query.modelId || null,
+      device: query.device || null,
+      status: query.status || null,
+    },
+    validations: filtered,
+  };
+};
+
 export interface FoundryRepository {
   getFoundryStatus: () => Promise<FoundryRuntimeStatus>;
   createWorkshop: (request: CreateWorkshopRequest) => Promise<Workshop>;
@@ -228,6 +254,9 @@ export interface FoundryRepository {
   listConstructRuntimeValidations: (
     query?: ConstructRuntimeValidationQuery
   ) => Promise<ConstructRuntimeValidationPage>;
+  exportConstructRuntimeValidations: (
+    query?: Omit<ConstructRuntimeValidationQuery, "page" | "pageSize">
+  ) => Promise<ConstructRuntimeValidationExport>;
   createConstructRuntimeValidation: (
     request: CreateConstructRuntimeValidationRequest
   ) => Promise<ConstructRuntimeValidation>;
@@ -1353,6 +1382,8 @@ export const mockFoundryRepository: FoundryRepository = {
   },
   listConstructRuntimeValidations: async (query) =>
     constructRuntimeValidationPage(mockConstructRuntimeValidations, query),
+  exportConstructRuntimeValidations: async (query) =>
+    constructRuntimeValidationExport(mockConstructRuntimeValidations, query),
   createConstructRuntimeValidation: async (request) => {
     const validation: ConstructRuntimeValidation = {
       ...request,
@@ -2131,6 +2162,24 @@ export const apiFoundryRepository: FoundryRepository = {
       return constructRuntimeValidationPage([], query);
     }
   },
+  exportConstructRuntimeValidations: async (query = {}) => {
+    try {
+      return unwrap(
+        await apiClient.get<ApiEnvelope<ExportConstructRuntimeValidationsDto>>(
+          foundryApiRoutes.exportConstructRuntimeValidations,
+          {
+            params: {
+              modelId: query.modelId || undefined,
+              device: query.device || undefined,
+              status: query.status || undefined,
+            },
+          }
+        )
+      );
+    } catch {
+      return constructRuntimeValidationExport([], query);
+    }
+  },
   createConstructRuntimeValidation: async (request) => {
     try {
       return unwrap(
@@ -2294,6 +2343,7 @@ const constructApiOverrides: Pick<
   | "exportConstructRuntimeEvents"
   | "clearConstructRuntimeEvents"
   | "listConstructRuntimeValidations"
+  | "exportConstructRuntimeValidations"
   | "createConstructRuntimeValidation"
   | "configureConstructRuntime"
   | "loadConstructRuntime"
@@ -2324,6 +2374,7 @@ const constructApiOverrides: Pick<
   exportConstructRuntimeEvents: apiFoundryRepository.exportConstructRuntimeEvents,
   clearConstructRuntimeEvents: apiFoundryRepository.clearConstructRuntimeEvents,
   listConstructRuntimeValidations: apiFoundryRepository.listConstructRuntimeValidations,
+  exportConstructRuntimeValidations: apiFoundryRepository.exportConstructRuntimeValidations,
   createConstructRuntimeValidation: apiFoundryRepository.createConstructRuntimeValidation,
   configureConstructRuntime: apiFoundryRepository.configureConstructRuntime,
   loadConstructRuntime: apiFoundryRepository.loadConstructRuntime,

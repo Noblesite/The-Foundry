@@ -432,6 +432,19 @@ export interface ConstructRuntimeValidationPage {
   };
 }
 
+export interface ConstructRuntimeValidationExport {
+  contractVersion: "foundry.construct.runtime-validations-export.v1";
+  exportedAt: string;
+  format: "json";
+  validationCount: number;
+  filters: {
+    modelId?: string | null;
+    device?: string | null;
+    status?: ConstructRuntimeValidation["status"] | null;
+  };
+  validations: ConstructRuntimeValidation[];
+}
+
 export interface ConstructRuntimeValidationQuery {
   modelId?: string;
   device?: string;

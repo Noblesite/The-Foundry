@@ -335,6 +335,21 @@ async def foundry_construct_runtime_validations_endpoint(
     )
 
 
+@app.get("/api/v1/constructs/runtime/validations/export")
+async def export_foundry_construct_runtime_validations_endpoint(
+    modelId: str | None = None,
+    device: str | None = None,
+    status: Literal["passed", "failed"] | None = None,
+):
+    return api_envelope(
+        await foundry_catalog_service.export_construct_runtime_validations(
+            model_id=modelId,
+            device=device,
+            status=status,
+        )
+    )
+
+
 @app.post("/api/v1/constructs/runtime/validations")
 async def create_foundry_construct_runtime_validation_endpoint(data: ConstructRuntimeValidationInput):
     if not data.modelId.strip():

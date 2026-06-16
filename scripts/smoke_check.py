@@ -215,6 +215,7 @@ def run_construct_runtime_event_contract_check() -> int:
         "/api/v1/constructs/runtime/events/export",
         "/api/v1/constructs/runtime/events/clear",
         "/api/v1/constructs/runtime/validations",
+        "/api/v1/constructs/runtime/validations/export",
         "ConstructRuntimeValidationInput",
         "modelId: str | None = None",
         "pageSize: int = 25",
@@ -223,6 +224,7 @@ def run_construct_runtime_event_contract_check() -> int:
         "record_foundry_construct_runtime_event_endpoint",
         "clear_foundry_construct_runtime_events_endpoint",
         "foundry_construct_runtime_validations_endpoint",
+        "export_foundry_construct_runtime_validations_endpoint",
         "create_foundry_construct_runtime_validation_endpoint",
     )
     missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
@@ -262,6 +264,8 @@ def run_construct_runtime_event_contract_check() -> int:
     required_catalog_patterns = (
         "construct_runtime_validations",
         "list_construct_runtime_validations",
+        "export_construct_runtime_validations",
+        "foundry.construct.runtime-validations-export.v1",
         "\"pageCount\"",
         "\"facets\"",
         "create_construct_runtime_validation",

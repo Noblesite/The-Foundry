@@ -382,6 +382,9 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [selectedRuntimeValidation, setSelectedRuntimeValidation] =
     useState<ConstructRuntimeValidation | null>(null);
   const [isExportingRuntimeHistory, setIsExportingRuntimeHistory] = useState(false);
+  const [isExportingRuntimeValidations, setIsExportingRuntimeValidations] = useState(false);
+  const [runtimeValidationExportMessage, setRuntimeValidationExportMessage] =
+    useState<string | null>(null);
   const [isPreparingDiagnosticsBundle, setIsPreparingDiagnosticsBundle] = useState(false);
   const [diagnosticsBundlePreview, setDiagnosticsBundlePreview] =
     useState<DiagnosticsBundlePreview | null>(null);
@@ -524,6 +527,48 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       setIsExportingRuntimeHistory(false);
     }
   }, [repository]);
+
+  const downloadRuntimeValidationExport = useCallback(async () => {
+    setIsExportingRuntimeValidations(true);
+    setRuntimeValidationExportMessage(null);
+    try {
+      const result = await repository.exportConstructRuntimeValidations({
+        modelId:
+          runtimeValidationModelFilter === ALL_VALIDATION_FILTER
+            ? undefined
+            : runtimeValidationModelFilter,
+        device:
+          runtimeValidationDeviceFilter === ALL_VALIDATION_FILTER
+            ? undefined
+            : runtimeValidationDeviceFilter,
+        status:
+          runtimeValidationStatusFilter === "all"
+            ? undefined
+            : runtimeValidationStatusFilter,
+      });
+      const exportedAt = result.exportedAt || new Date().toISOString();
+      const safeTimestamp = exportedAt.replace(/[:.]/g, "-");
+      downloadJsonFile(`foundry-runtime-validations-${safeTimestamp}.json`, result);
+      setRuntimeValidationExportMessage(
+        `Exported ${result.validationCount} validation run${
+          result.validationCount === 1 ? "" : "s"
+        } as JSON.`
+      );
+    } catch (validationError: unknown) {
+      setRuntimeValidationExportMessage(
+        validationError instanceof Error
+          ? validationError.message
+          : "Could not export validation history."
+      );
+    } finally {
+      setIsExportingRuntimeValidations(false);
+    }
+  }, [
+    repository,
+    runtimeValidationDeviceFilter,
+    runtimeValidationModelFilter,
+    runtimeValidationStatusFilter,
+  ]);
 
   const prepareDiagnosticsBundlePreview = async () => {
     setIsPreparingDiagnosticsBundle(true);
@@ -718,6 +763,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setRuntimeValidationDeviceFilter(ALL_VALIDATION_FILTER);
     setRuntimeValidationStatusFilter("all");
     setRuntimeValidationPageNumber(1);
+    setRuntimeValidationExportMessage(null);
     setSelectedRuntimeEvent(null);
       setSelectedRuntimeValidation(null);
       setIsConfirmingHistoryClear(false);
@@ -2114,10 +2160,28 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                     <p className="panel-kicker">Runtime Validation</p>
                     <h3>Smoke history</h3>
                   </div>
-                  <span>
-                    {filteredRuntimeValidations.length} of {runtimeValidationPage.total} matching
-                  </span>
+                  <div className="runtime-validation-header-actions">
+                    <span>
+                      {filteredRuntimeValidations.length} of {runtimeValidationPage.total} matching
+                    </span>
+                    <button
+                      className="button-secondary button-compact"
+                      disabled={
+                        isExportingRuntimeValidations ||
+                        (runtimeValidationPage.total === 0 && runtimeValidationCounts.all === 0)
+                      }
+                      onClick={() => void downloadRuntimeValidationExport()}
+                      type="button"
+                    >
+                      {isExportingRuntimeValidations ? "Exporting" : "Export JSON"}
+                    </button>
+                  </div>
                 </div>
+                {runtimeValidationExportMessage && (
+                  <p className="runtime-validation-export-message">
+                    {runtimeValidationExportMessage}
+                  </p>
+                )}
                 {runtimeValidationPage.total > 0 || runtimeValidationCounts.all > 0 ? (
                   <>
                     <div className="runtime-validation-summary">

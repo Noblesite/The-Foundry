@@ -5,6 +5,7 @@ import json
 import math
 import os
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -3001,6 +3002,51 @@ class FoundryCatalogService:
                         "devices": [dict(row) for row in device_facets],
                         "statuses": [dict(row) for row in status_facets],
                     },
+                }
+
+        return await self._run_query(query)
+
+    async def export_construct_runtime_validations(
+        self,
+        *,
+        model_id: Optional[str] = None,
+        device: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        def query():
+            with self._connect() as connection:
+                where_clauses = []
+                params: List[Any] = []
+                if model_id:
+                    where_clauses.append("model_id = ?")
+                    params.append(model_id)
+                if device:
+                    where_clauses.append("device = ?")
+                    params.append(device)
+                if status in {"passed", "failed"}:
+                    where_clauses.append("status = ?")
+                    params.append(status)
+                where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+                rows = connection.execute(
+                    f"""
+                    SELECT * FROM construct_runtime_validations
+                    {where_sql}
+                    ORDER BY datetime(created_at) DESC
+                    """,
+                    params,
+                ).fetchall()
+                validations = [self._construct_runtime_validation_from_row(row) for row in rows]
+                return {
+                    "contractVersion": "foundry.construct.runtime-validations-export.v1",
+                    "exportedAt": datetime.now(timezone.utc).isoformat(),
+                    "format": "json",
+                    "validationCount": len(validations),
+                    "filters": {
+                        "modelId": model_id,
+                        "device": device,
+                        "status": status if status in {"passed", "failed"} else None,
+                    },
+                    "validations": validations,
                 }
 
         return await self._run_query(query)
