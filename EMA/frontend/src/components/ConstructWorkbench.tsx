@@ -225,6 +225,9 @@ const runtimeHistoryEventLabel = (event: ConstructRuntimeEvent) => {
 const formatRuntimeEventMetadata = (event: ConstructRuntimeEvent | null) =>
   JSON.stringify(event?.metadata || {}, null, 2);
 
+const formatRuntimeValidationMetadata = (validation: ConstructRuntimeValidation | null) =>
+  JSON.stringify(validation?.metadata || {}, null, 2);
+
 const downloadJsonFile = (fileName: string, data: unknown) => {
   const blob = new Blob([JSON.stringify(data, null, 2)], {
     type: "application/json",
@@ -267,6 +270,7 @@ interface DiagnosticsBundlePreview {
   fileName: string;
   bundle: Record<string, unknown>;
   eventCount: number;
+  validationCount: number;
   exportedAt: string;
   redactions: string[];
 }
@@ -338,6 +342,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [runtimeHistoryFilter, setRuntimeHistoryFilter] = useState<RuntimeHistoryFilter>("all");
   const [selectedRuntimeEvent, setSelectedRuntimeEvent] =
     useState<ConstructRuntimeEvent | null>(null);
+  const [selectedRuntimeValidation, setSelectedRuntimeValidation] =
+    useState<ConstructRuntimeValidation | null>(null);
   const [isExportingRuntimeHistory, setIsExportingRuntimeHistory] = useState(false);
   const [isPreparingDiagnosticsBundle, setIsPreparingDiagnosticsBundle] = useState(false);
   const [diagnosticsBundlePreview, setDiagnosticsBundlePreview] =
@@ -520,6 +526,11 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           message: runtimeSmokeMessage,
           result: runtimeSmokeResult,
         },
+        validationHistory: {
+          count: runtimeValidations.length,
+          selectedValidation: selectedRuntimeValidation,
+          recent: runtimeValidations.slice(0, 10),
+        },
         generation: {
           includeLibraryContext,
           lastInspection,
@@ -530,6 +541,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         fileName: `foundry-construct-diagnostics-${safeTimestamp}.json`,
         bundle,
         eventCount: runtimeHistoryExport.eventCount,
+        validationCount: runtimeValidations.length,
         exportedAt,
         redactions: [
           "Hugging Face token value is not exported.",
@@ -630,8 +642,9 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setProbeResult(null);
     setRuntimeTimeline([]);
     setRuntimeValidations([]);
-    setSelectedRuntimeEvent(null);
-    setIsConfirmingHistoryClear(false);
+      setSelectedRuntimeEvent(null);
+      setSelectedRuntimeValidation(null);
+      setIsConfirmingHistoryClear(false);
     setRuntimeHistoryMessage(null);
     repository
       .listConstructRuntimeEvents()
@@ -2004,9 +2017,15 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 {runtimeValidations.length > 0 ? (
                   <div className="runtime-validation-list">
                     {runtimeValidations.slice(0, 5).map((validation) => (
-                      <div
+                      <button
+                        aria-label={`Inspect validation details for ${shortModelId(
+                          validation.modelId
+                        )} on ${validation.device}`}
                         className={`runtime-validation-row is-${validation.status}`}
                         key={validation.id}
+                        onClick={() => setSelectedRuntimeValidation(validation)}
+                        title="Inspect validation details"
+                        type="button"
                       >
                         <div>
                           <strong>{shortModelId(validation.modelId)}</strong>
@@ -2029,7 +2048,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                               : validation.error || "no memory sample"}
                           </span>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 ) : (
@@ -2266,6 +2285,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                     <strong>{diagnosticsBundlePreview.eventCount}</strong>
                   </div>
                   <div>
+                    <span>Runtime validations</span>
+                    <strong>{diagnosticsBundlePreview.validationCount}</strong>
+                  </div>
+                  <div>
                     <span>Prepared</span>
                     <strong>{formatRuntimeTimestamp(diagnosticsBundlePreview.exportedAt)}</strong>
                   </div>
@@ -2417,6 +2440,90 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 <div className="runtime-event-metadata">
                   <span>Metadata</span>
                   <pre>{formatRuntimeEventMetadata(selectedRuntimeEvent)}</pre>
+                </div>
+              </aside>
+            </div>
+          )}
+
+          {selectedRuntimeValidation && (
+            <div
+              className="runtime-event-drawer-backdrop"
+              onClick={() => setSelectedRuntimeValidation(null)}
+              role="presentation"
+            >
+              <aside
+                aria-labelledby="runtime-validation-drawer-title"
+                aria-modal="true"
+                className="runtime-event-drawer runtime-validation-drawer panel-glass"
+                onClick={(event) => event.stopPropagation()}
+                role="dialog"
+              >
+                <div className="runtime-event-drawer-header">
+                  <div>
+                    <p className="panel-kicker">Validation run</p>
+                    <h2 id="runtime-validation-drawer-title">
+                      {shortModelId(selectedRuntimeValidation.modelId)}
+                    </h2>
+                  </div>
+                  <button
+                    aria-label="Close validation details"
+                    className="icon-button"
+                    onClick={() => setSelectedRuntimeValidation(null)}
+                    type="button"
+                  >
+                    <i className="fas fa-xmark" aria-hidden="true" />
+                  </button>
+                </div>
+                <p className="runtime-event-drawer-detail">
+                  Smoke validation recorded for {selectedRuntimeValidation.device}. Use this to
+                  compare model/device readiness before attaching a diagnostics bundle.
+                </p>
+                <div className="construct-inspector-grid runtime-event-detail-grid">
+                  <span>Status</span>
+                  <strong>{selectedRuntimeValidation.status}</strong>
+                  <span>Model</span>
+                  <strong>{selectedRuntimeValidation.modelId}</strong>
+                  <span>Device</span>
+                  <strong>{selectedRuntimeValidation.device}</strong>
+                  <span>Tokens</span>
+                  <strong>{selectedRuntimeValidation.totalTokens}</strong>
+                  <span>Duration</span>
+                  <strong>{selectedRuntimeValidation.durationSeconds}s</strong>
+                  <span>Cleanup</span>
+                  <strong>{selectedRuntimeValidation.cleanupStatus}</strong>
+                  <span>Memory</span>
+                  <strong>
+                    {selectedRuntimeValidation.memoryAvailableGb !== undefined &&
+                    selectedRuntimeValidation.memoryAvailableGb !== null
+                      ? `${selectedRuntimeValidation.memoryAvailableGb} GB free`
+                      : "n/a"}
+                  </strong>
+                  <span>Construct</span>
+                  <strong>{selectedRuntimeValidation.constructId || "n/a"}</strong>
+                  <span>Artifact</span>
+                  <strong>{selectedRuntimeValidation.artifactId || "n/a"}</strong>
+                  <span>Recorded</span>
+                  <strong>{formatRuntimeTimestamp(selectedRuntimeValidation.createdAt)}</strong>
+                </div>
+                {selectedRuntimeValidation.error && (
+                  <p className="runtime-validation-error">{selectedRuntimeValidation.error}</p>
+                )}
+                <div className="runtime-event-metadata">
+                  <span>Metadata</span>
+                  <pre>{formatRuntimeValidationMetadata(selectedRuntimeValidation)}</pre>
+                </div>
+                <div className="runtime-validation-detail-actions">
+                  <button
+                    className="button-primary button-compact"
+                    disabled={isPreparingDiagnosticsBundle}
+                    onClick={async () => {
+                      await prepareDiagnosticsBundlePreview();
+                      setSelectedRuntimeValidation(null);
+                    }}
+                    type="button"
+                  >
+                    {isPreparingDiagnosticsBundle ? "Preparing" : "Preview Diagnostics Bundle"}
+                  </button>
                 </div>
               </aside>
             </div>

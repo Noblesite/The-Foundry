@@ -282,9 +282,34 @@ assertIncludes(
   "Construct workbench renders runtime validation history"
 );
 assertIncludes(
+  files.construct,
+  "selectedRuntimeValidation",
+  "Construct workbench can inspect a selected runtime validation"
+);
+assertIncludes(
+  files.construct,
+  "validationHistory",
+  "Diagnostics bundle includes runtime validation history"
+);
+assertIncludes(
+  files.construct,
+  "runtime-validation-drawer-title",
+  "Construct workbench renders a validation detail drawer"
+);
+assertIncludes(
+  files.construct,
+  "Inspect validation details",
+  "Runtime validation rows are inspectable"
+);
+assertIncludes(
   files.styles,
   ".runtime-validation-card",
   "Runtime validation history is styled"
+);
+assertIncludes(
+  files.styles,
+  ".runtime-validation-drawer",
+  "Runtime validation drawer is styled"
 );
 assertIncludes(
   files.construct,

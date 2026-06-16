@@ -1988,10 +1988,27 @@ input[type="checkbox"] {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 0.7fr) minmax(0, 1fr);
   gap: 0.5rem;
+  width: 100%;
   padding: 0.55rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.035);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.runtime-validation-row:hover,
+.runtime-validation-row:focus-visible {
+  border-color: rgba(0, 212, 255, 0.42);
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.12);
+  outline: none;
+  transform: translateY(-1px);
 }
 
 .runtime-validation-row.is-passed {
@@ -2018,6 +2035,27 @@ input[type="checkbox"] {
   color: var(--text-dim);
   font-size: 0.68rem;
   line-height: 1.35;
+}
+
+.runtime-validation-drawer .runtime-event-detail-grid strong {
+  overflow-wrap: anywhere;
+}
+
+.runtime-validation-error {
+  margin: 0;
+  border: 1px solid rgba(255, 138, 0, 0.36);
+  border-radius: 8px;
+  padding: 0.62rem;
+  background: rgba(255, 138, 0, 0.08);
+  color: var(--forge-orange);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.runtime-validation-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 
 .runtime-probe-grid {
