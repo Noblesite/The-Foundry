@@ -210,6 +210,9 @@ const runtimeHistoryEventLabel = (event: ConstructRuntimeEvent) => {
   return labels[event.type];
 };
 
+const formatRuntimeEventMetadata = (event: ConstructRuntimeEvent | null) =>
+  JSON.stringify(event?.metadata || {}, null, 2);
+
 interface ConstructWorkbenchProps {
   artifact: Artifact;
   construct: Construct;
@@ -274,6 +277,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [confirmedCautionTarget, setConfirmedCautionTarget] = useState<string | null>(null);
   const [runtimeTimeline, setRuntimeTimeline] = useState<ConstructRuntimeEvent[]>([]);
   const [runtimeHistoryFilter, setRuntimeHistoryFilter] = useState<RuntimeHistoryFilter>("all");
+  const [selectedRuntimeEvent, setSelectedRuntimeEvent] =
+    useState<ConstructRuntimeEvent | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [lastInspection, setLastInspection] = useState<ResponseInspection | null>(null);
   const [trialVerdict, setTrialVerdict] = useState<TrialVerdict | null>(null);
@@ -362,6 +367,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setConfirmedCautionTarget(null);
     setProbeResult(null);
     setRuntimeTimeline([]);
+    setSelectedRuntimeEvent(null);
     repository
       .listConstructRuntimeEvents()
       .then((events) => {
@@ -1797,9 +1803,12 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
             <div className="runtime-timeline-list" aria-label="Construct runtime event timeline">
               {filteredRuntimeTimeline.length > 0 ? (
                 filteredRuntimeTimeline.map((event) => (
-                  <div
+                  <button
                     className={`runtime-timeline-event is-${event.status} event-${event.type}`}
                     key={event.id}
+                    onClick={() => setSelectedRuntimeEvent(event)}
+                    title="Inspect runtime event details"
+                    type="button"
                   >
                     <span className="runtime-timeline-dot" aria-hidden="true">
                       <i
@@ -1828,7 +1837,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                       </div>
                       <p>{event.detail}</p>
                     </div>
-                  </div>
+                  </button>
                 ))
               ) : (
                 <div className="runtime-history-empty">
@@ -1838,6 +1847,60 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
               )}
             </div>
           </article>
+
+          {selectedRuntimeEvent && (
+            <div
+              className="runtime-event-drawer-backdrop"
+              onClick={() => setSelectedRuntimeEvent(null)}
+              role="presentation"
+            >
+              <aside
+                aria-labelledby="runtime-event-drawer-title"
+                aria-modal="true"
+                className="runtime-event-drawer panel-glass"
+                onClick={(event) => event.stopPropagation()}
+                role="dialog"
+              >
+                <div className="runtime-event-drawer-header">
+                  <div>
+                    <p className="panel-kicker">
+                      {runtimeHistoryEventLabel(selectedRuntimeEvent)} event
+                    </p>
+                    <h2 id="runtime-event-drawer-title">{selectedRuntimeEvent.title}</h2>
+                  </div>
+                  <button
+                    aria-label="Close runtime event details"
+                    className="icon-button"
+                    onClick={() => setSelectedRuntimeEvent(null)}
+                    type="button"
+                  >
+                    <i className="fas fa-xmark" aria-hidden="true" />
+                  </button>
+                </div>
+                <p className="runtime-event-drawer-detail">{selectedRuntimeEvent.detail}</p>
+                <div className="construct-inspector-grid runtime-event-detail-grid">
+                  <span>Status</span>
+                  <strong>{selectedRuntimeEvent.status}</strong>
+                  <span>Source</span>
+                  <strong>{selectedRuntimeEvent.source}</strong>
+                  <span>Runtime</span>
+                  <strong>{selectedRuntimeEvent.runtimeStatus || "n/a"}</strong>
+                  <span>Model</span>
+                  <strong>{selectedRuntimeEvent.modelId || "n/a"}</strong>
+                  <span>Construct</span>
+                  <strong>{selectedRuntimeEvent.constructId || "n/a"}</strong>
+                  <span>Artifact</span>
+                  <strong>{selectedRuntimeEvent.artifactId || "n/a"}</strong>
+                  <span>Recorded</span>
+                  <strong>{formatRuntimeTimestamp(selectedRuntimeEvent.timestamp)}</strong>
+                </div>
+                <div className="runtime-event-metadata">
+                  <span>Metadata</span>
+                  <pre>{formatRuntimeEventMetadata(selectedRuntimeEvent)}</pre>
+                </div>
+              </aside>
+            </div>
+          )}
 
           <article className="construct-inspector-card panel-glass">
             <p className="panel-kicker">Response Inspection</p>

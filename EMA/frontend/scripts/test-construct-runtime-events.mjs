@@ -271,6 +271,21 @@ assertIncludes(
   "Construct runtime history has a filtered empty state"
 );
 assertIncludes(
+  files.construct,
+  "selectedRuntimeEvent",
+  "Construct runtime history supports event detail selection"
+);
+assertIncludes(
+  files.construct,
+  "runtime-event-drawer",
+  "Construct runtime history shows an event detail drawer"
+);
+assertIncludes(
+  files.construct,
+  "formatRuntimeEventMetadata",
+  "Construct runtime history renders structured event metadata"
+);
+assertIncludes(
   files.app,
   "const handleConstructRuntimeChanged = useCallback",
   "App stabilizes runtime changed callback to avoid repeated runtime refreshes"
