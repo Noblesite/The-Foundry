@@ -11,6 +11,7 @@ import {
   ConstructRuntimePreflightResult,
   ConstructRuntimeProbeResult,
   ConstructRuntimeValidation,
+  ConstructRuntimeValidationPage,
   CreateConstructRuntimeEventRequest,
   FoundryRuntimeStatus,
   ModelArchiveEntry,
@@ -74,6 +75,7 @@ const LOCAL_SMOKE_MODEL_ID = "sshleifer/tiny-gpt2";
 const LOCAL_SMOKE_PROMPT =
   "Runtime smoke test: reply with one short sentence from The Foundry.";
 const SMOKE_RESULT_STORAGE_PREFIX = "foundry.construct.smokeResult";
+const RUNTIME_VALIDATION_PAGE_SIZE = 5;
 const RUNTIME_HISTORY_FILTERS: Array<{ id: RuntimeHistoryFilter; label: string }> = [
   { id: "all", label: "All" },
   { id: "smoke", label: "Smoke" },
@@ -84,6 +86,23 @@ const RUNTIME_HISTORY_FILTERS: Array<{ id: RuntimeHistoryFilter; label: string }
 ];
 
 const ALL_VALIDATION_FILTER = "all";
+
+const emptyRuntimeValidationPage = (
+  page = 1,
+  pageSize = RUNTIME_VALIDATION_PAGE_SIZE
+): ConstructRuntimeValidationPage => ({
+  items: [],
+  total: 0,
+  page,
+  pageSize,
+  pageCount: 0,
+  filters: {},
+  facets: {
+    models: [],
+    devices: [],
+    statuses: [],
+  },
+});
 
 const smokeResultStorageKey = (constructId: string, artifactId: string) =>
   `${SMOKE_RESULT_STORAGE_PREFIX}.${constructId}.${artifactId}`;
@@ -347,6 +366,9 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [confirmedCautionTarget, setConfirmedCautionTarget] = useState<string | null>(null);
   const [runtimeTimeline, setRuntimeTimeline] = useState<ConstructRuntimeEvent[]>([]);
   const [runtimeValidations, setRuntimeValidations] = useState<ConstructRuntimeValidation[]>([]);
+  const [runtimeValidationPage, setRuntimeValidationPage] = useState<ConstructRuntimeValidationPage>(
+    () => emptyRuntimeValidationPage()
+  );
   const [runtimeHistoryFilter, setRuntimeHistoryFilter] = useState<RuntimeHistoryFilter>("all");
   const [runtimeValidationModelFilter, setRuntimeValidationModelFilter] =
     useState<string>(ALL_VALIDATION_FILTER);
@@ -354,6 +376,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     useState<string>(ALL_VALIDATION_FILTER);
   const [runtimeValidationStatusFilter, setRuntimeValidationStatusFilter] =
     useState<RuntimeValidationStatusFilter>("all");
+  const [runtimeValidationPageNumber, setRuntimeValidationPageNumber] = useState(1);
   const [selectedRuntimeEvent, setSelectedRuntimeEvent] =
     useState<ConstructRuntimeEvent | null>(null);
   const [selectedRuntimeValidation, setSelectedRuntimeValidation] =
@@ -387,13 +410,39 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
 
   const refreshRuntimeValidations = useCallback(async () => {
     try {
-      const validations = await repository.listConstructRuntimeValidations();
-      setRuntimeValidations(validations);
-      return validations;
+      const page = await repository.listConstructRuntimeValidations({
+        modelId:
+          runtimeValidationModelFilter === ALL_VALIDATION_FILTER
+            ? undefined
+            : runtimeValidationModelFilter,
+        device:
+          runtimeValidationDeviceFilter === ALL_VALIDATION_FILTER
+            ? undefined
+            : runtimeValidationDeviceFilter,
+        status:
+          runtimeValidationStatusFilter === "all"
+            ? undefined
+            : runtimeValidationStatusFilter,
+        page: runtimeValidationPageNumber,
+        pageSize: RUNTIME_VALIDATION_PAGE_SIZE,
+      });
+      setRuntimeValidationPage(page);
+      setRuntimeValidations(page.items);
+      return page.items;
     } catch {
+      setRuntimeValidationPage(
+        emptyRuntimeValidationPage(runtimeValidationPageNumber, RUNTIME_VALIDATION_PAGE_SIZE)
+      );
+      setRuntimeValidations([]);
       return [];
     }
-  }, [repository]);
+  }, [
+    repository,
+    runtimeValidationDeviceFilter,
+    runtimeValidationModelFilter,
+    runtimeValidationPageNumber,
+    runtimeValidationStatusFilter,
+  ]);
 
   const addRuntimeTimelineEvent = useCallback(
     (event: Omit<CreateConstructRuntimeEventRequest, "constructId" | "artifactId" | "runtimeStatus">) => {
@@ -438,7 +487,15 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         constructId: activeConstruct.id,
         artifactId: activeArtifact.id,
       });
-      setRuntimeValidations((current) => [validation, ...current].slice(0, 25));
+      setRuntimeValidations((current) =>
+        [validation, ...current].slice(0, RUNTIME_VALIDATION_PAGE_SIZE)
+      );
+      setRuntimeValidationPage((current) => ({
+        ...current,
+        items: [validation, ...current.items].slice(0, current.pageSize),
+        total: current.total + 1,
+        pageCount: Math.max(1, Math.ceil((current.total + 1) / current.pageSize)),
+      }));
       return validation;
     },
     [activeArtifact.id, activeConstruct.id, repository]
@@ -656,9 +713,11 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setProbeResult(null);
     setRuntimeTimeline([]);
     setRuntimeValidations([]);
+    setRuntimeValidationPage(emptyRuntimeValidationPage());
     setRuntimeValidationModelFilter(ALL_VALIDATION_FILTER);
     setRuntimeValidationDeviceFilter(ALL_VALIDATION_FILTER);
     setRuntimeValidationStatusFilter("all");
+    setRuntimeValidationPageNumber(1);
     setSelectedRuntimeEvent(null);
       setSelectedRuntimeValidation(null);
       setIsConfirmingHistoryClear(false);
@@ -721,11 +780,14 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           ]);
         }
       });
-    void refreshRuntimeValidations();
     return () => {
       isCurrent = false;
     };
-  }, [artifact, configuredModelTarget, construct, refreshRuntimeValidations, repository]);
+  }, [artifact, configuredModelTarget, construct, repository]);
+
+  useEffect(() => {
+    void refreshRuntimeValidations();
+  }, [refreshRuntimeValidations]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -1556,44 +1618,26 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     [runtimeHistoryFilter, runtimeTimeline]
   );
   const runtimeValidationModelOptions = useMemo(
-    () => uniqueSortedValues(runtimeValidations.map((validation) => validation.modelId)),
-    [runtimeValidations]
+    () => uniqueSortedValues(runtimeValidationPage.facets.models.map((facet) => facet.value)),
+    [runtimeValidationPage.facets.models]
   );
   const runtimeValidationDeviceOptions = useMemo(
-    () => uniqueSortedValues(runtimeValidations.map((validation) => validation.device)),
-    [runtimeValidations]
+    () => uniqueSortedValues(runtimeValidationPage.facets.devices.map((facet) => facet.value)),
+    [runtimeValidationPage.facets.devices]
   );
   const runtimeValidationCounts = useMemo(
     () => ({
-      all: runtimeValidations.length,
-      passed: runtimeValidations.filter((validation) => validation.status === "passed").length,
-      failed: runtimeValidations.filter((validation) => validation.status === "failed").length,
+      all: runtimeValidationPage.facets.statuses.reduce((total, facet) => total + facet.count, 0),
+      passed:
+        runtimeValidationPage.facets.statuses.find((facet) => facet.value === "passed")?.count || 0,
+      failed:
+        runtimeValidationPage.facets.statuses.find((facet) => facet.value === "failed")?.count || 0,
     }),
-    [runtimeValidations]
+    [runtimeValidationPage.facets.statuses]
   );
-  const filteredRuntimeValidations = useMemo(
-    () =>
-      runtimeValidations.filter((validation) => {
-        const modelMatches =
-          runtimeValidationModelFilter === ALL_VALIDATION_FILTER ||
-          validation.modelId === runtimeValidationModelFilter;
-        const deviceMatches =
-          runtimeValidationDeviceFilter === ALL_VALIDATION_FILTER ||
-          validation.device === runtimeValidationDeviceFilter;
-        const statusMatches =
-          runtimeValidationStatusFilter === "all" ||
-          validation.status === runtimeValidationStatusFilter;
-        return modelMatches && deviceMatches && statusMatches;
-      }),
-    [
-      runtimeValidationDeviceFilter,
-      runtimeValidationModelFilter,
-      runtimeValidationStatusFilter,
-      runtimeValidations,
-    ]
-  );
-  const runtimeValidationPassRate = runtimeValidations.length
-    ? Math.round((runtimeValidationCounts.passed / runtimeValidations.length) * 100)
+  const filteredRuntimeValidations = runtimeValidations;
+  const runtimeValidationPassRate = runtimeValidationCounts.all
+    ? Math.round((runtimeValidationCounts.passed / runtimeValidationCounts.all) * 100)
     : 0;
   const latestRuntimeValidation = runtimeValidations[0] || null;
   const readinessBlocksLoad = readinessSummary?.status === "blocked";
@@ -2071,10 +2115,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                     <h3>Smoke history</h3>
                   </div>
                   <span>
-                    {filteredRuntimeValidations.length} of {runtimeValidations.length} runs
+                    {filteredRuntimeValidations.length} of {runtimeValidationPage.total} matching
                   </span>
                 </div>
-                {runtimeValidations.length > 0 ? (
+                {runtimeValidationPage.total > 0 || runtimeValidationCounts.all > 0 ? (
                   <>
                     <div className="runtime-validation-summary">
                       <div>
@@ -2107,7 +2151,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                               ? "is-active"
                               : ""
                           }`}
-                          onClick={() => setRuntimeValidationModelFilter(ALL_VALIDATION_FILTER)}
+                          onClick={() => {
+                            setRuntimeValidationModelFilter(ALL_VALIDATION_FILTER);
+                            setRuntimeValidationPageNumber(1);
+                          }}
                           type="button"
                         >
                           All
@@ -2118,7 +2165,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                               runtimeValidationModelFilter === modelId ? "is-active" : ""
                             }`}
                             key={modelId}
-                            onClick={() => setRuntimeValidationModelFilter(modelId)}
+                            onClick={() => {
+                              setRuntimeValidationModelFilter(modelId);
+                              setRuntimeValidationPageNumber(1);
+                            }}
                             title={modelId}
                             type="button"
                           >
@@ -2134,7 +2184,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                               ? "is-active"
                               : ""
                           }`}
-                          onClick={() => setRuntimeValidationDeviceFilter(ALL_VALIDATION_FILTER)}
+                          onClick={() => {
+                            setRuntimeValidationDeviceFilter(ALL_VALIDATION_FILTER);
+                            setRuntimeValidationPageNumber(1);
+                          }}
                           type="button"
                         >
                           All
@@ -2145,7 +2198,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                               runtimeValidationDeviceFilter === device ? "is-active" : ""
                             }`}
                             key={device}
-                            onClick={() => setRuntimeValidationDeviceFilter(device)}
+                            onClick={() => {
+                              setRuntimeValidationDeviceFilter(device);
+                              setRuntimeValidationPageNumber(1);
+                            }}
                             type="button"
                           >
                             {device}
@@ -2161,7 +2217,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                                 runtimeValidationStatusFilter === status ? "is-active" : ""
                               }`}
                               key={status}
-                              onClick={() => setRuntimeValidationStatusFilter(status)}
+                              onClick={() => {
+                                setRuntimeValidationStatusFilter(status);
+                                setRuntimeValidationPageNumber(1);
+                              }}
                               type="button"
                             >
                               {status}
@@ -2212,6 +2271,37 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                       <p className="runtime-validation-empty">
                         No validation runs match these filters.
                       </p>
+                    )}
+                    {runtimeValidationPage.pageCount > 1 && (
+                      <div className="runtime-validation-pagination">
+                        <button
+                          className="button-secondary button-compact"
+                          disabled={runtimeValidationPage.page <= 1}
+                          onClick={() =>
+                            setRuntimeValidationPageNumber((page) => Math.max(1, page - 1))
+                          }
+                          type="button"
+                        >
+                          Previous
+                        </button>
+                        <span>
+                          Page {runtimeValidationPage.page} of {runtimeValidationPage.pageCount}
+                        </span>
+                        <button
+                          className="button-secondary button-compact"
+                          disabled={
+                            runtimeValidationPage.page >= runtimeValidationPage.pageCount
+                          }
+                          onClick={() =>
+                            setRuntimeValidationPageNumber((page) =>
+                              Math.min(runtimeValidationPage.pageCount, page + 1)
+                            )
+                          }
+                          type="button"
+                        >
+                          Next
+                        </button>
+                      </div>
                     )}
                   </>
                 ) : (

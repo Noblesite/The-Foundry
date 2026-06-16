@@ -9,6 +9,7 @@ import {
   ConstructChatErrorEvent,
   ConstructChatStreamEvent,
   ConstructRuntimeHistoryExport,
+  ConstructRuntimeValidationPage,
   ConstructRuntimeValidation,
   ConstructRuntimePreflightResult,
   ForgeTrainingContract,
@@ -125,6 +126,7 @@ export interface ClearConstructRuntimeEventsDto {
 
 export type ExportConstructRuntimeEventsDto = ConstructRuntimeHistoryExport;
 export type ConstructRuntimeValidationDto = ConstructRuntimeValidation;
+export type ConstructRuntimeValidationPageDto = ConstructRuntimeValidationPage;
 
 export interface WorkshopDto {
   id: string;

@@ -216,6 +216,8 @@ def run_construct_runtime_event_contract_check() -> int:
         "/api/v1/constructs/runtime/events/clear",
         "/api/v1/constructs/runtime/validations",
         "ConstructRuntimeValidationInput",
+        "modelId: str | None = None",
+        "pageSize: int = 25",
         "foundry_construct_runtime_events_endpoint",
         "export_foundry_construct_runtime_events_endpoint",
         "record_foundry_construct_runtime_event_endpoint",
@@ -260,6 +262,8 @@ def run_construct_runtime_event_contract_check() -> int:
     required_catalog_patterns = (
         "construct_runtime_validations",
         "list_construct_runtime_validations",
+        "\"pageCount\"",
+        "\"facets\"",
         "create_construct_runtime_validation",
         "_construct_runtime_validation_from_row",
     )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import sqlite3
 from pathlib import Path
@@ -2920,17 +2921,87 @@ class FoundryCatalogService:
 
         return await self._run_query(query)
 
-    async def list_construct_runtime_validations(self) -> List[Dict[str, Any]]:
+    async def list_construct_runtime_validations(
+        self,
+        *,
+        model_id: Optional[str] = None,
+        device: Optional[str] = None,
+        status: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 25,
+    ) -> Dict[str, Any]:
+        safe_page = max(1, int(page or 1))
+        safe_page_size = min(100, max(1, int(page_size or 25)))
+        offset = (safe_page - 1) * safe_page_size
+
         def query():
             with self._connect() as connection:
+                where_clauses = []
+                params: List[Any] = []
+                if model_id:
+                    where_clauses.append("model_id = ?")
+                    params.append(model_id)
+                if device:
+                    where_clauses.append("device = ?")
+                    params.append(device)
+                if status in {"passed", "failed"}:
+                    where_clauses.append("status = ?")
+                    params.append(status)
+                where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+                total = connection.execute(
+                    f"SELECT COUNT(*) AS total FROM construct_runtime_validations {where_sql}",
+                    params,
+                ).fetchone()["total"]
                 rows = connection.execute(
-                    """
+                    f"""
                     SELECT * FROM construct_runtime_validations
+                    {where_sql}
                     ORDER BY datetime(created_at) DESC
-                    LIMIT 25
+                    LIMIT ? OFFSET ?
+                    """,
+                    (*params, safe_page_size, offset),
+                ).fetchall()
+                model_facets = connection.execute(
+                    """
+                    SELECT model_id AS value, COUNT(*) AS count
+                    FROM construct_runtime_validations
+                    GROUP BY model_id
+                    ORDER BY count DESC, model_id ASC
                     """
                 ).fetchall()
-                return [self._construct_runtime_validation_from_row(row) for row in rows]
+                device_facets = connection.execute(
+                    """
+                    SELECT device AS value, COUNT(*) AS count
+                    FROM construct_runtime_validations
+                    GROUP BY device
+                    ORDER BY count DESC, device ASC
+                    """
+                ).fetchall()
+                status_facets = connection.execute(
+                    """
+                    SELECT status AS value, COUNT(*) AS count
+                    FROM construct_runtime_validations
+                    GROUP BY status
+                    ORDER BY status ASC
+                    """
+                ).fetchall()
+                return {
+                    "items": [self._construct_runtime_validation_from_row(row) for row in rows],
+                    "total": total,
+                    "page": safe_page,
+                    "pageSize": safe_page_size,
+                    "pageCount": max(1, math.ceil(total / safe_page_size)) if total else 0,
+                    "filters": {
+                        "modelId": model_id,
+                        "device": device,
+                        "status": status if status in {"passed", "failed"} else None,
+                    },
+                    "facets": {
+                        "models": [dict(row) for row in model_facets],
+                        "devices": [dict(row) for row in device_facets],
+                        "statuses": [dict(row) for row in status_facets],
+                    },
+                }
 
         return await self._run_query(query)
 

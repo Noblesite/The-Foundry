@@ -317,8 +317,22 @@ async def clear_foundry_construct_runtime_events_endpoint():
 
 
 @app.get("/api/v1/constructs/runtime/validations")
-async def foundry_construct_runtime_validations_endpoint():
-    return api_envelope(await foundry_catalog_service.list_construct_runtime_validations())
+async def foundry_construct_runtime_validations_endpoint(
+    modelId: str | None = None,
+    device: str | None = None,
+    status: Literal["passed", "failed"] | None = None,
+    page: int = 1,
+    pageSize: int = 25,
+):
+    return api_envelope(
+        await foundry_catalog_service.list_construct_runtime_validations(
+            model_id=modelId,
+            device=device,
+            status=status,
+            page=page,
+            page_size=pageSize,
+        )
+    )
 
 
 @app.post("/api/v1/constructs/runtime/validations")

@@ -17,6 +17,7 @@ import {
   ConstructDto,
   ConstructChatRequest,
   ConstructChatResponseDto,
+  ConstructRuntimeValidationPageDto,
   ConstructRuntimeValidationDto,
   ConstructRuntimePreflightDto,
   ConstructRuntimeProbeDto,
@@ -60,6 +61,8 @@ import {
   ConstructRuntime,
   ConstructRuntimeHistoryExport,
   ConstructRuntimeValidation,
+  ConstructRuntimeValidationPage,
+  ConstructRuntimeValidationQuery,
   ConstructRuntimePreflightResult,
   ConstructRuntimeProbeResult,
   CreateConstructRuntimeEventRequest,
@@ -114,6 +117,49 @@ export interface FoundryBootstrap {
   sectionSummaries: SectionSummaryMap;
   uiCatalog: UiCatalogItem[];
 }
+
+const validationFacetCounts = (validations: ConstructRuntimeValidation[], key: "modelId" | "device" | "status") =>
+  Array.from(
+    validations.reduce<Map<string, number>>((counts, validation) => {
+      const value = validation[key];
+      counts.set(value, (counts.get(value) || 0) + 1);
+      return counts;
+    }, new Map())
+  )
+    .map(([value, count]) => ({ value, count }))
+    .sort((left, right) => right.count - left.count || left.value.localeCompare(right.value));
+
+const constructRuntimeValidationPage = (
+  validations: ConstructRuntimeValidation[],
+  query: ConstructRuntimeValidationQuery = {}
+): ConstructRuntimeValidationPage => {
+  const page = Math.max(1, query.page || 1);
+  const pageSize = Math.max(1, query.pageSize || 5);
+  const filtered = validations.filter((validation) => {
+    const modelMatches = !query.modelId || validation.modelId === query.modelId;
+    const deviceMatches = !query.device || validation.device === query.device;
+    const statusMatches = !query.status || validation.status === query.status;
+    return modelMatches && deviceMatches && statusMatches;
+  });
+  const start = (page - 1) * pageSize;
+  return {
+    items: filtered.slice(start, start + pageSize),
+    total: filtered.length,
+    page,
+    pageSize,
+    pageCount: filtered.length ? Math.ceil(filtered.length / pageSize) : 0,
+    filters: {
+      modelId: query.modelId || null,
+      device: query.device || null,
+      status: query.status || null,
+    },
+    facets: {
+      models: validationFacetCounts(validations, "modelId"),
+      devices: validationFacetCounts(validations, "device"),
+      statuses: validationFacetCounts(validations, "status"),
+    },
+  };
+};
 
 export interface FoundryRepository {
   getFoundryStatus: () => Promise<FoundryRuntimeStatus>;
@@ -179,7 +225,9 @@ export interface FoundryRepository {
   ) => Promise<ConstructRuntimeEvent>;
   exportConstructRuntimeEvents: () => Promise<ExportConstructRuntimeEventsDto>;
   clearConstructRuntimeEvents: () => Promise<ClearConstructRuntimeEventsDto>;
-  listConstructRuntimeValidations: () => Promise<ConstructRuntimeValidation[]>;
+  listConstructRuntimeValidations: (
+    query?: ConstructRuntimeValidationQuery
+  ) => Promise<ConstructRuntimeValidationPage>;
   createConstructRuntimeValidation: (
     request: CreateConstructRuntimeValidationRequest
   ) => Promise<ConstructRuntimeValidation>;
@@ -1303,7 +1351,8 @@ export const mockFoundryRepository: FoundryRepository = {
       clearedAt: new Date().toISOString(),
     };
   },
-  listConstructRuntimeValidations: async () => mockConstructRuntimeValidations,
+  listConstructRuntimeValidations: async (query) =>
+    constructRuntimeValidationPage(mockConstructRuntimeValidations, query),
   createConstructRuntimeValidation: async (request) => {
     const validation: ConstructRuntimeValidation = {
       ...request,
@@ -2060,15 +2109,26 @@ export const apiFoundryRepository: FoundryRepository = {
       };
     }
   },
-  listConstructRuntimeValidations: async () => {
+  listConstructRuntimeValidations: async (query = {}) => {
     try {
-      return unwrap(
-        await apiClient.get<ApiEnvelope<ConstructRuntimeValidationDto[]>>(
-          foundryApiRoutes.constructRuntimeValidations
-        )
+      const response = unwrap(
+        await apiClient.get<
+          ApiEnvelope<ConstructRuntimeValidationPageDto | ConstructRuntimeValidationDto[]>
+        >(foundryApiRoutes.constructRuntimeValidations, {
+          params: {
+            modelId: query.modelId || undefined,
+            device: query.device || undefined,
+            status: query.status || undefined,
+            page: query.page,
+            pageSize: query.pageSize,
+          },
+        })
       );
+      return Array.isArray(response)
+        ? constructRuntimeValidationPage(response, query)
+        : response;
     } catch {
-      return [];
+      return constructRuntimeValidationPage([], query);
     }
   },
   createConstructRuntimeValidation: async (request) => {

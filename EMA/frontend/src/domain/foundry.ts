@@ -409,6 +409,37 @@ export interface ConstructRuntimeValidation {
   createdAt: string;
 }
 
+export interface ConstructRuntimeValidationFacet {
+  value: string;
+  count: number;
+}
+
+export interface ConstructRuntimeValidationPage {
+  items: ConstructRuntimeValidation[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  filters: {
+    modelId?: string | null;
+    device?: string | null;
+    status?: ConstructRuntimeValidation["status"] | null;
+  };
+  facets: {
+    models: ConstructRuntimeValidationFacet[];
+    devices: ConstructRuntimeValidationFacet[];
+    statuses: ConstructRuntimeValidationFacet[];
+  };
+}
+
+export interface ConstructRuntimeValidationQuery {
+  modelId?: string;
+  device?: string;
+  status?: ConstructRuntimeValidation["status"];
+  page?: number;
+  pageSize?: number;
+}
+
 export type CreateConstructRuntimeValidationRequest = Omit<
   ConstructRuntimeValidation,
   "id" | "createdAt"

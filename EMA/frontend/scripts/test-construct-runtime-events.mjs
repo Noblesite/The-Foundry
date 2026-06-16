@@ -158,6 +158,16 @@ assertIncludes(
 );
 assertIncludes(
   files.domain,
+  "export interface ConstructRuntimeValidationPage",
+  "Runtime validation page contract"
+);
+assertIncludes(
+  files.domain,
+  "export interface ConstructRuntimeValidationQuery",
+  "Runtime validation query contract"
+);
+assertIncludes(
+  files.domain,
   "metadata?: Record<string, unknown>",
   "Runtime event contract supports structured metadata"
 );
@@ -322,6 +332,26 @@ assertIncludes(
   "Runtime validation history summarizes pass rate"
 );
 assertIncludes(
+  files.construct,
+  "runtimeValidationPageNumber",
+  "Runtime validation history tracks server pages"
+);
+assertIncludes(
+  files.construct,
+  "Page {runtimeValidationPage.page}",
+  "Runtime validation history renders pagination controls"
+);
+assertIncludes(
+  files.repository,
+  "ConstructRuntimeValidationPageDto",
+  "Repository consumes paged validation DTOs"
+);
+assertIncludes(
+  files.repository,
+  "pageSize: query.pageSize",
+  "Repository sends validation pagination query params"
+);
+assertIncludes(
   files.styles,
   ".runtime-validation-card",
   "Runtime validation history is styled"
@@ -335,6 +365,11 @@ assertIncludes(
   files.styles,
   ".runtime-validation-summary",
   "Runtime validation summary is styled"
+);
+assertIncludes(
+  files.styles,
+  ".runtime-validation-pagination",
+  "Runtime validation pagination is styled"
 );
 assertIncludes(
   files.styles,

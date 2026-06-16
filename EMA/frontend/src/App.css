@@ -2069,6 +2069,23 @@ input[type="checkbox"] {
   font-size: 0.6rem;
 }
 
+.runtime-validation-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.runtime-validation-pagination span {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+}
+
+.runtime-validation-pagination .button-secondary {
+  width: auto;
+}
+
 .runtime-validation-row {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 0.7fr) minmax(0, 1fr);
