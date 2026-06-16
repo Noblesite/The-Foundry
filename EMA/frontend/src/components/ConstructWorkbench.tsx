@@ -57,6 +57,15 @@ interface ResponseInspection {
 type RuntimeLoadPhase = "idle" | "configuring" | "loading" | "ready" | "failed";
 type RuntimeSmokeStatus = "idle" | "loading" | "streaming" | "passed" | "failed";
 
+interface RuntimeSmokeResult {
+  modelId: string;
+  device: string;
+  totalTokens: number;
+  durationSeconds: number;
+  cleanupStatus: string;
+  memoryAvailableGb?: number;
+}
+
 const LOCAL_SMOKE_MODEL_ID = "sshleifer/tiny-gpt2";
 const LOCAL_SMOKE_PROMPT =
   "Runtime smoke test: reply with one short sentence from The Foundry.";
@@ -129,6 +138,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [runtimeSmokeMessage, setRuntimeSmokeMessage] = useState(
     "Load the current model, stream a short reply, and inspect the runtime contract."
   );
+  const [runtimeSmokeResult, setRuntimeSmokeResult] = useState<RuntimeSmokeResult | null>(null);
   const [handoffNotice, setHandoffNotice] = useState<string | null>(null);
   const [isProbingRuntime, setIsProbingRuntime] = useState(false);
   const [isPreflightingRuntime, setIsPreflightingRuntime] = useState(false);
@@ -170,7 +180,6 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           setRuntimeTimeline((current) =>
             mergeRuntimeTimelineEvents(current, [recordedEvent])
           );
-          void refreshRuntimeTimeline();
         })
         .catch(() => {
           setRuntimeTimeline((current) =>
@@ -188,7 +197,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           );
         });
     },
-    [activeArtifact.id, activeConstruct.id, refreshRuntimeTimeline, repository, runtime?.status]
+    [activeArtifact.id, activeConstruct.id, repository, runtime?.status]
   );
 
   useEffect(() => {
@@ -214,6 +223,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setRuntimeSmokeMessage(
       "Load the current model, stream a short reply, and inspect the runtime contract."
     );
+    setRuntimeSmokeResult(null);
     setRuntimeMemoryReleaseMessage(null);
     setHandoffNotice(null);
     setPreflightResult(null);
@@ -302,7 +312,6 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       isRuntimeBusy ||
       isPreflightingRuntime ||
       isProbingRuntime ||
-      isSending ||
       runtimeSmokeStatus === "loading" ||
       runtimeSmokeStatus === "streaming";
 
@@ -318,7 +327,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     };
 
     pollTimeline();
-    const interval = window.setInterval(pollTimeline, 1500);
+    const interval = window.setInterval(pollTimeline, 5000);
     return () => {
       isCurrent = false;
       window.clearInterval(interval);
@@ -327,7 +336,6 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     isPreflightingRuntime,
     isProbingRuntime,
     isRuntimeBusy,
-    isSending,
     refreshRuntimeTimeline,
     runtimeSmokeStatus,
   ]);
@@ -708,7 +716,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     }
   };
 
-  const sendMessage = async (presetText?: string, options?: { smokeTest?: boolean }) => {
+  const sendMessage = async (
+    presetText?: string,
+    options?: { smokeTest?: boolean; smokeStartedAt?: number }
+  ) => {
     const messageText = (presetText ?? input).trim();
     if (!messageText) {
       return;
@@ -733,6 +744,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       if (options?.smokeTest) {
         setRuntimeSmokeStatus("streaming");
         setRuntimeSmokeMessage("Runtime loaded. Streaming the smoke prompt now.");
+        setRuntimeSmokeResult(null);
       }
       const assistantMessageId = `assistant-${Date.now()}`;
       let assistantText = "";
@@ -805,10 +817,25 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
             constructId: event.construct.id,
           });
           if (options?.smokeTest) {
+            const diagnostics = (eventRuntime?.diagnostics || {}) as Record<string, unknown>;
+            const cleanup = (diagnostics.memoryCleanup || {}) as Record<string, unknown>;
+            const memory = (diagnostics.memory || {}) as Record<string, unknown>;
             setRuntimeSmokeStatus("passed");
             setRuntimeSmokeMessage(
               `Smoke test passed on ${eventRuntime?.device || runtime?.device || settings.constructDevice}.`
             );
+            setRuntimeSmokeResult({
+              modelId: eventRuntime?.modelId || runtime?.modelId || activeArtifact.baseModel,
+              device: eventRuntime?.device || runtime?.device || settings.constructDevice,
+              totalTokens: event.totalTokens,
+              durationSeconds: Number(
+                ((performance.now() - (options.smokeStartedAt || performance.now())) / 1000).toFixed(2)
+              ),
+              cleanupStatus:
+                typeof cleanup.status === "string" ? cleanup.status : memoryCleanupStatus,
+              memoryAvailableGb:
+                typeof memory.availableGb === "number" ? memory.availableGb : undefined,
+            });
             addRuntimeTimelineEvent({
               type: "smoke",
               status: "passed",
@@ -823,6 +850,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         if (options?.smokeTest) {
           setRuntimeSmokeStatus("failed");
           setRuntimeSmokeMessage(event.message);
+          setRuntimeSmokeResult(null);
           addRuntimeTimelineEvent({
             type: "smoke",
             status: "failed",
@@ -838,6 +866,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         setRuntimeSmokeMessage(
           chatError instanceof Error ? chatError.message : "Runtime smoke test failed."
         );
+        setRuntimeSmokeResult(null);
         addRuntimeTimelineEvent({
           type: "smoke",
           status: "failed",
@@ -853,9 +882,11 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
 
   const runRuntimeSmokeTest = async () => {
     const smokeModel = LOCAL_SMOKE_MODEL_ID;
+    const smokeStartedAt = performance.now();
     setIsRuntimeBusy(true);
     setRuntimeSmokeStatus("loading");
     setRuntimeSmokeMessage(`Loading cached smoke model ${shortModelId(smokeModel)}.`);
+    setRuntimeSmokeResult(null);
     setError(null);
     addRuntimeTimelineEvent({
       type: "smoke",
@@ -868,10 +899,11 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     try {
       await loadCurrentRuntime({ modelOverride: smokeModel });
       setIsRuntimeBusy(false);
-      await sendMessage(LOCAL_SMOKE_PROMPT, { smokeTest: true });
+      await sendMessage(LOCAL_SMOKE_PROMPT, { smokeTest: true, smokeStartedAt });
     } catch (runtimeError: unknown) {
       setRuntimeSmokeStatus("failed");
       setRuntimeLoadPhase("failed");
+      setRuntimeSmokeResult(null);
       setRuntimeSmokeMessage(
         runtimeError instanceof Error ? runtimeError.message : "Runtime smoke test failed."
       );
@@ -1382,6 +1414,38 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                     : "Run Smoke Test"}
                 </button>
               </div>
+              {runtimeSmokeResult && (
+                <article className="runtime-smoke-result">
+                  <div>
+                    <span>Model</span>
+                    <strong>{shortModelId(runtimeSmokeResult.modelId)}</strong>
+                  </div>
+                  <div>
+                    <span>Device</span>
+                    <strong>{runtimeSmokeResult.device}</strong>
+                  </div>
+                  <div>
+                    <span>Tokens</span>
+                    <strong>{runtimeSmokeResult.totalTokens}</strong>
+                  </div>
+                  <div>
+                    <span>Duration</span>
+                    <strong>{runtimeSmokeResult.durationSeconds}s</strong>
+                  </div>
+                  <div>
+                    <span>Cleanup</span>
+                    <strong>{runtimeSmokeResult.cleanupStatus}</strong>
+                  </div>
+                  <div>
+                    <span>Available</span>
+                    <strong>
+                      {runtimeSmokeResult.memoryAvailableGb !== undefined
+                        ? `${runtimeSmokeResult.memoryAvailableGb} GB`
+                        : "n/a"}
+                    </strong>
+                  </div>
+                </article>
+              )}
               <div className="runtime-probe-grid">
                 <label className="field-label" htmlFor="runtime-probe-model">Tiny model probe</label>
                 <input

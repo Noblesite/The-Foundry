@@ -291,16 +291,16 @@ const App: React.FC = () => {
     return bootstrap;
   };
 
-  const refreshFoundryStatus = async () => {
+  const refreshFoundryStatus = useCallback(async () => {
     const status = await repository.getFoundryStatus();
     setFoundryStatus(status);
     return status;
-  };
+  }, [repository]);
 
-  const handleConstructRuntimeChanged = (runtime: ConstructRuntime) => {
+  const handleConstructRuntimeChanged = useCallback((runtime: ConstructRuntime) => {
     setConstructRuntime(runtime);
     void refreshFoundryStatus();
-  };
+  }, [refreshFoundryStatus]);
 
   const handleArchiveEntriesChanged = useCallback((entries: ModelArchiveEntry[]) => {
     setArchiveEntries(entries);

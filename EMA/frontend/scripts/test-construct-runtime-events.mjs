@@ -201,6 +201,26 @@ assertIncludes(
   "Construct smoke test explains cached tiny model loading"
 );
 assertIncludes(
+  files.construct,
+  "runtimeSmokeResult",
+  "Construct smoke test stores a final result summary"
+);
+assertIncludes(
+  files.construct,
+  "runtime-smoke-result",
+  "Construct smoke test renders the final result panel"
+);
+assertIncludes(
+  files.construct,
+  "window.setInterval(pollTimeline, 5000)",
+  "Construct timeline polling uses a calmer cadence"
+);
+assertIncludes(
+  files.app,
+  "const handleConstructRuntimeChanged = useCallback",
+  "App stabilizes runtime changed callback to avoid repeated runtime refreshes"
+);
+assertIncludes(
   files.repository,
   "mockConstructRuntimeEvents",
   "Mock runtime event storage"
