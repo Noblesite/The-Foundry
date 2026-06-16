@@ -327,6 +327,31 @@ assertIncludes(
 );
 assertIncludes(
   files.construct,
+  "Diagnostics Bundle",
+  "Construct runtime history can export a diagnostics bundle"
+);
+assertIncludes(
+  files.construct,
+  "downloadDiagnosticsBundle",
+  "Construct workbench can assemble support diagnostics"
+);
+assertIncludes(
+  files.construct,
+  "foundry-construct-diagnostics-",
+  "Diagnostics bundle uses a stable filename"
+);
+assertIncludes(
+  files.construct,
+  "huggingFaceTokenSaved",
+  "Diagnostics bundle redacts Hugging Face token values"
+);
+assertIncludes(
+  files.construct,
+  "contractVersion: \"foundry.construct.diagnostics-bundle.v1\"",
+  "Diagnostics bundle exposes a versioned contract"
+);
+assertIncludes(
+  files.construct,
   "clearRuntimeHistory",
   "Construct runtime history can clear saved backend events"
 );

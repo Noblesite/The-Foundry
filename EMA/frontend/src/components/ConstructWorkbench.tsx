@@ -213,6 +213,44 @@ const runtimeHistoryEventLabel = (event: ConstructRuntimeEvent) => {
 const formatRuntimeEventMetadata = (event: ConstructRuntimeEvent | null) =>
   JSON.stringify(event?.metadata || {}, null, 2);
 
+const downloadJsonFile = (fileName: string, data: unknown) => {
+  const blob = new Blob([JSON.stringify(data, null, 2)], {
+    type: "application/json",
+  });
+  const objectUrl = URL.createObjectURL(blob);
+  const downloadLink = document.createElement("a");
+  downloadLink.href = objectUrl;
+  downloadLink.download = fileName;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  downloadLink.remove();
+  URL.revokeObjectURL(objectUrl);
+};
+
+const safeWorkspaceSettingsSnapshot = (settings: WorkspaceSettings) => ({
+  huggingFaceUsernameSaved: Boolean(settings.huggingFaceUsername),
+  huggingFaceTokenSaved: Boolean(settings.huggingFaceToken),
+  defaultBaseModel: settings.defaultBaseModel,
+  modelName: settings.modelName,
+  subjectMatter: settings.subjectMatter,
+  characterVoice: settings.characterVoice,
+  sourceDirectory: settings.sourceDirectory,
+  outputDirectory: settings.outputDirectory,
+  contextWindow: settings.contextWindow,
+  maxNewTokens: settings.maxNewTokens,
+  temperature: settings.temperature,
+  topP: settings.topP,
+  qaPairsPerSource: settings.qaPairsPerSource,
+  trainingMethod: settings.trainingMethod,
+  epochs: settings.epochs,
+  learningRate: settings.learningRate,
+  loadIn4Bit: settings.loadIn4Bit,
+  enableStreaming: settings.enableStreaming,
+  constructRuntimeMode: settings.constructRuntimeMode,
+  constructModelId: settings.constructModelId,
+  constructDevice: settings.constructDevice,
+});
+
 interface ConstructWorkbenchProps {
   artifact: Artifact;
   construct: Construct;
@@ -280,6 +318,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [selectedRuntimeEvent, setSelectedRuntimeEvent] =
     useState<ConstructRuntimeEvent | null>(null);
   const [isExportingRuntimeHistory, setIsExportingRuntimeHistory] = useState(false);
+  const [isExportingDiagnosticsBundle, setIsExportingDiagnosticsBundle] = useState(false);
   const [isConfirmingHistoryClear, setIsConfirmingHistoryClear] = useState(false);
   const [isClearingRuntimeHistory, setIsClearingRuntimeHistory] = useState(false);
   const [runtimeHistoryMessage, setRuntimeHistoryMessage] = useState<string | null>(null);
@@ -344,17 +383,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       const result = await repository.exportConstructRuntimeEvents();
       const exportedAt = result.exportedAt || new Date().toISOString();
       const safeTimestamp = exportedAt.replace(/[:.]/g, "-");
-      const blob = new Blob([JSON.stringify(result, null, 2)], {
-        type: "application/json",
-      });
-      const objectUrl = URL.createObjectURL(blob);
-      const downloadLink = document.createElement("a");
-      downloadLink.href = objectUrl;
-      downloadLink.download = `foundry-runtime-history-${safeTimestamp}.json`;
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      downloadLink.remove();
-      URL.revokeObjectURL(objectUrl);
+      downloadJsonFile(`foundry-runtime-history-${safeTimestamp}.json`, result);
       setRuntimeHistoryMessage(
         `Exported ${result.eventCount} runtime event${
           result.eventCount === 1 ? "" : "s"
@@ -370,6 +399,101 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       setIsExportingRuntimeHistory(false);
     }
   }, [repository]);
+
+  const downloadDiagnosticsBundle = async () => {
+    setIsExportingDiagnosticsBundle(true);
+    setRuntimeHistoryMessage(null);
+    try {
+      const [runtimeHistoryExport, liveStatus] = await Promise.all([
+        repository.exportConstructRuntimeEvents(),
+        repository.getFoundryStatus(),
+      ]);
+      const exportedAt = new Date().toISOString();
+      const safeTimestamp = exportedAt.replace(/[:.]/g, "-");
+      const readinessSnapshot = preflightResult
+        ? buildRuntimeReadinessSummary(preflightResult)
+        : null;
+      const bundle = {
+        contractVersion: "foundry.construct.diagnostics-bundle.v1",
+        exportedAt,
+        dataSource: {
+          mode: activeFoundryDataSource.mode,
+          label: activeFoundryDataSource.label,
+          badge: activeFoundryDataSource.badge,
+          liveConstruct: activeFoundryDataSource.liveConstruct,
+          liveCatalog: activeFoundryDataSource.liveCatalog,
+        },
+        serviceStatus: liveStatus || sourceStatus || null,
+        construct: {
+          id: activeConstruct.id,
+          name: activeConstruct.name,
+          status: activeConstruct.status,
+          artifactId: activeConstruct.artifactId,
+          streamingEnabled: activeConstruct.streamingEnabled,
+          contextWindow: activeConstruct.contextWindow,
+          maxNewTokens: activeConstruct.maxNewTokens,
+          temperature: activeConstruct.temperature,
+        },
+        artifact: {
+          id: activeArtifact.id,
+          name: activeArtifact.name,
+          version: activeArtifact.version,
+          status: activeArtifact.status,
+          baseModel: activeArtifact.baseModel,
+          adapterPath: activeArtifact.adapterPath,
+          forgeRunId: activeArtifact.forgeRunId,
+        },
+        runtime: {
+          current: runtime,
+          mode: runtimeMode,
+          detail: runtimeDetail,
+          phase: runtimeLoadPhase,
+          target: runtimeLoadTarget,
+          loadedModel,
+          loadEvent,
+          memory: runtimeMemory,
+          memoryCleanup: {
+            status: memoryCleanupStatus,
+            finishedAt: memoryCleanupFinishedAt,
+            methods: memoryCleanupMethods,
+            cacheSizeBefore: memoryCleanupCacheBefore,
+            cacheSizeAfter: memoryCleanupCacheAfter,
+          },
+        },
+        settings: safeWorkspaceSettingsSnapshot(settings),
+        preflight: {
+          result: preflightResult,
+          readiness: readinessSnapshot,
+          confirmedCautionTarget,
+          gateMessage: readinessGateMessage,
+        },
+        smokeTest: {
+          status: runtimeSmokeStatus,
+          message: runtimeSmokeMessage,
+          result: runtimeSmokeResult,
+        },
+        generation: {
+          includeLibraryContext,
+          lastInspection,
+        },
+        runtimeHistory: runtimeHistoryExport,
+      };
+      downloadJsonFile(`foundry-construct-diagnostics-${safeTimestamp}.json`, bundle);
+      setRuntimeHistoryMessage(
+        `Exported diagnostics bundle with ${runtimeHistoryExport.eventCount} runtime event${
+          runtimeHistoryExport.eventCount === 1 ? "" : "s"
+        }.`
+      );
+    } catch (historyError: unknown) {
+      setRuntimeHistoryMessage(
+        historyError instanceof Error
+          ? historyError.message
+          : "Could not export diagnostics bundle."
+      );
+    } finally {
+      setIsExportingDiagnosticsBundle(false);
+    }
+  };
 
   const clearRuntimeHistory = useCallback(async () => {
     if (!isConfirmingHistoryClear) {
@@ -1862,6 +1986,14 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                   type="button"
                 >
                   {isExportingRuntimeHistory ? "Exporting" : "Export JSON"}
+                </button>
+                <button
+                  className="button-secondary button-compact"
+                  disabled={isExportingDiagnosticsBundle}
+                  onClick={() => void downloadDiagnosticsBundle()}
+                  type="button"
+                >
+                  {isExportingDiagnosticsBundle ? "Bundling" : "Diagnostics Bundle"}
                 </button>
                 {isConfirmingHistoryClear && (
                   <button
