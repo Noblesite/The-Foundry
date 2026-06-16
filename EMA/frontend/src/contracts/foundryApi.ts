@@ -74,6 +74,7 @@ export const foundryApiRoutes = {
   unloadConstructRuntime: `${FOUNDRY_API_VERSION}/constructs/runtime/unload`,
   releaseConstructRuntimeMemory: `${FOUNDRY_API_VERSION}/constructs/runtime/release-memory`,
   constructRuntimeEvents: `${FOUNDRY_API_VERSION}/constructs/runtime/events`,
+  clearConstructRuntimeEvents: `${FOUNDRY_API_VERSION}/constructs/runtime/events/clear`,
   modelArchive: `${FOUNDRY_API_VERSION}/archive/models`,
   testHuggingFaceAuth: `${FOUNDRY_API_VERSION}/archive/huggingface/auth/test`,
   searchArchiveModels: `${FOUNDRY_API_VERSION}/archive/models/search`,
@@ -111,6 +112,11 @@ export interface ApiErrorEnvelope {
     details?: Record<string, unknown>;
   };
   requestId: string;
+}
+
+export interface ClearConstructRuntimeEventsDto {
+  deletedCount: number;
+  clearedAt: string;
 }
 
 export interface WorkshopDto {

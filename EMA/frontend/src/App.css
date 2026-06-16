@@ -2039,15 +2039,38 @@ input[type="checkbox"] {
 
 .runtime-history-heading {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
   gap: 0.7rem;
   align-items: center;
 }
 
-.runtime-history-heading span {
+.runtime-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.runtime-history-actions span {
   color: var(--text-dim);
   font-size: 0.72rem;
   white-space: nowrap;
+}
+
+.runtime-history-actions .danger-action {
+  border-color: rgba(255, 138, 0, 0.52);
+  color: var(--forge-orange);
+  box-shadow: var(--shadow-orange);
+}
+
+.runtime-history-message {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  color: var(--brass);
+  font-size: 0.72rem;
+  line-height: 1.4;
 }
 
 .runtime-history-filters {

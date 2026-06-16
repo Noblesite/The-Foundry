@@ -145,6 +145,17 @@ class ConstructInferenceService:
             return persisted_events
         return list(self._runtime_events)
 
+    def clear_runtime_events(self) -> Dict[str, Any]:
+        deleted_count = len(self._runtime_events)
+        self._runtime_events = []
+        persisted_deleted_count = self._clear_persisted_runtime_events()
+        if persisted_deleted_count is not None:
+            deleted_count = persisted_deleted_count
+        return {
+            "deletedCount": deleted_count,
+            "clearedAt": self._utc_now(),
+        }
+
     def record_runtime_event(
         self,
         *,
@@ -277,6 +288,14 @@ class ConstructInferenceService:
                 self._prune_runtime_events(connection)
         except (sqlite3.Error, TypeError, ValueError):
             return
+
+    def _clear_persisted_runtime_events(self) -> Optional[int]:
+        try:
+            with self._connect_runtime_event_store() as connection:
+                result = connection.execute("DELETE FROM construct_runtime_events")
+                return result.rowcount if result.rowcount is not None else 0
+        except sqlite3.Error:
+            return None
 
     def _prune_runtime_events(self, connection: sqlite3.Connection) -> None:
         connection.execute(

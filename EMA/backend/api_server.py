@@ -293,6 +293,11 @@ async def record_foundry_construct_runtime_event_endpoint(data: ConstructRuntime
         raise HTTPException(status_code=400, detail=str(error))
 
 
+@app.post("/api/v1/constructs/runtime/events/clear")
+async def clear_foundry_construct_runtime_events_endpoint():
+    return api_envelope(construct_inference_service.clear_runtime_events())
+
+
 @app.get("/api/v1/forges/runtime")
 async def foundry_forge_runtime_endpoint():
     return api_envelope(forge_training_service.runtime_payload())

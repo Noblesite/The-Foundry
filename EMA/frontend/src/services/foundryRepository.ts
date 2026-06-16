@@ -11,6 +11,7 @@ import {
   ArchiveModelSearchDto,
   ArtifactDto,
   AssemblyLineRunDto,
+  ClearConstructRuntimeEventsDto,
   ConfigureConstructRuntimeRequest,
   ConfigureForgeRuntimeRequest,
   ConstructDto,
@@ -171,6 +172,7 @@ export interface FoundryRepository {
   recordConstructRuntimeEvent: (
     request: CreateConstructRuntimeEventRequest
   ) => Promise<ConstructRuntimeEvent>;
+  clearConstructRuntimeEvents: () => Promise<ClearConstructRuntimeEventsDto>;
   configureConstructRuntime: (
     request: ConfigureConstructRuntimeRequest
   ) => Promise<ConstructRuntime>;
@@ -1274,6 +1276,14 @@ export const mockFoundryRepository: FoundryRepository = {
   getConstructRuntime: async () => mockConstructRuntime,
   listConstructRuntimeEvents: async () => mockConstructRuntimeEvents,
   recordConstructRuntimeEvent: async (request) => recordMockConstructRuntimeEvent(request),
+  clearConstructRuntimeEvents: async () => {
+    const deletedCount = mockConstructRuntimeEvents.length;
+    mockConstructRuntimeEvents = [];
+    return {
+      deletedCount,
+      clearedAt: new Date().toISOString(),
+    };
+  },
   configureConstructRuntime: async (request) => {
     mockRuntimeLoadEvent = {
       status: "configured",
@@ -1986,6 +1996,21 @@ export const apiFoundryRepository: FoundryRepository = {
       };
     }
   },
+  clearConstructRuntimeEvents: async () => {
+    try {
+      return unwrap(
+        await apiClient.post<ApiEnvelope<ClearConstructRuntimeEventsDto>>(
+          foundryApiRoutes.clearConstructRuntimeEvents,
+          {}
+        )
+      );
+    } catch {
+      return {
+        deletedCount: 0,
+        clearedAt: new Date().toISOString(),
+      };
+    }
+  },
   configureConstructRuntime: async (request) =>
     unwrap(
       await apiClient.post<ApiEnvelope<ConstructRuntime>>(
@@ -2130,6 +2155,7 @@ const constructApiOverrides: Pick<
   | "getConstructRuntime"
   | "listConstructRuntimeEvents"
   | "recordConstructRuntimeEvent"
+  | "clearConstructRuntimeEvents"
   | "configureConstructRuntime"
   | "loadConstructRuntime"
   | "preflightConstructRuntime"
@@ -2156,6 +2182,7 @@ const constructApiOverrides: Pick<
   getConstructRuntime: apiFoundryRepository.getConstructRuntime,
   listConstructRuntimeEvents: apiFoundryRepository.listConstructRuntimeEvents,
   recordConstructRuntimeEvent: apiFoundryRepository.recordConstructRuntimeEvent,
+  clearConstructRuntimeEvents: apiFoundryRepository.clearConstructRuntimeEvents,
   configureConstructRuntime: apiFoundryRepository.configureConstructRuntime,
   loadConstructRuntime: apiFoundryRepository.loadConstructRuntime,
   preflightConstructRuntime: apiFoundryRepository.preflightConstructRuntime,

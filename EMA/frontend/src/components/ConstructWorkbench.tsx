@@ -279,6 +279,9 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [runtimeHistoryFilter, setRuntimeHistoryFilter] = useState<RuntimeHistoryFilter>("all");
   const [selectedRuntimeEvent, setSelectedRuntimeEvent] =
     useState<ConstructRuntimeEvent | null>(null);
+  const [isConfirmingHistoryClear, setIsConfirmingHistoryClear] = useState(false);
+  const [isClearingRuntimeHistory, setIsClearingRuntimeHistory] = useState(false);
+  const [runtimeHistoryMessage, setRuntimeHistoryMessage] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [lastInspection, setLastInspection] = useState<ResponseInspection | null>(null);
   const [trialVerdict, setTrialVerdict] = useState<TrialVerdict | null>(null);
@@ -333,6 +336,36 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     [activeArtifact.id, activeConstruct.id, repository, runtime?.status]
   );
 
+  const clearRuntimeHistory = useCallback(async () => {
+    if (!isConfirmingHistoryClear) {
+      setIsConfirmingHistoryClear(true);
+      setRuntimeHistoryMessage("Click Confirm Clear to remove saved runtime history.");
+      return;
+    }
+
+    setIsClearingRuntimeHistory(true);
+    try {
+      const result = await repository.clearConstructRuntimeEvents();
+      setRuntimeTimeline([]);
+      setSelectedRuntimeEvent(null);
+      setRuntimeHistoryFilter("all");
+      setRuntimeHistoryMessage(
+        `Cleared ${result.deletedCount} runtime event${
+          result.deletedCount === 1 ? "" : "s"
+        } at ${formatRuntimeTimestamp(result.clearedAt)}.`
+      );
+      setIsConfirmingHistoryClear(false);
+    } catch (historyError: unknown) {
+      setRuntimeHistoryMessage(
+        historyError instanceof Error
+          ? historyError.message
+          : "Could not clear runtime history."
+      );
+    } finally {
+      setIsClearingRuntimeHistory(false);
+    }
+  }, [isConfirmingHistoryClear, repository]);
+
   useEffect(() => {
     let isCurrent = true;
     setActiveConstruct(construct);
@@ -368,6 +401,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setProbeResult(null);
     setRuntimeTimeline([]);
     setSelectedRuntimeEvent(null);
+    setIsConfirmingHistoryClear(false);
+    setRuntimeHistoryMessage(null);
     repository
       .listConstructRuntimeEvents()
       .then((events) => {
@@ -1783,8 +1818,40 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
             <p className="panel-kicker">Runtime Timeline</p>
             <div className="runtime-history-heading">
               <h2>Runtime History</h2>
-              <span>{runtimeTimeline.length} events</span>
+              <div className="runtime-history-actions">
+                <span>{runtimeTimeline.length} events</span>
+                {isConfirmingHistoryClear && (
+                  <button
+                    className="button-secondary button-compact"
+                    disabled={isClearingRuntimeHistory}
+                    onClick={() => {
+                      setIsConfirmingHistoryClear(false);
+                      setRuntimeHistoryMessage(null);
+                    }}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                )}
+                <button
+                  className={`button-secondary button-compact ${
+                    isConfirmingHistoryClear ? "danger-action" : ""
+                  }`}
+                  disabled={isClearingRuntimeHistory || runtimeTimeline.length === 0}
+                  onClick={() => void clearRuntimeHistory()}
+                  type="button"
+                >
+                  {isClearingRuntimeHistory
+                    ? "Clearing"
+                    : isConfirmingHistoryClear
+                    ? "Confirm Clear"
+                    : "Clear History"}
+                </button>
+              </div>
             </div>
+            {runtimeHistoryMessage && (
+              <p className="runtime-history-message">{runtimeHistoryMessage}</p>
+            )}
             <div className="runtime-history-filters" aria-label="Runtime history filters">
               {RUNTIME_HISTORY_FILTERS.map((filter) => (
                 <button

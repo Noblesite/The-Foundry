@@ -210,8 +210,10 @@ def run_construct_runtime_event_contract_check() -> int:
         "ConstructRuntimeEventInput",
         "metadata: dict[str, Any] | None = None",
         "/api/v1/constructs/runtime/events",
+        "/api/v1/constructs/runtime/events/clear",
         "foundry_construct_runtime_events_endpoint",
         "record_foundry_construct_runtime_event_endpoint",
+        "clear_foundry_construct_runtime_events_endpoint",
     )
     missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
     if missing_api:
@@ -225,8 +227,10 @@ def run_construct_runtime_event_contract_check() -> int:
         "FOUNDRY_CONSTRUCT_RUNTIME_EVENT_RETENTION_LIMIT",
         "list_runtime_events",
         "record_runtime_event",
+        "clear_runtime_events",
         "_persist_runtime_event",
         "_list_persisted_runtime_events",
+        "_clear_persisted_runtime_events",
         "_prune_runtime_events",
         "\"source\": source",
         "\"metadata\": metadata or {}",

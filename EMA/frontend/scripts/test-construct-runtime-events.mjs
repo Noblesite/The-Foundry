@@ -172,6 +172,16 @@ assertIncludes(
 );
 assertIncludes(
   files.repository,
+  "clearConstructRuntimeEvents:",
+  "Repository clear runtime history method"
+);
+assertIncludes(
+  files.contracts,
+  "clearConstructRuntimeEvents:",
+  "Frontend contract exposes runtime history clear route"
+);
+assertIncludes(
+  files.repository,
   "releaseConstructRuntimeMemory:",
   "Repository exposes runtime memory release"
 );
@@ -284,6 +294,16 @@ assertIncludes(
   files.construct,
   "formatRuntimeEventMetadata",
   "Construct runtime history renders structured event metadata"
+);
+assertIncludes(
+  files.construct,
+  "Confirm Clear",
+  "Construct runtime history clear action requires confirmation"
+);
+assertIncludes(
+  files.construct,
+  "clearRuntimeHistory",
+  "Construct runtime history can clear saved backend events"
 );
 assertIncludes(
   files.app,
