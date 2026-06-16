@@ -23,6 +23,7 @@ import {
   CreateWorkshopRequest,
   ExportEvaluationSamplesDto,
   ExportEvaluationSamplesRequest,
+  ExportConstructRuntimeEventsDto,
   ExportQAPairsDto,
   ExportQAPairsRequest,
   ExportTrialsDto,
@@ -56,6 +57,7 @@ import {
   ConstructChatStreamEvent,
   ConstructRuntimeEvent,
   ConstructRuntime,
+  ConstructRuntimeHistoryExport,
   ConstructRuntimePreflightResult,
   ConstructRuntimeProbeResult,
   CreateConstructRuntimeEventRequest,
@@ -172,6 +174,7 @@ export interface FoundryRepository {
   recordConstructRuntimeEvent: (
     request: CreateConstructRuntimeEventRequest
   ) => Promise<ConstructRuntimeEvent>;
+  exportConstructRuntimeEvents: () => Promise<ExportConstructRuntimeEventsDto>;
   clearConstructRuntimeEvents: () => Promise<ClearConstructRuntimeEventsDto>;
   configureConstructRuntime: (
     request: ConfigureConstructRuntimeRequest
@@ -1276,6 +1279,14 @@ export const mockFoundryRepository: FoundryRepository = {
   getConstructRuntime: async () => mockConstructRuntime,
   listConstructRuntimeEvents: async () => mockConstructRuntimeEvents,
   recordConstructRuntimeEvent: async (request) => recordMockConstructRuntimeEvent(request),
+  exportConstructRuntimeEvents: async () => ({
+    contractVersion: "foundry.construct.runtime-history.v1",
+    exportedAt: new Date().toISOString(),
+    format: "json",
+    eventCount: mockConstructRuntimeEvents.length,
+    runtime: mockConstructRuntime,
+    events: mockConstructRuntimeEvents,
+  }),
   clearConstructRuntimeEvents: async () => {
     const deletedCount = mockConstructRuntimeEvents.length;
     mockConstructRuntimeEvents = [];
@@ -1996,6 +2007,26 @@ export const apiFoundryRepository: FoundryRepository = {
       };
     }
   },
+  exportConstructRuntimeEvents: async () => {
+    try {
+      return unwrap(
+        await apiClient.get<ApiEnvelope<ConstructRuntimeHistoryExport>>(
+          foundryApiRoutes.exportConstructRuntimeEvents
+        )
+      );
+    } catch {
+      return {
+        contractVersion: "foundry.construct.runtime-history.v1",
+        exportedAt: new Date().toISOString(),
+        format: "json",
+        eventCount: 0,
+        runtime: unwrap(
+          await apiClient.get<ApiEnvelope<ConstructRuntime>>(foundryApiRoutes.constructRuntime)
+        ),
+        events: [],
+      };
+    }
+  },
   clearConstructRuntimeEvents: async () => {
     try {
       return unwrap(
@@ -2155,6 +2186,7 @@ const constructApiOverrides: Pick<
   | "getConstructRuntime"
   | "listConstructRuntimeEvents"
   | "recordConstructRuntimeEvent"
+  | "exportConstructRuntimeEvents"
   | "clearConstructRuntimeEvents"
   | "configureConstructRuntime"
   | "loadConstructRuntime"
@@ -2182,6 +2214,7 @@ const constructApiOverrides: Pick<
   getConstructRuntime: apiFoundryRepository.getConstructRuntime,
   listConstructRuntimeEvents: apiFoundryRepository.listConstructRuntimeEvents,
   recordConstructRuntimeEvent: apiFoundryRepository.recordConstructRuntimeEvent,
+  exportConstructRuntimeEvents: apiFoundryRepository.exportConstructRuntimeEvents,
   clearConstructRuntimeEvents: apiFoundryRepository.clearConstructRuntimeEvents,
   configureConstructRuntime: apiFoundryRepository.configureConstructRuntime,
   loadConstructRuntime: apiFoundryRepository.loadConstructRuntime,

@@ -145,6 +145,18 @@ class ConstructInferenceService:
             return persisted_events
         return list(self._runtime_events)
 
+    def export_runtime_events(self) -> Dict[str, Any]:
+        exported_at = self._utc_now()
+        events = self.list_runtime_events()
+        return {
+            "contractVersion": "foundry.construct.runtime-history.v1",
+            "exportedAt": exported_at,
+            "format": "json",
+            "eventCount": len(events),
+            "runtime": self.runtime_payload(),
+            "events": events,
+        }
+
     def clear_runtime_events(self) -> Dict[str, Any]:
         deleted_count = len(self._runtime_events)
         self._runtime_events = []

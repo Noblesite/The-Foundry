@@ -279,6 +279,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [runtimeHistoryFilter, setRuntimeHistoryFilter] = useState<RuntimeHistoryFilter>("all");
   const [selectedRuntimeEvent, setSelectedRuntimeEvent] =
     useState<ConstructRuntimeEvent | null>(null);
+  const [isExportingRuntimeHistory, setIsExportingRuntimeHistory] = useState(false);
   const [isConfirmingHistoryClear, setIsConfirmingHistoryClear] = useState(false);
   const [isClearingRuntimeHistory, setIsClearingRuntimeHistory] = useState(false);
   const [runtimeHistoryMessage, setRuntimeHistoryMessage] = useState<string | null>(null);
@@ -335,6 +336,40 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     },
     [activeArtifact.id, activeConstruct.id, repository, runtime?.status]
   );
+
+  const downloadRuntimeHistoryExport = useCallback(async () => {
+    setIsExportingRuntimeHistory(true);
+    setRuntimeHistoryMessage(null);
+    try {
+      const result = await repository.exportConstructRuntimeEvents();
+      const exportedAt = result.exportedAt || new Date().toISOString();
+      const safeTimestamp = exportedAt.replace(/[:.]/g, "-");
+      const blob = new Blob([JSON.stringify(result, null, 2)], {
+        type: "application/json",
+      });
+      const objectUrl = URL.createObjectURL(blob);
+      const downloadLink = document.createElement("a");
+      downloadLink.href = objectUrl;
+      downloadLink.download = `foundry-runtime-history-${safeTimestamp}.json`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      downloadLink.remove();
+      URL.revokeObjectURL(objectUrl);
+      setRuntimeHistoryMessage(
+        `Exported ${result.eventCount} runtime event${
+          result.eventCount === 1 ? "" : "s"
+        } as JSON.`
+      );
+    } catch (historyError: unknown) {
+      setRuntimeHistoryMessage(
+        historyError instanceof Error
+          ? historyError.message
+          : "Could not export runtime history."
+      );
+    } finally {
+      setIsExportingRuntimeHistory(false);
+    }
+  }, [repository]);
 
   const clearRuntimeHistory = useCallback(async () => {
     if (!isConfirmingHistoryClear) {
@@ -1820,6 +1855,14 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
               <h2>Runtime History</h2>
               <div className="runtime-history-actions">
                 <span>{runtimeTimeline.length} events</span>
+                <button
+                  className="button-secondary button-compact"
+                  disabled={isExportingRuntimeHistory || runtimeTimeline.length === 0}
+                  onClick={() => void downloadRuntimeHistoryExport()}
+                  type="button"
+                >
+                  {isExportingRuntimeHistory ? "Exporting" : "Export JSON"}
+                </button>
                 {isConfirmingHistoryClear && (
                   <button
                     className="button-secondary button-compact"

@@ -271,6 +271,11 @@ async def foundry_construct_runtime_events_endpoint():
     return api_envelope(construct_inference_service.list_runtime_events())
 
 
+@app.get("/api/v1/constructs/runtime/events/export")
+async def export_foundry_construct_runtime_events_endpoint():
+    return api_envelope(construct_inference_service.export_runtime_events())
+
+
 @app.post("/api/v1/constructs/runtime/events")
 async def record_foundry_construct_runtime_event_endpoint(data: ConstructRuntimeEventInput):
     try:

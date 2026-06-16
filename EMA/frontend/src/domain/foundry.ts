@@ -384,6 +384,15 @@ export interface ConstructRuntimeEvent {
   metadata?: Record<string, unknown>;
 }
 
+export interface ConstructRuntimeHistoryExport {
+  contractVersion: "foundry.construct.runtime-history.v1";
+  exportedAt: string;
+  format: "json";
+  eventCount: number;
+  runtime: ConstructRuntime;
+  events: ConstructRuntimeEvent[];
+}
+
 export type CreateConstructRuntimeEventRequest = Omit<
   ConstructRuntimeEvent,
   "id" | "timestamp" | "source"

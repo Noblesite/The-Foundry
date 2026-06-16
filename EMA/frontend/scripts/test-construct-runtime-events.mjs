@@ -172,8 +172,18 @@ assertIncludes(
 );
 assertIncludes(
   files.repository,
+  "exportConstructRuntimeEvents:",
+  "Repository export runtime history method"
+);
+assertIncludes(
+  files.repository,
   "clearConstructRuntimeEvents:",
   "Repository clear runtime history method"
+);
+assertIncludes(
+  files.contracts,
+  "exportConstructRuntimeEvents:",
+  "Frontend contract exposes runtime history export route"
 );
 assertIncludes(
   files.contracts,
@@ -299,6 +309,21 @@ assertIncludes(
   files.construct,
   "Confirm Clear",
   "Construct runtime history clear action requires confirmation"
+);
+assertIncludes(
+  files.construct,
+  "Export JSON",
+  "Construct runtime history can export JSON diagnostics"
+);
+assertIncludes(
+  files.construct,
+  "downloadRuntimeHistoryExport",
+  "Construct workbench can download runtime history exports"
+);
+assertIncludes(
+  files.construct,
+  "foundry-runtime-history-",
+  "Runtime history export uses a stable diagnostic filename"
 );
 assertIncludes(
   files.construct,
