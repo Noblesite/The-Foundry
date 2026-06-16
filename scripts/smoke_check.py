@@ -208,6 +208,7 @@ def run_construct_runtime_event_contract_check() -> int:
 
     required_api_patterns = (
         "ConstructRuntimeEventInput",
+        "metadata: dict[str, Any] | None = None",
         "/api/v1/constructs/runtime/events",
         "foundry_construct_runtime_events_endpoint",
         "record_foundry_construct_runtime_event_endpoint",
@@ -221,6 +222,7 @@ def run_construct_runtime_event_contract_check() -> int:
         "list_runtime_events",
         "record_runtime_event",
         "\"source\": source",
+        "\"metadata\": metadata or {}",
         "event_type=\"preflight\"",
         "event_type=\"load\"",
         "event_type=\"probe\"",

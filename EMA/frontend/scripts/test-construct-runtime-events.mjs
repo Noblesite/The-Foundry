@@ -152,6 +152,11 @@ assertIncludes(
 );
 assertIncludes(
   files.domain,
+  "metadata?: Record<string, unknown>",
+  "Runtime event contract supports structured metadata"
+);
+assertIncludes(
+  files.domain,
   "export type CreateConstructRuntimeEventRequest",
   "Runtime event creation contract"
 );
@@ -224,6 +229,16 @@ assertIncludes(
   files.construct,
   "persistSmokeResult(event.construct.id, event.artifact.id, smokeResult)",
   "Construct smoke test persists successful live results"
+);
+assertIncludes(
+  files.construct,
+  "latestSmokeResultFromRuntimeEvents",
+  "Construct smoke test restores successful backend runtime events"
+);
+assertIncludes(
+  files.construct,
+  "metadata: {\n                smokeResult",
+  "Construct smoke test records structured event metadata"
 );
 assertIncludes(
   files.construct,

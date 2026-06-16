@@ -116,6 +116,7 @@ class ConstructRuntimeEventInput(BaseModel):
     modelId: str | None = None
     runtimeStatus: str | None = None
     source: Literal["frontend", "mock", "backend"] = "frontend"
+    metadata: dict[str, Any] | None = None
 
 class SearchArchiveModelsInput(BaseModel):
     query: str = ""
@@ -285,6 +286,7 @@ async def record_foundry_construct_runtime_event_endpoint(data: ConstructRuntime
                 model_id=data.modelId,
                 runtime_status=data.runtimeStatus,
                 source=data.source,
+                metadata=data.metadata,
             )
         )
     except ValueError as error:

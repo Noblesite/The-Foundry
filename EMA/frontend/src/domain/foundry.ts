@@ -381,6 +381,7 @@ export interface ConstructRuntimeEvent {
   modelId?: string;
   runtimeStatus?: string;
   source: "frontend" | "mock" | "backend";
+  metadata?: Record<string, unknown>;
 }
 
 export type CreateConstructRuntimeEventRequest = Omit<

@@ -138,6 +138,7 @@ class ConstructInferenceService:
         model_id: Optional[str] = None,
         runtime_status: Optional[str] = None,
         source: str = "backend",
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         allowed_types = {"handoff", "preflight", "configure", "load", "unload", "probe", "smoke"}
         allowed_statuses = {"running", "passed", "warning", "failed", "info"}
@@ -162,6 +163,7 @@ class ConstructInferenceService:
             "modelId": model_id or runtime.modelId,
             "runtimeStatus": runtime_status or runtime.status,
             "source": source,
+            "metadata": metadata or {},
         }
         self._runtime_events = [event, *self._runtime_events][:50]
         return event

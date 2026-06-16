@@ -122,6 +122,37 @@ const persistSmokeResult = (
   }
 };
 
+const smokeResultFromRuntimeEvent = (
+  event: ConstructRuntimeEvent,
+  constructId: string,
+  artifactId: string
+): RuntimeSmokeResult | null => {
+  if (
+    event.type !== "smoke" ||
+    event.status !== "passed" ||
+    event.constructId !== constructId ||
+    event.artifactId !== artifactId
+  ) {
+    return null;
+  }
+  const smokeResult = event.metadata?.smokeResult;
+  return isRuntimeSmokeResult(smokeResult) ? smokeResult : null;
+};
+
+const latestSmokeResultFromRuntimeEvents = (
+  events: ConstructRuntimeEvent[],
+  constructId: string,
+  artifactId: string
+): RuntimeSmokeResult | null => {
+  for (const event of events) {
+    const smokeResult = smokeResultFromRuntimeEvent(event, constructId, artifactId);
+    if (smokeResult) {
+      return smokeResult;
+    }
+  }
+  return null;
+};
+
 const mergeRuntimeTimelineEvents = (
   current: ConstructRuntimeEvent[],
   incoming: ConstructRuntimeEvent[]
@@ -294,6 +325,19 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         }
         if (events.length > 0) {
           setRuntimeTimeline(events.slice(0, 10));
+          const backendSmokeResult = latestSmokeResultFromRuntimeEvents(
+            events,
+            construct.id,
+            artifact.id
+          );
+          if (backendSmokeResult) {
+            setRuntimeSmokeStatus("passed");
+            setRuntimeSmokeMessage(
+              `Last smoke test passed on ${backendSmokeResult.device}. Run again to verify the current runtime.`
+            );
+            setRuntimeSmokeResult(backendSmokeResult);
+            persistSmokeResult(construct.id, artifact.id, backendSmokeResult);
+          }
           return;
         }
         void repository
@@ -901,6 +945,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
               detail: `Reply streamed with ${event.totalTokens} tokens on ${
                 eventRuntime?.device || runtime?.device || settings.constructDevice
               }.`,
+              modelId: smokeResult.modelId,
+              metadata: {
+                smokeResult,
+              },
             });
           }
           return;
