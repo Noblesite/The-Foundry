@@ -251,6 +251,14 @@ const safeWorkspaceSettingsSnapshot = (settings: WorkspaceSettings) => ({
   constructDevice: settings.constructDevice,
 });
 
+interface DiagnosticsBundlePreview {
+  fileName: string;
+  bundle: Record<string, unknown>;
+  eventCount: number;
+  exportedAt: string;
+  redactions: string[];
+}
+
 interface ConstructWorkbenchProps {
   artifact: Artifact;
   construct: Construct;
@@ -318,7 +326,9 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [selectedRuntimeEvent, setSelectedRuntimeEvent] =
     useState<ConstructRuntimeEvent | null>(null);
   const [isExportingRuntimeHistory, setIsExportingRuntimeHistory] = useState(false);
-  const [isExportingDiagnosticsBundle, setIsExportingDiagnosticsBundle] = useState(false);
+  const [isPreparingDiagnosticsBundle, setIsPreparingDiagnosticsBundle] = useState(false);
+  const [diagnosticsBundlePreview, setDiagnosticsBundlePreview] =
+    useState<DiagnosticsBundlePreview | null>(null);
   const [isConfirmingHistoryClear, setIsConfirmingHistoryClear] = useState(false);
   const [isClearingRuntimeHistory, setIsClearingRuntimeHistory] = useState(false);
   const [runtimeHistoryMessage, setRuntimeHistoryMessage] = useState<string | null>(null);
@@ -400,8 +410,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     }
   }, [repository]);
 
-  const downloadDiagnosticsBundle = async () => {
-    setIsExportingDiagnosticsBundle(true);
+  const prepareDiagnosticsBundlePreview = async () => {
+    setIsPreparingDiagnosticsBundle(true);
     setRuntimeHistoryMessage(null);
     try {
       const [runtimeHistoryExport, liveStatus] = await Promise.all([
@@ -478,21 +488,43 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         },
         runtimeHistory: runtimeHistoryExport,
       };
-      downloadJsonFile(`foundry-construct-diagnostics-${safeTimestamp}.json`, bundle);
+      setDiagnosticsBundlePreview({
+        fileName: `foundry-construct-diagnostics-${safeTimestamp}.json`,
+        bundle,
+        eventCount: runtimeHistoryExport.eventCount,
+        exportedAt,
+        redactions: [
+          "Hugging Face token value is not exported.",
+          "Hugging Face username is reduced to a saved/not saved flag.",
+          "Source material contents and chat message text are not bundled.",
+        ],
+      });
       setRuntimeHistoryMessage(
-        `Exported diagnostics bundle with ${runtimeHistoryExport.eventCount} runtime event${
+        `Prepared diagnostics bundle with ${runtimeHistoryExport.eventCount} runtime event${
           runtimeHistoryExport.eventCount === 1 ? "" : "s"
-        }.`
+        }. Review it before downloading.`
       );
     } catch (historyError: unknown) {
       setRuntimeHistoryMessage(
         historyError instanceof Error
           ? historyError.message
-          : "Could not export diagnostics bundle."
+          : "Could not prepare diagnostics bundle."
       );
     } finally {
-      setIsExportingDiagnosticsBundle(false);
+      setIsPreparingDiagnosticsBundle(false);
     }
+  };
+
+  const downloadDiagnosticsBundlePreview = () => {
+    if (!diagnosticsBundlePreview) {
+      return;
+    }
+    downloadJsonFile(diagnosticsBundlePreview.fileName, diagnosticsBundlePreview.bundle);
+    setRuntimeHistoryMessage(
+      `Downloaded diagnostics bundle prepared at ${formatRuntimeTimestamp(
+        diagnosticsBundlePreview.exportedAt
+      )}.`
+    );
   };
 
   const clearRuntimeHistory = useCallback(async () => {
@@ -1989,11 +2021,11 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 </button>
                 <button
                   className="button-secondary button-compact"
-                  disabled={isExportingDiagnosticsBundle}
-                  onClick={() => void downloadDiagnosticsBundle()}
+                  disabled={isPreparingDiagnosticsBundle}
+                  onClick={() => void prepareDiagnosticsBundlePreview()}
                   type="button"
                 >
-                  {isExportingDiagnosticsBundle ? "Bundling" : "Diagnostics Bundle"}
+                  {isPreparingDiagnosticsBundle ? "Preparing" : "Preview Bundle"}
                 </button>
                 {isConfirmingHistoryClear && (
                   <button
@@ -2026,6 +2058,74 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
             </div>
             {runtimeHistoryMessage && (
               <p className="runtime-history-message">{runtimeHistoryMessage}</p>
+            )}
+            {diagnosticsBundlePreview && (
+              <div className="diagnostics-preview-panel">
+                <div className="diagnostics-preview-header">
+                  <div>
+                    <p className="panel-kicker">Diagnostics Preview</p>
+                    <h3>Review export contents</h3>
+                    <span>{diagnosticsBundlePreview.fileName}</span>
+                  </div>
+                  <button
+                    className="icon-button"
+                    onClick={() => setDiagnosticsBundlePreview(null)}
+                    title="Close diagnostics preview"
+                    type="button"
+                  >
+                    <i className="fas fa-xmark" aria-hidden="true" />
+                  </button>
+                </div>
+                <div className="diagnostics-preview-grid">
+                  <div>
+                    <span>Contract</span>
+                    <strong>
+                      {String(diagnosticsBundlePreview.bundle.contractVersion || "unknown")}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Runtime events</span>
+                    <strong>{diagnosticsBundlePreview.eventCount}</strong>
+                  </div>
+                  <div>
+                    <span>Prepared</span>
+                    <strong>{formatRuntimeTimestamp(diagnosticsBundlePreview.exportedAt)}</strong>
+                  </div>
+                  <div>
+                    <span>Sections</span>
+                    <strong>{Object.keys(diagnosticsBundlePreview.bundle).length}</strong>
+                  </div>
+                </div>
+                <div className="diagnostics-preview-redactions">
+                  <strong>Redaction check</strong>
+                  {diagnosticsBundlePreview.redactions.map((redaction) => (
+                    <span key={redaction}>
+                      <i className="fas fa-shield-halved" aria-hidden="true" />
+                      {redaction}
+                    </span>
+                  ))}
+                </div>
+                <details className="diagnostics-preview-details">
+                  <summary>Bundle section keys</summary>
+                  <code>{Object.keys(diagnosticsBundlePreview.bundle).join(", ")}</code>
+                </details>
+                <div className="diagnostics-preview-actions">
+                  <button
+                    className="button-primary button-compact"
+                    onClick={downloadDiagnosticsBundlePreview}
+                    type="button"
+                  >
+                    Download Bundle
+                  </button>
+                  <button
+                    className="button-secondary button-compact"
+                    onClick={() => setDiagnosticsBundlePreview(null)}
+                    type="button"
+                  >
+                    Close Preview
+                  </button>
+                </div>
+              </div>
             )}
             <div className="runtime-history-filters" aria-label="Runtime history filters">
               {RUNTIME_HISTORY_FILTERS.map((filter) => (

@@ -37,6 +37,7 @@ const files = {
   ),
   mockData: await readFile(new URL("../src/mocks/foundryMockData.ts", import.meta.url), "utf8"),
   app: await readFile(new URL("../src/App.tsx", import.meta.url), "utf8"),
+  styles: await readFile(new URL("../src/App.css", import.meta.url), "utf8"),
 };
 
 const assertIncludes = (source, expected, message) => {
@@ -327,18 +328,33 @@ assertIncludes(
 );
 assertIncludes(
   files.construct,
-  "Diagnostics Bundle",
-  "Construct runtime history can export a diagnostics bundle"
+  "Preview Bundle",
+  "Construct runtime history can preview a diagnostics bundle"
 );
 assertIncludes(
   files.construct,
-  "downloadDiagnosticsBundle",
-  "Construct workbench can assemble support diagnostics"
+  "prepareDiagnosticsBundlePreview",
+  "Construct workbench can assemble support diagnostics before download"
 );
 assertIncludes(
   files.construct,
   "foundry-construct-diagnostics-",
   "Diagnostics bundle uses a stable filename"
+);
+assertIncludes(
+  files.construct,
+  "Review export contents",
+  "Diagnostics bundle shows an in-app preview before download"
+);
+assertIncludes(
+  files.construct,
+  "Download Bundle",
+  "Diagnostics bundle preview controls the download action"
+);
+assertIncludes(
+  files.styles,
+  ".diagnostics-preview-panel",
+  "Diagnostics preview panel is styled"
 );
 assertIncludes(
   files.construct,
