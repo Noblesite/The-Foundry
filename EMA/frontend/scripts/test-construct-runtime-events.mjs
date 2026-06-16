@@ -276,6 +276,11 @@ assertIncludes(
   "App stabilizes runtime changed callback to avoid repeated runtime refreshes"
 );
 assertIncludes(
+  files.app,
+  "inspector-learning-stack",
+  "App keeps right-rail learning widgets below runtime metrics"
+);
+assertIncludes(
   files.repository,
   "mockConstructRuntimeEvents",
   "Mock runtime event storage"

@@ -894,8 +894,10 @@ const App: React.FC = () => {
           runtime={constructRuntime}
           trainingMethod={settings.trainingMethod}
         />
-        <LayerVisualizer />
-        <TokenPreview text={`${settings.characterVoice} is ready to roll!`} />
+        <div className="inspector-learning-stack" aria-label="Contextual learning">
+          <LayerVisualizer />
+          <TokenPreview text={`${settings.characterVoice} is ready to roll!`} />
+        </div>
       </aside>
 
       <WorkshopCreateModal

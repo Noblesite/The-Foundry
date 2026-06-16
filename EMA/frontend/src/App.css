@@ -186,12 +186,22 @@ input[type="checkbox"] {
 }
 
 .foundry-inspector {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 1rem;
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
   padding: 1rem;
   border-left: 1px solid var(--border);
+}
+
+.inspector-learning-stack {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.1rem;
 }
 
 .panel-glass {
@@ -3962,6 +3972,17 @@ input[type="checkbox"] {
   display: grid;
   gap: 0.9rem;
   padding: 1rem;
+}
+
+.metrics-panel {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.inspector-learning-stack .layer-visualizer,
+.inspector-learning-stack .token-preview {
+  min-height: max-content;
 }
 
 .metric-list {
