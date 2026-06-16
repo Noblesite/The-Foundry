@@ -186,6 +186,21 @@ assertIncludes(
   "Construct workbench renders runtime memory release action"
 );
 assertIncludes(
+  files.construct,
+  "LOCAL_SMOKE_MODEL_ID",
+  "Construct smoke test uses a dedicated local smoke model"
+);
+assertIncludes(
+  files.construct,
+  "modelOverride: smokeModel",
+  "Construct smoke test loads the smoke model instead of saved heavy settings"
+);
+assertIncludes(
+  files.construct,
+  "Loading cached smoke model",
+  "Construct smoke test explains cached tiny model loading"
+);
+assertIncludes(
   files.repository,
   "mockConstructRuntimeEvents",
   "Mock runtime event storage"

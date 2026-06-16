@@ -57,6 +57,10 @@ interface ResponseInspection {
 type RuntimeLoadPhase = "idle" | "configuring" | "loading" | "ready" | "failed";
 type RuntimeSmokeStatus = "idle" | "loading" | "streaming" | "passed" | "failed";
 
+const LOCAL_SMOKE_MODEL_ID = "sshleifer/tiny-gpt2";
+const LOCAL_SMOKE_PROMPT =
+  "Runtime smoke test: reply with one short sentence from The Foundry.";
+
 const mergeRuntimeTimelineEvents = (
   current: ConstructRuntimeEvent[],
   incoming: ConstructRuntimeEvent[]
@@ -462,8 +466,9 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     }
   };
 
-  const loadCurrentRuntime = async (options?: { confirmCaution?: boolean }) => {
-    const targetModel = configuredModelTarget || runtimeLoadTarget || activeArtifact.baseModel;
+  const loadCurrentRuntime = async (options?: { confirmCaution?: boolean; modelOverride?: string }) => {
+    const targetModel =
+      options?.modelOverride || configuredModelTarget || runtimeLoadTarget || activeArtifact.baseModel;
     const preflight = await runRuntimePreflight(targetModel);
     const readiness = buildRuntimeReadinessSummary(preflight);
     if (!readiness.canLoad) {
@@ -847,23 +852,23 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   };
 
   const runRuntimeSmokeTest = async () => {
+    const smokeModel = LOCAL_SMOKE_MODEL_ID;
     setIsRuntimeBusy(true);
     setRuntimeSmokeStatus("loading");
-    setRuntimeSmokeMessage("Loading the current model into the Construct runtime.");
+    setRuntimeSmokeMessage(`Loading cached smoke model ${shortModelId(smokeModel)}.`);
     setError(null);
     addRuntimeTimelineEvent({
       type: "smoke",
       status: "running",
       title: "Smoke test started",
-      detail: "Construct will load the model and stream a short verification reply.",
+      detail: `Construct will load cached ${shortModelId(
+        smokeModel
+      )} and stream a short verification reply.`,
     });
     try {
-      await loadCurrentRuntime();
+      await loadCurrentRuntime({ modelOverride: smokeModel });
       setIsRuntimeBusy(false);
-      await sendMessage(
-        "Runtime smoke test: reply with one short sentence from The Foundry.",
-        { smokeTest: true }
-      );
+      await sendMessage(LOCAL_SMOKE_PROMPT, { smokeTest: true });
     } catch (runtimeError: unknown) {
       setRuntimeSmokeStatus("failed");
       setRuntimeLoadPhase("failed");
