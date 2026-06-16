@@ -162,6 +162,17 @@ const latestSmokeResultFromRuntimeEvents = (
   return null;
 };
 
+const findSmokeModelArchiveEntry = (archiveEntries: ModelArchiveEntry[]) =>
+  archiveEntries.find(
+    (entry) =>
+      entry.repoId === LOCAL_SMOKE_MODEL_ID ||
+      entry.localPath.endsWith("sshleifer-tiny-gpt2") ||
+      entry.localPath.endsWith("sshleifer/tiny-gpt2")
+  );
+
+const isModelArchiveEntryCached = (entry?: ModelArchiveEntry) =>
+  Boolean(entry?.localPath && (entry.status === "cached" || entry.status === "ready"));
+
 const mergeRuntimeTimelineEvents = (
   current: ConstructRuntimeEvent[],
   incoming: ConstructRuntimeEvent[]
@@ -1265,10 +1276,35 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
 
   const runRuntimeSmokeTest = async () => {
     const smokeModel = LOCAL_SMOKE_MODEL_ID;
+    if (!smokeModelCached) {
+      const detail =
+        "sshleifer/tiny-gpt2 is a tiny smoke-test model for proving download, preflight, load, streaming, and cleanup. It is not a quality benchmark.";
+      setRuntimeSmokeStatus("idle");
+      setRuntimeSmokeMessage("Preparing the tiny smoke-test model in Archive.");
+      addRuntimeTimelineEvent({
+        type: "smoke",
+        status: "info",
+        title: "Smoke model preparation requested",
+        detail,
+        modelId: smokeModel,
+      });
+      onPrepareModel?.({
+        type: "download-model",
+        label: "Prepare Smoke Model",
+        detail,
+        modelId: smokeModel,
+      });
+      return;
+    }
+
     const smokeStartedAt = performance.now();
     setIsRuntimeBusy(true);
     setRuntimeSmokeStatus("loading");
-    setRuntimeSmokeMessage(`Loading cached smoke model ${shortModelId(smokeModel)}.`);
+    setRuntimeSmokeMessage(
+      `Loading cached smoke model ${shortModelId(
+        smokeModel
+      )}. This verifies runtime wiring, not answer quality.`
+    );
     setRuntimeSmokeResult(null);
     setError(null);
     addRuntimeTimelineEvent({
@@ -1277,7 +1313,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       title: "Smoke test started",
       detail: `Construct will load cached ${shortModelId(
         smokeModel
-      )} and stream a short verification reply.`,
+      )}, stream a short verification reply, then clean memory.`,
     });
     try {
       await loadCurrentRuntime({ modelOverride: smokeModel });
@@ -1340,6 +1376,13 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
 
   const runtimeMemory = getRuntimeMemory(runtime);
   const loadedModel = getLoadedModelSnapshot(runtime);
+  const smokeArchiveEntry = findSmokeModelArchiveEntry(archiveEntries);
+  const smokeModelCached = isModelArchiveEntryCached(smokeArchiveEntry);
+  const smokeModelPreparing =
+    preparationActivity?.state === "downloading" ||
+    preparationActivity?.state === "routing" ||
+    preparationActivity?.state === "registering" ||
+    preparationActivity?.state === "handoff";
   const memoryCleanup = (runtime?.diagnostics?.memoryCleanup || {}) as Record<string, unknown>;
   const memoryCleanupStatus =
     typeof memoryCleanup.status === "string" ? memoryCleanup.status : "idle";
@@ -1420,8 +1463,24 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     isSending ||
     isPreflightingRuntime ||
     isReleasingMemory ||
-    readinessBlocksLoad ||
-    readinessNeedsConfirmation;
+    smokeModelPreparing ||
+    (smokeModelCached && (readinessBlocksLoad || readinessNeedsConfirmation));
+  const smokeButtonLabel = smokeModelPreparing
+    ? "Preparing"
+    : !smokeModelCached
+    ? "Prepare Smoke Model"
+    : runtimeSmokeStatus === "loading"
+    ? "Loading"
+    : runtimeSmokeStatus === "streaming"
+    ? "Streaming"
+    : "Run Smoke Test";
+  const smokeButtonTitle = !smokeModelCached
+    ? "Download the tiny smoke-test model into Archive before loading it."
+    : readinessBlocksLoad
+    ? "Readiness checks blocked loading."
+    : readinessNeedsConfirmation
+    ? "Load with caution must be confirmed before smoke testing."
+    : "Load the runtime and stream a smoke-test prompt.";
   const loadButtonLabel = isRuntimeBusy
     ? runtimePhaseLabel
     : readinessBlocksLoad
@@ -1802,26 +1861,21 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 <div>
                   <strong>Runtime Smoke Test</strong>
                   <span>{runtimeSmokeMessage}</span>
+                  <small>
+                    Uses {LOCAL_SMOKE_MODEL_ID} to verify Archive download, preflight, load,
+                    streaming, and cleanup. It is not a response-quality benchmark.
+                  </small>
+                  <em>{smokeModelCached ? "Smoke model cached" : "Smoke model not cached"}</em>
                 </div>
                 <button
                   className="button-primary button-compact"
                   disabled={smokeButtonDisabled}
                   onClick={() => void runRuntimeSmokeTest()}
-                  title={
-                    readinessBlocksLoad
-                      ? "Readiness checks blocked loading."
-                      : readinessNeedsConfirmation
-                      ? "Load with caution must be confirmed before smoke testing."
-                      : "Load the runtime and stream a smoke-test prompt."
-                  }
+                  title={smokeButtonTitle}
                   type="button"
                 >
                   <i className="fas fa-bolt" aria-hidden="true" />
-                  {runtimeSmokeStatus === "loading"
-                    ? "Loading"
-                    : runtimeSmokeStatus === "streaming"
-                    ? "Streaming"
-                    : "Run Smoke Test"}
+                  {smokeButtonLabel}
                 </button>
               </div>
               {runtimeSmokeResult && (

@@ -218,6 +218,26 @@ assertIncludes(
 );
 assertIncludes(
   files.construct,
+  "Prepare Smoke Model",
+  "Construct smoke test can prepare the tiny model before running"
+);
+assertIncludes(
+  files.construct,
+  "smokeModelCached",
+  "Construct smoke test is gated on Archive cache state"
+);
+assertIncludes(
+  files.construct,
+  "It is not a response-quality benchmark.",
+  "Construct smoke model is clearly explained as a wiring test"
+);
+assertIncludes(
+  files.construct,
+  "type: \"download-model\"",
+  "Construct smoke test can queue Archive model download"
+);
+assertIncludes(
+  files.construct,
   "modelOverride: smokeModel",
   "Construct smoke test loads the smoke model instead of saved heavy settings"
 );

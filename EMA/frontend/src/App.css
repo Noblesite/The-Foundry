@@ -1875,15 +1875,33 @@ input[type="checkbox"] {
 }
 
 .runtime-smoke-card strong,
-.runtime-smoke-card span {
+.runtime-smoke-card span,
+.runtime-smoke-card small,
+.runtime-smoke-card em {
   display: block;
 }
 
-.runtime-smoke-card span {
+.runtime-smoke-card span,
+.runtime-smoke-card small {
   margin-top: 0.18rem;
   color: var(--text-secondary);
   font-size: 0.76rem;
   line-height: 1.45;
+}
+
+.runtime-smoke-card small {
+  color: var(--text-muted);
+}
+
+.runtime-smoke-card em {
+  width: fit-content;
+  margin-top: 0.42rem;
+  padding: 0.18rem 0.44rem;
+  border: 1px solid rgba(0, 212, 255, 0.22);
+  border-radius: 999px;
+  color: var(--arc-blue);
+  font-size: 0.68rem;
+  font-style: normal;
 }
 
 .runtime-smoke-card.smoke-loading,
