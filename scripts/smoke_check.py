@@ -219,8 +219,12 @@ def run_construct_runtime_event_contract_check() -> int:
 
     required_service_patterns = (
         "_runtime_events",
+        "construct_runtime_events",
+        "DEFAULT_CATALOG_DB_PATH",
         "list_runtime_events",
         "record_runtime_event",
+        "_persist_runtime_event",
+        "_list_persisted_runtime_events",
         "\"source\": source",
         "\"metadata\": metadata or {}",
         "event_type=\"preflight\"",

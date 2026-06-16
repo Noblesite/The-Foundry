@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import gc
+import json
 import os
 from queue import Empty
 import re
+import sqlite3
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -15,6 +17,7 @@ from uuid import uuid4
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_MODEL_ARCHIVE_DIR = BASE_DIR / "runtime" / "models" / "huggingface"
+DEFAULT_CATALOG_DB_PATH = BASE_DIR / "runtime" / "foundry_catalog.db"
 
 
 @dataclass
@@ -44,6 +47,9 @@ class ConstructInferenceService:
         self.archive_dir = Path(
             os.getenv("FOUNDRY_MODEL_ARCHIVE_DIR", str(DEFAULT_MODEL_ARCHIVE_DIR))
         )
+        self.runtime_event_db_path = Path(
+            os.getenv("FOUNDRY_CATALOG_DB_PATH", str(DEFAULT_CATALOG_DB_PATH))
+        )
         self.allow_remote_model_download = (
             os.getenv("FOUNDRY_CONSTRUCT_ALLOW_REMOTE_MODEL_DOWNLOAD", "0").strip().lower()
             in {"1", "true", "yes"}
@@ -71,6 +77,7 @@ class ConstructInferenceService:
             "cacheSizeBefore": 0,
             "cacheSizeAfter": 0,
         }
+        self._initialize_runtime_event_store()
 
     def describe_runtime(self) -> InferenceRuntime:
         active_loaded_model_id = (
@@ -123,6 +130,9 @@ class ConstructInferenceService:
         }
 
     def list_runtime_events(self) -> list[Dict[str, Any]]:
+        persisted_events = self._list_persisted_runtime_events()
+        if persisted_events is not None:
+            return persisted_events
         return list(self._runtime_events)
 
     def record_runtime_event(
@@ -166,7 +176,132 @@ class ConstructInferenceService:
             "metadata": metadata or {},
         }
         self._runtime_events = [event, *self._runtime_events][:50]
+        self._persist_runtime_event(event)
         return event
+
+    def _connect_runtime_event_store(self) -> sqlite3.Connection:
+        self.runtime_event_db_path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(self.runtime_event_db_path)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA journal_mode = WAL")
+        return connection
+
+    def _initialize_runtime_event_store(self) -> None:
+        try:
+            with self._connect_runtime_event_store() as connection:
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS construct_runtime_events (
+                        id TEXT PRIMARY KEY,
+                        type TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        detail TEXT NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        construct_id TEXT,
+                        artifact_id TEXT,
+                        model_id TEXT,
+                        runtime_status TEXT,
+                        source TEXT NOT NULL,
+                        metadata_json TEXT NOT NULL DEFAULT '{}',
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_construct_runtime_events_recent
+                    ON construct_runtime_events(created_at DESC, timestamp DESC)
+                    """
+                )
+        except sqlite3.Error:
+            return
+
+    def _persist_runtime_event(self, event: Dict[str, Any]) -> None:
+        try:
+            with self._connect_runtime_event_store() as connection:
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO construct_runtime_events (
+                        id,
+                        type,
+                        status,
+                        title,
+                        detail,
+                        timestamp,
+                        construct_id,
+                        artifact_id,
+                        model_id,
+                        runtime_status,
+                        source,
+                        metadata_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        event["id"],
+                        event["type"],
+                        event["status"],
+                        event["title"],
+                        event["detail"],
+                        event["timestamp"],
+                        event.get("constructId"),
+                        event.get("artifactId"),
+                        event.get("modelId"),
+                        event.get("runtimeStatus"),
+                        event["source"],
+                        json.dumps(event.get("metadata") or {}),
+                    ),
+                )
+        except (sqlite3.Error, TypeError, ValueError):
+            return
+
+    def _list_persisted_runtime_events(self) -> Optional[list[Dict[str, Any]]]:
+        try:
+            with self._connect_runtime_event_store() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT
+                        id,
+                        type,
+                        status,
+                        title,
+                        detail,
+                        timestamp,
+                        construct_id,
+                        artifact_id,
+                        model_id,
+                        runtime_status,
+                        source,
+                        metadata_json
+                    FROM construct_runtime_events
+                    ORDER BY created_at DESC, timestamp DESC
+                    LIMIT 50
+                    """
+                ).fetchall()
+            return [self._runtime_event_from_row(row) for row in rows]
+        except sqlite3.Error:
+            return None
+
+    def _runtime_event_from_row(self, row: sqlite3.Row) -> Dict[str, Any]:
+        try:
+            metadata = json.loads(row["metadata_json"] or "{}")
+        except (TypeError, ValueError):
+            metadata = {}
+        return {
+            "id": row["id"],
+            "type": row["type"],
+            "status": row["status"],
+            "title": row["title"],
+            "detail": row["detail"],
+            "timestamp": row["timestamp"],
+            "constructId": row["construct_id"],
+            "artifactId": row["artifact_id"],
+            "modelId": row["model_id"],
+            "runtimeStatus": row["runtime_status"],
+            "source": row["source"],
+            "metadata": metadata if isinstance(metadata, dict) else {},
+        }
 
     async def configure(
         self,
