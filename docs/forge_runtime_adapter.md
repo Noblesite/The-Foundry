@@ -65,6 +65,18 @@ The preflight checks runtime mode, dependency availability, LoRA-only settings,
 JSONL Material validity, tiny proof row count, cached Archive model path, and a
 conservative memory estimate.
 
+For an end-to-end local proof, use:
+
+```text
+.venv/bin/python scripts/run_local_forge_smoke.py
+.venv/bin/python scripts/run_local_forge_smoke.py --run
+```
+
+The first command creates a one-row JSONL Material, queues a LoRA Forge, and
+prints the preflight result. The second command runs the trainer only after the
+same preflight passes. Cache `sshleifer/tiny-gpt2` in the Archive before using
+`--run`.
+
 For older rows or interrupted local development runs, the drawer can reconcile
 worker state. Reconciliation rebuilds the training contract from catalog data,
 validates the JSONL Material, and restores worker metrics/events without

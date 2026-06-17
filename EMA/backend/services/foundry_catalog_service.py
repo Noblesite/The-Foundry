@@ -2426,13 +2426,21 @@ class FoundryCatalogService:
                 artifact_id=artifact["id"] if artifact else None,
             )
 
-    async def ensure_artifact_for_completed_forge(self, forge_run_id: str) -> Dict[str, Any]:
+    async def ensure_artifact_for_completed_forge(
+        self,
+        forge_run_id: str,
+        adapter_path: Optional[str] = None,
+    ) -> Dict[str, Any]:
         async with self._write_lock:
             return await self._run_query(
-                lambda: self._ensure_artifact_for_completed_forge_sync(forge_run_id)
+                lambda: self._ensure_artifact_for_completed_forge_sync(forge_run_id, adapter_path)
             )
 
-    def _ensure_artifact_for_completed_forge_sync(self, forge_run_id: str) -> Dict[str, Any]:
+    def _ensure_artifact_for_completed_forge_sync(
+        self,
+        forge_run_id: str,
+        adapter_path: Optional[str],
+    ) -> Dict[str, Any]:
         with self._connect() as connection:
             row = connection.execute(
                 "SELECT * FROM forge_runs WHERE id = ?",
@@ -2445,20 +2453,28 @@ class FoundryCatalogService:
             if row["purpose"] == "evaluation":
                 raise ValueError("Evaluation Forges do not create Artifacts.")
 
-            artifact = self._ensure_artifact_for_forge(connection, row)
+            artifact = self._ensure_artifact_for_forge(connection, row, adapter_path=adapter_path)
             updated = connection.execute(
                 "SELECT * FROM forge_runs WHERE id = ?",
                 (forge_run_id,),
             ).fetchone()
             return self._forge_run_from_row(updated, artifact_id=artifact["id"])
 
-    async def complete_forge_from_worker(self, forge_run_id: str) -> Dict[str, Any]:
+    async def complete_forge_from_worker(
+        self,
+        forge_run_id: str,
+        adapter_path: Optional[str] = None,
+    ) -> Dict[str, Any]:
         async with self._write_lock:
             return await self._run_query(
-                lambda: self._complete_forge_from_worker_sync(forge_run_id)
+                lambda: self._complete_forge_from_worker_sync(forge_run_id, adapter_path)
             )
 
-    def _complete_forge_from_worker_sync(self, forge_run_id: str) -> Dict[str, Any]:
+    def _complete_forge_from_worker_sync(
+        self,
+        forge_run_id: str,
+        adapter_path: Optional[str],
+    ) -> Dict[str, Any]:
         with self._connect() as connection:
             row = connection.execute(
                 "SELECT * FROM forge_runs WHERE id = ?",
@@ -2497,7 +2513,7 @@ class FoundryCatalogService:
                 "SELECT * FROM forge_runs WHERE id = ?",
                 (forge_run_id,),
             ).fetchone()
-            artifact = self._ensure_artifact_for_forge(connection, updated)
+            artifact = self._ensure_artifact_for_forge(connection, updated, adapter_path=adapter_path)
             return self._forge_run_from_row(updated, artifact_id=artifact["id"])
 
     def _forge_progress_step(self, epoch_total: int) -> int:
@@ -2507,12 +2523,26 @@ class FoundryCatalogService:
         self,
         connection: sqlite3.Connection,
         forge_run: sqlite3.Row,
+        adapter_path: Optional[str] = None,
     ) -> sqlite3.Row:
         existing = connection.execute(
             "SELECT * FROM artifacts WHERE forge_run_id = ?",
             (forge_run["id"],),
         ).fetchone()
         if existing is not None:
+            if adapter_path and existing["adapter_path"] != adapter_path:
+                connection.execute(
+                    """
+                    UPDATE artifacts
+                    SET adapter_path = ?
+                    WHERE id = ?
+                    """,
+                    (adapter_path, existing["id"]),
+                )
+                return connection.execute(
+                    "SELECT * FROM artifacts WHERE id = ?",
+                    (existing["id"],),
+                ).fetchone()
             return existing
 
         workshop = connection.execute(
@@ -2543,7 +2573,7 @@ class FoundryCatalogService:
                 adapter_name,
                 version,
                 forge_run["base_model"] or "unknown",
-                f"runtime/artifacts/{artifact_id}/adapter",
+                adapter_path or f"runtime/artifacts/{artifact_id}/adapter",
                 "ready",
                 forge_run["method"],
                 0,

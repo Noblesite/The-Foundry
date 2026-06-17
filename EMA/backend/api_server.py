@@ -1006,7 +1006,10 @@ async def reconcile_foundry_forge_worker_endpoint(forge_run_id: str):
             material=material,
         )
         if forge["status"] == "completed" and forge.get("purpose") != "evaluation":
-            forge = await foundry_catalog_service.ensure_artifact_for_completed_forge(forge_run_id)
+            forge = await foundry_catalog_service.ensure_artifact_for_completed_forge(
+                forge_run_id,
+                adapter_path=state["metrics"].get("adapterPath"),
+            )
             state["forgeRun"] = forge
         return api_envelope(state)
     except ValueError as error:
@@ -1051,7 +1054,10 @@ async def run_local_foundry_forge_worker_endpoint(forge_run_id: str):
         )
         state = await asyncio.to_thread(forge_training_service.execute_local_training, contract)
         if state["metrics"].get("status") == "completed":
-            forge = await foundry_catalog_service.complete_forge_from_worker(forge_run_id)
+            forge = await foundry_catalog_service.complete_forge_from_worker(
+                forge_run_id,
+                adapter_path=state["metrics"].get("adapterPath"),
+            )
             state["forgeRun"] = forge
         return api_envelope(state)
     except ValueError as error:

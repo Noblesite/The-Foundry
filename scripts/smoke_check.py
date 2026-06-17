@@ -119,8 +119,10 @@ def run_api_transport_boundary_check() -> int:
 def run_forge_adapter_boundary_check() -> int:
     api_server = PACKAGE_ROOT / "backend" / "api_server.py"
     forge_service = PACKAGE_ROOT / "backend" / "services" / "forge_training_service.py"
+    smoke_script = REPO_ROOT / "scripts" / "run_local_forge_smoke.py"
     api_source = api_server.read_text(encoding="utf-8")
     service_source = forge_service.read_text(encoding="utf-8")
+    smoke_source = smoke_script.read_text(encoding="utf-8")
 
     required_api_patterns = (
         "ForgeTrainingService",
@@ -131,6 +133,7 @@ def run_forge_adapter_boundary_check() -> int:
         "worker/preflight-local",
         "worker/run-local",
         "complete_forge_from_worker",
+        "adapter_path=state[\"metrics\"].get(\"adapterPath\")",
     )
     missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
     if missing_api:
@@ -162,6 +165,23 @@ def run_forge_adapter_boundary_check() -> int:
         return fail(
             "ForgeTrainingService contract markers are missing: "
             + ", ".join(missing_service)
+        )
+
+    required_smoke_patterns = (
+        "SMOKE_MODEL_ID = \"sshleifer/tiny-gpt2\"",
+        "local-forge-smoke.jsonl",
+        "preflight_local_training",
+        "complete_forge_from_worker",
+        "adapter_path=worker_state[\"metrics\"].get(\"adapterPath\")",
+        "parser.add_argument(\n        \"--run\"",
+    )
+    missing_smoke = [
+        pattern for pattern in required_smoke_patterns if pattern not in smoke_source
+    ]
+    if missing_smoke:
+        return fail(
+            "Local Forge smoke script markers are missing: "
+            + ", ".join(missing_smoke)
         )
 
     print("OK: Forge runtime adapter contract is present.")
