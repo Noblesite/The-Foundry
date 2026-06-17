@@ -3,13 +3,18 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Callable
 from datetime import datetime, timezone
 from dataclasses import dataclass
+from hashlib import sha256
 from importlib.util import find_spec
 from typing import Any, Dict, List
 from uuid import uuid4
 
 from .qa_quality_service import QAQualityEvaluator
+
+QA_GENERATION_CONTRACT_VERSION = "foundry.qa-generation.v1"
+QA_PROMPT_TEMPLATE_VERSION = "foundry.qa-prompt.source-context.v1"
 
 
 @dataclass(frozen=True)
@@ -30,6 +35,7 @@ class QAGenerationService:
         self.max_new_tokens = int(os.getenv("FOUNDRY_QA_GENERATOR_MAX_NEW_TOKENS", "320"))
         self.temperature = float(os.getenv("FOUNDRY_QA_GENERATOR_TEMPERATURE", "0.2"))
         self.quality_evaluator = QAQualityEvaluator()
+        self._model_text_backend: Callable[[str, bool], str] | None = None
 
     def runtime_payload(self) -> Dict[str, Any]:
         transformers_available = find_spec("transformers") is not None
@@ -64,6 +70,13 @@ class QAGenerationService:
         self.max_new_tokens = max(24, min(2048, int(max_new_tokens)))
         self.temperature = max(0.0, min(1.5, float(temperature)))
         return self.runtime_payload()
+
+    def set_model_text_backend(
+        self,
+        backend: Callable[[str, bool], str] | None,
+    ) -> None:
+        """Inject a text-generation backend while preserving the public QA contract."""
+        self._model_text_backend = backend
 
     def smoke_proof(self) -> Dict[str, Any]:
         request = self._proof_request()
@@ -179,31 +192,8 @@ class QAGenerationService:
         request: QAGenerationRequest,
         local_files_only: bool = False,
     ) -> List[Dict[str, Any]]:
-        from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
-
-        tokenizer = AutoTokenizer.from_pretrained(
-            self.model_id,
-            local_files_only=local_files_only,
-        )
-        model = AutoModelForCausalLM.from_pretrained(
-            self.model_id,
-            local_files_only=local_files_only,
-        )
-
-        generator = pipeline(
-            "text-generation",
-            model=model,
-            tokenizer=tokenizer,
-            device=-1,
-        )
         prompt = self._prompt(request)
-        output = generator(
-            prompt,
-            max_new_tokens=self.max_new_tokens,
-            temperature=self.temperature,
-            do_sample=self.temperature > 0,
-            return_full_text=False,
-        )[0]["generated_text"]
+        output = self._generate_model_text(prompt, local_files_only=local_files_only)
         parsed = self._parse_model_rows(output)
         rows = []
         for index, row in enumerate(parsed[: request.qa_pair_count]):
@@ -223,6 +213,35 @@ class QAGenerationService:
                 )
             )
         return rows
+
+    def _generate_model_text(self, prompt: str, *, local_files_only: bool = False) -> str:
+        if self._model_text_backend:
+            return self._model_text_backend(prompt, local_files_only)
+
+        from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+
+        tokenizer = AutoTokenizer.from_pretrained(
+            self.model_id,
+            local_files_only=local_files_only,
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            self.model_id,
+            local_files_only=local_files_only,
+        )
+
+        generator = pipeline(
+            "text-generation",
+            model=model,
+            tokenizer=tokenizer,
+            device=-1,
+        )
+        return generator(
+            prompt,
+            max_new_tokens=self.max_new_tokens,
+            temperature=self.temperature,
+            do_sample=self.temperature > 0,
+            return_full_text=False,
+        )[0]["generated_text"]
 
     def _generate_deterministic(
         self,
@@ -268,11 +287,19 @@ class QAGenerationService:
         fallback_reason: str | None = None,
         requested_model_id: str | None = None,
     ) -> Dict[str, Any]:
+        prompt = self._prompt(request)
         metadata = {
-            "contractVersion": "foundry.qa-generation.v1",
+            "contractVersion": QA_GENERATION_CONTRACT_VERSION,
             "mode": self.mode,
+            "modelId": model_id,
             "strategy": strategy,
             "rowIndex": row_index,
+            "prompt": {
+                "templateVersion": QA_PROMPT_TEMPLATE_VERSION,
+                "fingerprint": sha256(prompt.encode("utf-8")).hexdigest()[:16],
+                "maxContextCharacters": 4000,
+                "requestedRows": request.qa_pair_count,
+            },
             "source": {
                 "chunkId": request.chunk_id,
                 "materialName": request.material_name,
@@ -299,6 +326,7 @@ class QAGenerationService:
             "You are The Foundry QA generator. Create high quality training examples "
             "from the source context. Return only JSON as an array of objects with "
             "question, answer, and confidence fields.\n\n"
+            f"Prompt template: {QA_PROMPT_TEMPLATE_VERSION}\n"
             f"Material: {request.material_name}\n"
             f"Material kind: {request.material_kind}\n"
             f"Requested rows: {request.qa_pair_count}\n"

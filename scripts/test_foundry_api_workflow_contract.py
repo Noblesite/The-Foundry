@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import warnings
+import json
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -139,6 +140,96 @@ def exercise_material_ingestion_formats(client: TestClient, workshop_id: str) ->
         assert item["expected"] in chunk_text
 
 
+def exercise_model_backed_qa_generation(
+    client: TestClient,
+    catalog: FoundryCatalogService,
+) -> None:
+    captured_prompts = []
+
+    def tiny_model_backend(prompt: str, local_files_only: bool) -> str:
+        captured_prompts.append(
+            {
+                "prompt": prompt,
+                "localFilesOnly": local_files_only,
+            }
+        )
+        return json.dumps(
+            [
+                {
+                    "question": "What rescue tool does Marshall use?",
+                    "answer": "Marshall uses a water cannon during rescues.",
+                    "confidence": 0.93,
+                }
+            ]
+        )
+
+    catalog.qa_generator.set_model_text_backend(tiny_model_backend)
+    runtime = assert_response(
+        client.post(
+            "/api/v1/assembly-line/qa-generator/runtime/configure",
+            json={
+                "mode": "transformers",
+                "modelId": "sshleifer/tiny-gpt2",
+                "maxNewTokens": 96,
+                "temperature": 0.0,
+            },
+        )
+    )
+    assert runtime["mode"] == "transformers"
+
+    workshop = assert_response(
+        client.post(
+            "/api/v1/workshops",
+            json={
+                "name": "Model Backed API Workshop",
+                "subject": "Foundry",
+                "voiceTarget": "Engineer",
+                "baseModel": "sshleifer/tiny-gpt2",
+            },
+        )
+    )
+    material = assert_response(
+        client.post(
+            f"/api/v1/workshops/{workshop['id']}/materials/import-file",
+            params={
+                "name": "Model Backed Notes",
+                "kind": "text",
+                "filename": "model-backed-notes.txt",
+            },
+            content=(
+                b"Marshall uses a water cannon during rescues. "
+                b"He helps Adventure Bay stay safe."
+            ),
+        )
+    )
+    assembly = assert_response(
+        client.post(
+            f"/api/v1/workshops/{workshop['id']}/assembly-lines",
+            json={
+                "materialSourceIds": [material["id"]],
+                "chunkSizeTokens": 128,
+                "chunkOverlapTokens": 0,
+                "qaPairsPerSource": 1,
+            },
+        )
+    )
+    qa_pairs = assert_response(
+        client.get(
+            f"/api/v1/workshops/{workshop['id']}/qa-pairs",
+            params={"runId": assembly["id"]},
+        )
+    )
+    assert qa_pairs and qa_pairs[0]["generatorModel"] == "sshleifer/tiny-gpt2"
+    assert qa_pairs[0]["confidence"] == 0.93
+    metadata = qa_pairs[0]["generationMetadata"]
+    assert metadata["mode"] == "transformers"
+    assert metadata["strategy"] == "model-json"
+    assert metadata["prompt"]["templateVersion"] == "foundry.qa-prompt.source-context.v1"
+    assert qa_pairs[0]["qualityGate"]["metrics"]["sourceOverlap"] > 0
+    assert captured_prompts
+    assert "Marshall uses a water cannon" in captured_prompts[0]["prompt"]
+
+
 def run_api_workflow(tmp_path: Path) -> None:
     runtime_root = catalog_module.BASE_DIR / "runtime" / "test-api-workflow" / tmp_path.name
     original_source_dir = catalog_module.DEFAULT_SOURCE_DIR
@@ -165,6 +256,8 @@ def run_api_workflow(tmp_path: Path) -> None:
 
     try:
         with TestClient(api_server.app) as client:
+            exercise_model_backed_qa_generation(client, isolated_catalog)
+
             runtime = assert_response(
                 client.post(
                     "/api/v1/assembly-line/qa-generator/runtime/configure",

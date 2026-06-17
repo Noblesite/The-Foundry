@@ -24,7 +24,7 @@ This is the short steering list. If a task does not support one of these items, 
 ### Critical Path
 
 - [x] Prove real local file ingestion for text, markdown, CSV, JSONL, and one non-scanned PDF path.
-- [ ] Prove model-backed QA generation with source-aware prompt templates and visible quality metadata.
+- [x] Prove model-backed QA generation with source-aware prompt templates and visible quality metadata.
 - [ ] Implement one tiny local LoRA trainer adapter behind the existing Forge runtime boundary.
 - [ ] Make real Forge completion create a verified Artifact backed by output files.
 - [ ] Prove one cached small-model Construct streaming path without silent fallback.
@@ -57,6 +57,7 @@ The project already has a strong product shell:
 - FastAPI `/api/v1` contracts for the main workflow.
 - SQLite catalog persistence for Workshops, Materials, Assembly Lines, QA pairs, Forges, Artifacts, Constructs, Trials, model Archive entries, download jobs, and runtime validations.
 - QA review/export paths that create JSONL Materials.
+- Model-backed QA generation contract proof with explicit prompt-template metadata, source fingerprints, visible quality metrics, and deterministic fallback.
 - Real local file extraction for text/markdown, CSV, JSONL/NDJSON, and text-based PDFs through service-level and FastAPI workflow rehearsals.
 - Forge contracts, runtime event files, worker reconciliation, simulated progress, and automatic Artifact metadata for completed training simulations.
 - Hugging Face search, auth test, model preflight, download jobs, Archive cataloging, and local cache tracking.

@@ -329,6 +329,7 @@ def run_material_import_contract_check() -> int:
 
     required_qa_generator_patterns = (
         "foundry.qa-generation.v1",
+        "foundry.qa-prompt.source-context.v1",
         "foundry.qa-generator.runtime.v1",
         "foundry.qa-generator.smoke-proof.v1",
         "foundry.qa-generator.quality-proof.v1",
@@ -337,7 +338,9 @@ def run_material_import_contract_check() -> int:
         "smoke_proof",
         "quality_proof",
         "configure",
+        "set_model_text_backend",
         "_generate_with_transformers",
+        "_generate_model_text",
         "_generate_deterministic",
         "fallbackReason",
         "confidence",

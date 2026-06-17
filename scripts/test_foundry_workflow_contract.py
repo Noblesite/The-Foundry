@@ -111,6 +111,73 @@ async def exercise_material_ingestion_formats(
         assert material["expected"] in chunk_text
 
 
+async def exercise_model_backed_qa_generation(
+    catalog: FoundryCatalogService,
+    workshop_id: str,
+) -> None:
+    captured_prompts = []
+
+    def tiny_model_backend(prompt: str, local_files_only: bool) -> str:
+        captured_prompts.append(
+            {
+                "prompt": prompt,
+                "localFilesOnly": local_files_only,
+            }
+        )
+        return json.dumps(
+            [
+                {
+                    "question": "What rescue tool does Marshall use?",
+                    "answer": "Marshall uses a water cannon during rescues.",
+                    "confidence": 0.93,
+                }
+            ]
+        )
+
+    catalog.qa_generator.set_model_text_backend(tiny_model_backend)
+    catalog.qa_generator.configure(
+        mode="transformers",
+        model_id="sshleifer/tiny-gpt2",
+        max_new_tokens=96,
+        temperature=0.0,
+    )
+
+    material = await catalog.import_material_file(
+        workshop_id=workshop_id,
+        name="Model Backed Notes",
+        kind="text",
+        filename="model-backed-notes.txt",
+        content=(
+            b"Marshall uses a water cannon during rescues. "
+            b"He helps Adventure Bay stay safe."
+        ),
+    )
+    assembly = await catalog.start_assembly_line(
+        workshop_id=workshop_id,
+        material_source_ids=[material["id"]],
+        chunk_size_tokens=128,
+        chunk_overlap_tokens=0,
+        qa_pairs_per_source=1,
+    )
+    qa_pairs = await catalog.list_qa_pairs(workshop_id, assembly["id"])
+    assert qa_pairs and qa_pairs[0]["generatorModel"] == "sshleifer/tiny-gpt2"
+    assert qa_pairs[0]["confidence"] == 0.93
+    metadata = qa_pairs[0]["generationMetadata"]
+    assert metadata["contractVersion"] == "foundry.qa-generation.v1"
+    assert metadata["mode"] == "transformers"
+    assert metadata["strategy"] == "model-json"
+    assert metadata["prompt"]["templateVersion"] == "foundry.qa-prompt.source-context.v1"
+    assert metadata["prompt"]["fingerprint"]
+    assert metadata["source"]["chunkId"] == qa_pairs[0]["chunkId"]
+    assert qa_pairs[0]["qualityGate"]["metrics"]["sourceOverlap"] > 0
+    assert captured_prompts
+    assert (
+        "Prompt template: foundry.qa-prompt.source-context.v1"
+        in captured_prompts[0]["prompt"]
+    )
+    assert "Marshall uses a water cannon" in captured_prompts[0]["prompt"]
+
+
 async def exercise_workflow(tmp_path: Path) -> None:
     runtime_root = catalog_module.BASE_DIR / "runtime" / "test-workflow" / tmp_path.name
     catalog_module.DEFAULT_SOURCE_DIR = runtime_root / "sources"
@@ -153,6 +220,13 @@ async def _exercise_workflow(tmp_path: Path) -> None:
         base_model="sshleifer/tiny-gpt2",
     )
     await exercise_material_ingestion_formats(catalog, workshop["id"])
+    await exercise_model_backed_qa_generation(catalog, workshop["id"])
+    catalog.qa_generator.configure(
+        mode="deterministic",
+        model_id="sshleifer/tiny-gpt2",
+        max_new_tokens=128,
+        temperature=0.1,
+    )
 
     material = await catalog.import_material_file(
         workshop_id=workshop["id"],
