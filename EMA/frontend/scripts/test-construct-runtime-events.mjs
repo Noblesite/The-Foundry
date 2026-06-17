@@ -317,6 +317,26 @@ assertIncludes(
 );
 assertIncludes(
   files.contracts,
+  "runLocalForgeWorker:",
+  "Frontend contract exposes local Forge worker route"
+);
+assertIncludes(
+  files.repository,
+  "runLocalForgeWorker:",
+  "Repository exposes local Forge worker execution"
+);
+assertIncludes(
+  files.domain,
+  "local_training_completed",
+  "Forge event contract includes local training completion"
+);
+assertIncludes(
+  files.forge,
+  "Run Local Trainer",
+  "Forge workbench can launch the local trainer adapter"
+);
+assertIncludes(
+  files.contracts,
   "releaseConstructRuntimeMemory:",
   "Frontend contract exposes runtime memory release route"
 );

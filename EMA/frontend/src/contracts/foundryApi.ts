@@ -65,6 +65,8 @@ export const foundryApiRoutes = {
   forgeEvents: (forgeRunId: string) => `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/events`,
   reconcileForgeWorker: (forgeRunId: string) =>
     `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/worker/reconcile`,
+  runLocalForgeWorker: (forgeRunId: string) =>
+    `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/worker/run-local`,
   simulateForgeRun: (forgeRunId: string) =>
     `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/simulate`,
   exportEvaluationWeakSamples: (forgeRunId: string) =>

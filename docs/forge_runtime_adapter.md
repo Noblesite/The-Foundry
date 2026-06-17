@@ -55,6 +55,11 @@ so local demos can exercise the full Material -> Forge -> Artifact loop.
 Completed Forges can hand their Artifact directly to Construct; older completed
 rows without Artifact metadata are repaired before the Construct load.
 
+The worker detail drawer can also run the explicit local trainer adapter when
+the Forge runtime is configured to `local` and dependencies are ready. This is
+an opt-in operator action because it can load models and use CPU, GPU, or Apple
+Metal memory.
+
 For older rows or interrupted local development runs, the drawer can reconcile
 worker state. Reconciliation rebuilds the training contract from catalog data,
 validates the JSONL Material, and restores worker metrics/events without
@@ -79,9 +84,11 @@ complete without downloading models or requiring GPU packages.
 
 `local`
 
-The adapter checks whether baseline local-training dependencies are importable.
-It does not launch training yet. This mode is the staging point for a future
-worker that will execute the same contract with real LoRA/QLoRA code.
+The adapter checks whether baseline local-training dependencies are importable
+and can execute tiny LoRA jobs from the durable Forge contract. The MVP trainer
+requires a cached Archive model path unless
+`FOUNDRY_FORGE_ALLOW_REMOTE_MODEL_DOWNLOAD=1` is set. QLoRA and 4-bit loading
+remain guarded until the dedicated quantized trainer path lands.
 
 ## API Surface
 
@@ -91,6 +98,7 @@ POST /api/v1/forges/runtime/configure
 GET  /api/v1/forges/{forge_run_id}/contract
 GET  /api/v1/forges/{forge_run_id}/events
 POST /api/v1/forges/{forge_run_id}/worker/reconcile
+POST /api/v1/forges/{forge_run_id}/worker/run-local
 POST /api/v1/workshops/{workshop_id}/forges
 POST /api/v1/forges/{forge_run_id}/simulate
 ```

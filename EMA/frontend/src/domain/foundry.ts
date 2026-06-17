@@ -220,6 +220,10 @@ export interface ForgeEvent {
     | "epoch_started"
     | "step_completed"
     | "artifact_planned"
+    | "local_training_started"
+    | "adapter_saved"
+    | "local_training_completed"
+    | "local_training_failed"
     | "completed";
   message: string;
   timestamp: string;

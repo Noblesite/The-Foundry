@@ -119,6 +119,13 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     assert state["validation"]["rowCount"] == 1
     assert (forge_module.DEFAULT_FORGE_RUNTIME_DIR / forge_run["id"] / "contract.json").exists()
 
+    try:
+        forge.execute_local_training(contract)
+    except ValueError as error:
+        assert "runtime to local" in str(error)
+    else:
+        raise AssertionError("Local trainer should be gated behind local runtime mode.")
+
 
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp_dir:

@@ -2452,6 +2452,54 @@ class FoundryCatalogService:
             ).fetchone()
             return self._forge_run_from_row(updated, artifact_id=artifact["id"])
 
+    async def complete_forge_from_worker(self, forge_run_id: str) -> Dict[str, Any]:
+        async with self._write_lock:
+            return await self._run_query(
+                lambda: self._complete_forge_from_worker_sync(forge_run_id)
+            )
+
+    def _complete_forge_from_worker_sync(self, forge_run_id: str) -> Dict[str, Any]:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM forge_runs WHERE id = ?",
+                (forge_run_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"Forge {forge_run_id} was not found.")
+            if row["purpose"] == "evaluation":
+                raise ValueError("Evaluation Forges cannot be completed by the local trainer.")
+            if row["status"] == "failed":
+                raise ValueError("Failed Forges cannot be completed by the local trainer.")
+
+            epoch_total = max(1, row["epoch_total"] or 1)
+            connection.execute(
+                """
+                UPDATE forge_runs
+                SET status = 'completed',
+                    progress = 100,
+                    epoch_current = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (epoch_total, forge_run_id),
+            )
+            connection.execute(
+                """
+                UPDATE workshops
+                SET status = 'ready',
+                    progress = CASE WHEN progress < 72 THEN 72 ELSE progress END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (row["workshop_id"],),
+            )
+            updated = connection.execute(
+                "SELECT * FROM forge_runs WHERE id = ?",
+                (forge_run_id,),
+            ).fetchone()
+            artifact = self._ensure_artifact_for_forge(connection, updated)
+            return self._forge_run_from_row(updated, artifact_id=artifact["id"])
+
     def _forge_progress_step(self, epoch_total: int) -> int:
         return max(10, min(28, round(100 / max(3, epoch_total * 2))))
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,9 +29,9 @@ class ForgeTrainingService:
     """
     Owns the Forge runtime boundary.
 
-    The public app defaults to a deterministic simulator. The local runtime is a
-    contract probe for the future LoRA/QLoRA worker; it reports dependency
-    readiness without launching expensive model training inside FastAPI.
+    The public app defaults to a deterministic simulator. The local runtime is
+    an explicit worker adapter that can execute tiny LoRA jobs from the same
+    durable contract the simulator consumes.
     """
 
     def __init__(self) -> None:
@@ -62,16 +63,16 @@ class ForgeTrainingService:
                 ),
                 worker=self.worker,
                 ready=False,
-                supportsMethods=["LoRA", "QLoRA"],
+                supportsMethods=["LoRA"],
             )
 
         return ForgeRuntime(
             mode="local",
             status="ready",
-            detail="Local trainer adapter dependencies are importable.",
+            detail="Local trainer adapter can execute tiny LoRA jobs from Forge contracts.",
             worker=self.worker,
             ready=True,
-            supportsMethods=["LoRA", "QLoRA"],
+            supportsMethods=["LoRA"],
         )
 
     def runtime_payload(self) -> Dict[str, Any]:
@@ -198,6 +199,206 @@ class ForgeTrainingService:
             state["events"] = self.list_events(forge_run["id"])
             state["metrics"] = metrics
         return state
+
+    def execute_local_training(self, contract: Dict[str, Any]) -> Dict[str, Any]:
+        forge_run_id = contract["forgeRunId"]
+        runtime = self.describe_runtime()
+        if runtime.mode != "local":
+            raise ValueError("Set the Forge runtime to local before running the local trainer.")
+        if not runtime.ready:
+            raise ValueError(runtime.detail)
+        if contract.get("purpose", "training") != "training":
+            raise ValueError("Local trainer only supports training Forges.")
+        if contract.get("method") == "QLoRA" or contract.get("loadIn4Bit"):
+            raise ValueError(
+                "QLoRA and 4-bit loading are not enabled in the tiny local trainer yet. "
+                "Use LoRA with 4-bit disabled for the MVP trainer path."
+            )
+
+        state = self.initialize_contract(contract)
+        validation = state["validation"]
+        if not validation["valid"]:
+            return state
+
+        try:
+            self._append_event(
+                forge_run_id,
+                "local_training_started",
+                "Local trainer started from the durable Forge contract.",
+                progress=10,
+                data={
+                    "baseModel": contract["baseModel"],
+                    "method": contract["method"],
+                    "worker": self.worker,
+                },
+            )
+            result = self._run_lora_training(contract, validation)
+            self._append_event(
+                forge_run_id,
+                "adapter_saved",
+                "Local LoRA adapter was saved to the contract output directory.",
+                progress=96,
+                data={
+                    "adapterPath": result["adapterPath"],
+                    "outputDir": contract["outputDir"],
+                },
+            )
+            self._append_event(
+                forge_run_id,
+                "local_training_completed",
+                "Local LoRA training completed and Artifact metadata can be created.",
+                progress=100,
+                epoch={"current": contract["epochs"], "total": contract["epochs"]},
+                data=result,
+            )
+            self._write_metrics(
+                forge_run_id,
+                {
+                    "forgeRunId": forge_run_id,
+                    "status": "completed",
+                    "progress": 100,
+                    "datasetRows": validation.get("rowCount", 0),
+                    "lastEvent": "local_training_completed",
+                    "epoch": {"current": contract["epochs"], "total": contract["epochs"]},
+                    "runtimeMode": "local",
+                    "device": result["device"],
+                    "loss": result["loss"],
+                    "adapterPath": result["adapterPath"],
+                    "outputDir": contract["outputDir"],
+                },
+            )
+        except Exception as error:
+            message = str(error)
+            self._append_event(
+                forge_run_id,
+                "local_training_failed",
+                message,
+                progress=state["metrics"].get("progress", 0),
+                data={"errorType": error.__class__.__name__},
+            )
+            self._write_metrics(
+                forge_run_id,
+                {
+                    "forgeRunId": forge_run_id,
+                    "status": "failed",
+                    "progress": state["metrics"].get("progress", 0),
+                    "datasetRows": validation.get("rowCount", 0),
+                    "lastEvent": "local_training_failed",
+                    "runtimeMode": "local",
+                    "error": message,
+                },
+            )
+            raise ValueError(message) from error
+
+        return {
+            "contract": contract,
+            "validation": validation,
+            "events": self.list_events(forge_run_id),
+            "metrics": self.get_metrics(forge_run_id),
+        }
+
+    def _run_lora_training(
+        self,
+        contract: Dict[str, Any],
+        validation: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        import torch
+        from peft import LoraConfig, get_peft_model
+        from torch.optim import AdamW
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        rows = self._read_training_rows(
+            contract["datasetUri"],
+            limit=int(os.getenv("FOUNDRY_FORGE_TRAIN_MAX_ROWS", "8")),
+        )
+        if not rows:
+            raise ValueError("Dataset has no usable training rows.")
+
+        model_ref = self._resolve_model_reference(contract["baseModel"])
+        device = self._local_training_device(torch)
+        tokenizer = AutoTokenizer.from_pretrained(model_ref)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+
+        model = AutoModelForCausalLM.from_pretrained(model_ref)
+        target_modules = self._lora_target_modules(model)
+        config = LoraConfig(
+            r=int(os.getenv("FOUNDRY_FORGE_LORA_R", "4")),
+            lora_alpha=int(os.getenv("FOUNDRY_FORGE_LORA_ALPHA", "8")),
+            target_modules=target_modules,
+            lora_dropout=float(os.getenv("FOUNDRY_FORGE_LORA_DROPOUT", "0.05")),
+            bias="none",
+            task_type="CAUSAL_LM",
+        )
+        model = get_peft_model(model, config)
+        model.to(device)
+        model.train()
+
+        max_length = int(os.getenv("FOUNDRY_FORGE_TRAIN_MAX_LENGTH", "256"))
+        learning_rate = float(contract.get("learningRate") or 0.0002)
+        optimizer = AdamW(model.parameters(), lr=learning_rate)
+        loss_value = 0.0
+        total_steps = max(1, len(rows) * int(contract["epochs"]))
+
+        for epoch_index in range(int(contract["epochs"])):
+            self._append_event(
+                contract["forgeRunId"],
+                "epoch_started",
+                f"Local trainer started epoch {epoch_index + 1} of {contract['epochs']}.",
+                progress=max(12, round((epoch_index / max(1, contract["epochs"])) * 90)),
+                epoch={"current": epoch_index, "total": contract["epochs"]},
+            )
+            for row_index, row in enumerate(rows, start=1):
+                encoded = tokenizer(
+                    self._format_training_text(row),
+                    truncation=True,
+                    max_length=max_length,
+                    padding="max_length",
+                    return_tensors="pt",
+                )
+                input_ids = encoded["input_ids"].to(device)
+                attention_mask = encoded["attention_mask"].to(device)
+                labels = input_ids.clone()
+                labels[attention_mask == 0] = -100
+
+                outputs = model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    labels=labels,
+                )
+                loss = outputs.loss
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
+                loss_value = float(loss.detach().cpu().item())
+
+                step_number = epoch_index * len(rows) + row_index
+                progress = min(95, 12 + round((step_number / total_steps) * 82))
+                self._append_event(
+                    contract["forgeRunId"],
+                    "step_completed",
+                    f"Local trainer completed step {step_number} of {total_steps}.",
+                    progress=progress,
+                    epoch={"current": epoch_index + 1, "total": contract["epochs"]},
+                    data={"loss": round(loss_value, 4), "rows": len(rows)},
+                )
+
+        output_dir = self._resolve_runtime_path(contract["outputDir"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        model.save_pretrained(output_dir)
+        tokenizer.save_pretrained(output_dir)
+        result = {
+            "adapterPath": str(output_dir.relative_to(BASE_DIR)),
+            "baseModel": str(model_ref),
+            "device": device,
+            "loss": round(loss_value, 4),
+            "rowsUsed": len(rows),
+            "datasetRows": validation.get("rowCount", len(rows)),
+            "targetModules": target_modules,
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        }
+        self._write_json(output_dir / "trainer-result.json", result)
+        return result
 
     def record_simulation_step(self, forge_run: Dict[str, Any]) -> Dict[str, Any]:
         forge_run_id = forge_run["id"]
@@ -478,6 +679,80 @@ class ForgeTrainingService:
                 if row.get("instruction") and row.get("output"):
                     rows.append(row)
         return rows
+
+    def _read_training_rows(self, dataset_uri: str, *, limit: int) -> list[Dict[str, Any]]:
+        rows = self._read_evaluation_rows(dataset_uri)
+        return rows[: max(1, limit)]
+
+    def _format_training_text(self, row: Dict[str, Any]) -> str:
+        instruction = str(row.get("instruction", "")).strip()
+        response = str(row.get("output", "")).strip()
+        return f"### Instruction\n{instruction}\n\n### Response\n{response}"
+
+    def _resolve_model_reference(self, model_ref: str) -> str:
+        model_ref = model_ref.strip()
+        if not model_ref:
+            raise ValueError("Forge contract base model is empty.")
+
+        model_path = Path(model_ref)
+        if model_path.exists():
+            return str(model_path)
+
+        archived_model = BASE_DIR / "runtime" / "models" / "huggingface" / self._safe_archive_slug(model_ref)
+        if archived_model.exists():
+            return str(archived_model)
+
+        if os.getenv("FOUNDRY_FORGE_ALLOW_REMOTE_MODEL_DOWNLOAD", "0") == "1":
+            return model_ref
+
+        raise ValueError(
+            "Base model is not cached in the Archive. Download it first or set "
+            "FOUNDRY_FORGE_ALLOW_REMOTE_MODEL_DOWNLOAD=1 for an explicit remote fetch."
+        )
+
+    def _safe_archive_slug(self, model_ref: str) -> str:
+        return re.sub(r"[^a-zA-Z0-9._-]+", "--", model_ref.strip()).strip("-") or "model"
+
+    def _local_training_device(self, torch_module: Any) -> str:
+        if torch_module.cuda.is_available():
+            return "cuda"
+        if getattr(torch_module.backends, "mps", None) and torch_module.backends.mps.is_available():
+            return "mps"
+        return "cpu"
+
+    def _lora_target_modules(self, model: Any) -> list[str]:
+        configured = os.getenv("FOUNDRY_FORGE_LORA_TARGET_MODULES", "").strip()
+        if configured:
+            return [module.strip() for module in configured.split(",") if module.strip()]
+
+        preferred = [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+            "c_attn",
+            "c_proj",
+            "c_fc",
+            "query",
+            "key",
+            "value",
+            "dense",
+        ]
+        available = {
+            name.rsplit(".", 1)[-1]
+            for name, _module in model.named_modules()
+            if name
+        }
+        targets = [name for name in preferred if name in available]
+        if not targets:
+            raise ValueError(
+                "Could not infer LoRA target modules for this base model. Set "
+                "FOUNDRY_FORGE_LORA_TARGET_MODULES to a comma-separated module list."
+            )
+        return targets
 
     def _simulated_observed_response(self, instruction: str, expected: str, index: int) -> str:
         if index % 5 == 4:

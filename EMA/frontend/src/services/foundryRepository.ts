@@ -299,6 +299,7 @@ export interface FoundryRepository {
   getForgeContract: (forgeRunId: string) => Promise<ForgeTrainingContract>;
   getForgeWorkerState: (forgeRunId: string) => Promise<ForgeWorkerState>;
   reconcileForgeWorkerState: (forgeRunId: string) => Promise<ForgeWorkerReconcileResult>;
+  runLocalForgeWorker: (forgeRunId: string) => Promise<ForgeWorkerReconcileResult>;
   getForgeRuntime: () => Promise<ForgeRuntime>;
   configureForgeRuntime: (request: ConfigureForgeRuntimeRequest) => Promise<ForgeRuntime>;
   listArtifacts: (workshopId: string) => Promise<Artifact[]>;
@@ -1288,18 +1289,113 @@ export const mockFoundryRepository: FoundryRepository = {
       validation: { valid: true, message: "Mock worker state reconciled." },
     };
   },
+  runLocalForgeWorker: async (forgeRunId) => {
+    const forgeRun = mockForgeRuns.find((run) => run.id === forgeRunId);
+    if (!forgeRun) {
+      throw new Error("Forge job was not found.");
+    }
+    if (forgeRun.purpose !== "training") {
+      throw new Error("Local trainer only supports training Forges.");
+    }
+    if (!forgeRun.trainingContract) {
+      await mockFoundryRepository.reconcileForgeWorkerState(forgeRunId);
+    }
+    if (!forgeRun.trainingContract) {
+      throw new Error("Forge contract has not been written yet.");
+    }
+
+    const workerState = mockForgeWorkerStates[forgeRun.id] || {
+      events: [],
+      metrics: {
+        forgeRunId: forgeRun.id,
+        status: forgeRun.status,
+        progress: forgeRun.progress,
+        datasetRows: 0,
+        lastEvent: null,
+      },
+    };
+    forgeRun.status = "completed";
+    forgeRun.progress = 100;
+    forgeRun.epoch = {
+      current: forgeRun.epoch?.total || 1,
+      total: forgeRun.epoch?.total || 1,
+    };
+    workerState.events.push(
+      {
+        id: `evt-${Date.now()}-local-start`,
+        forgeRunId: forgeRun.id,
+        type: "local_training_started",
+        message: "Mock local trainer started from the durable Forge contract.",
+        timestamp: new Date().toISOString(),
+        progress: 10,
+      },
+      {
+        id: `evt-${Date.now()}-local-adapter`,
+        forgeRunId: forgeRun.id,
+        type: "adapter_saved",
+        message: "Mock local LoRA adapter was saved to the contract output directory.",
+        timestamp: new Date().toISOString(),
+        progress: 96,
+      },
+      {
+        id: `evt-${Date.now()}-local-complete`,
+        forgeRunId: forgeRun.id,
+        type: "local_training_completed",
+        message: "Mock local LoRA training completed and Artifact metadata can be created.",
+        timestamp: new Date().toISOString(),
+        progress: 100,
+        epoch: forgeRun.epoch,
+      }
+    );
+    workerState.metrics = {
+      ...workerState.metrics,
+      status: "completed",
+      progress: 100,
+      epoch: forgeRun.epoch,
+      lastEvent: "local_training_completed",
+    };
+    mockForgeWorkerStates[forgeRun.id] = workerState;
+    forgeRun.workerState = workerState;
+    if (!forgeRun.artifactId) {
+      forgeRun.artifactId = `art-${forgeRun.id.replace(/^frg-/, "")}`;
+      const artifact: Artifact = {
+        id: forgeRun.artifactId,
+        workshopId: forgeRun.workshopId,
+        forgeRunId: forgeRun.id,
+        name: `${forgeRun.method} Artifact`,
+        version: `v0.${mockArtifacts.length + 1}.0`,
+        baseModel: forgeRun.baseModel || "unknown",
+        adapterPath: forgeRun.trainingContract.outputDir,
+        status: "ready",
+        trainingMethod: forgeRun.method === "LoRA" ? "LoRA" : "QLoRA",
+        trialScore: 0,
+      };
+      mockArtifacts.unshift(artifact);
+      mockDashboardSummary.currentArtifact = artifact;
+      mockDashboardSummary.workshop.activeArtifactId = artifact.id;
+      mockDashboardSummary.workshop.status = "ready";
+    }
+
+    return {
+      contract: forgeRun.trainingContract,
+      forgeRun,
+      events: workerState.events,
+      metrics: workerState.metrics,
+      validation: { valid: true, message: "Mock local trainer completed." },
+    };
+  },
   getForgeRuntime: async () => mockForgeRuntime,
   configureForgeRuntime: async (request) => {
     mockForgeRuntime = {
       mode: request.mode,
-      status: request.mode === "simulated" ? "ready" : "blocked",
+      status: "ready",
       detail:
         request.mode === "simulated"
           ? "Mock Forge runtime uses deterministic progress simulation."
-          : "Mock local trainer adapter is configured but not executable.",
+          : "Mock local trainer adapter can complete a no-download demo run.",
       worker: request.worker || (request.mode === "simulated" ? "in-process-simulator" : "local-process"),
-      ready: request.mode === "simulated",
-      supportsMethods: ["LoRA", "QLoRA"],
+      ready: true,
+      supportsMethods: request.mode === "simulated" ? ["LoRA", "QLoRA"] : ["LoRA"],
     };
     return mockForgeRuntime;
   },
@@ -2130,6 +2226,12 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.post<ApiEnvelope<ForgeWorkerReconcileDto>>(
         foundryApiRoutes.reconcileForgeWorker(forgeRunId)
+      )
+    ),
+  runLocalForgeWorker: async (forgeRunId) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ForgeWorkerReconcileDto>>(
+        foundryApiRoutes.runLocalForgeWorker(forgeRunId)
       )
     ),
   getForgeRuntime: async () =>

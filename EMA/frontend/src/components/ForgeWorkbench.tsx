@@ -83,6 +83,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   const [forgeDetailTab, setForgeDetailTab] = useState<ForgeDetailTab>("events");
   const [isLoadingForgeDetail, setIsLoadingForgeDetail] = useState(false);
   const [isReconcilingForgeDetail, setIsReconcilingForgeDetail] = useState(false);
+  const [localTrainingRunId, setLocalTrainingRunId] = useState<string | null>(null);
   const [forgeDetailError, setForgeDetailError] = useState<string | null>(null);
   const [forgeRuntime, setForgeRuntime] = useState<ForgeRuntime | null>(null);
   const [runtimeModeDraft, setRuntimeModeDraft] = useState<ForgeRuntimeMode>("simulated");
@@ -256,6 +257,13 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     ? workerStates[selectedForgeDetailId]
     : undefined;
   const selectedEvaluationReport = selectedForgeWorkerState?.metrics.evaluationReport;
+  const canRunSelectedLocalTrainer =
+    Boolean(selectedForgeRun) &&
+    selectedForgeRun?.purpose === "training" &&
+    selectedForgeRun?.status !== "completed" &&
+    selectedForgeRun?.status !== "failed" &&
+    forgeRuntime?.mode === "local" &&
+    Boolean(forgeRuntime.ready);
 
   useEffect(() => {
     if (!hasActiveForgeRuns) {
@@ -389,6 +397,51 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
       );
     } finally {
       setIsReconcilingForgeDetail(false);
+    }
+  };
+
+  const runLocalForgeWorker = async () => {
+    if (!selectedForgeRun) {
+      return;
+    }
+    setForgeDetailError(null);
+    setError(null);
+    setStatusText(null);
+    setLocalTrainingRunId(selectedForgeRun.id);
+
+    try {
+      const state = await repository.runLocalForgeWorker(selectedForgeRun.id);
+      setSelectedForgeContract(state.contract);
+      setWorkerStates((current) => ({
+        ...current,
+        [selectedForgeRun.id]: {
+          events: state.events,
+          metrics: state.metrics,
+        },
+      }));
+      if (state.forgeRun) {
+        setForgeRuns((current) =>
+          current.map((run) => (run.id === state.forgeRun?.id ? state.forgeRun : run))
+        );
+      }
+      setLastWorkerSync(
+        new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      );
+      setStatusText(
+        state.forgeRun?.artifactId
+          ? `${state.forgeRun.label} completed. Artifact ${state.forgeRun.artifactId} is ready.`
+          : "Local trainer completed worker execution."
+      );
+    } catch (workerError: unknown) {
+      setForgeDetailError(
+        workerError instanceof Error ? workerError.message : "Could not run local Forge trainer."
+      );
+    } finally {
+      setLocalTrainingRunId(null);
     }
   };
 
@@ -745,8 +798,8 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
 
           <ConceptTooltip label="Why an adapter boundary?" title="Forge Runtime">
             The Forge screen creates a training contract first. The simulator can
-            advance it today, while the local trainer adapter will later execute
-            the same contract with LoRA or QLoRA workers.
+            advance it today, while the local trainer adapter can execute tiny
+            LoRA jobs from the same contract when the runtime is ready.
           </ConceptTooltip>
         </div>
 
@@ -959,6 +1012,20 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                 >
                   <i className="fas fa-screwdriver-wrench" aria-hidden="true" />
                   {isReconcilingForgeDetail ? "Reconciling" : "Reconcile"}
+                </button>
+                <button
+                  className="button-primary button-compact"
+                  type="button"
+                  onClick={() => void runLocalForgeWorker()}
+                  disabled={!canRunSelectedLocalTrainer || localTrainingRunId === selectedForgeRun.id}
+                  title={
+                    canRunSelectedLocalTrainer
+                      ? "Run the local LoRA trainer from this Forge contract"
+                      : "Configure a ready local Forge runtime and select a queued training Forge"
+                  }
+                >
+                  <i className="fas fa-microchip" aria-hidden="true" />
+                  {localTrainingRunId === selectedForgeRun.id ? "Training" : "Run Local Trainer"}
                 </button>
                 <button
                   className="icon-button"
