@@ -17,6 +17,38 @@ The MVP should prove one complete teachable loop:
 
 Anything that does not make that loop real, understandable, or safe is post-MVP.
 
+## MVP Remaining Work Checklist
+
+This is the short steering list. If a task does not support one of these items, it should wait until after MVP.
+
+### Critical Path
+
+- [ ] Prove real local file ingestion for text, markdown, CSV, JSONL, and one non-scanned PDF path.
+- [ ] Prove model-backed QA generation with source-aware prompt templates and visible quality metadata.
+- [ ] Implement one tiny local LoRA trainer adapter behind the existing Forge runtime boundary.
+- [ ] Make real Forge completion create a verified Artifact backed by output files.
+- [ ] Prove one cached small-model Construct streaming path without silent fallback.
+- [ ] Add one end-to-end readiness gate for Archive download, Construct load, and Forge start.
+- [ ] Run a clean manual MVP rehearsal from empty Workshop to saved Trial.
+
+### Guardrails
+
+- [ ] Keep simulated/fallback states unmistakable anywhere a user can export, train, load, infer, or evaluate.
+- [ ] Keep the official proof path tiny and repeatable; larger models stay post-MVP.
+- [ ] Keep backend contract rehearsals green and isolated from local runtime data.
+- [ ] Keep setup and first-run docs strong enough for a new technical user to reproduce the demo.
+- [ ] Keep local data, token handling, diagnostics redaction, file limits, and path restrictions explicit.
+
+### Already Covered
+
+- [x] Foundry-branded workbenches and navigation.
+- [x] SQLite catalog persistence for the main workflow.
+- [x] QA review/export to JSONL Materials.
+- [x] Forge contract, worker-event, simulation, and Artifact metadata paths.
+- [x] Archive/Hugging Face search, auth, preflight, register, cache, evict, and download-job API contracts with mocked external calls.
+- [x] Construct runtime events, validation history, diagnostics bundle, and memory cleanup contracts.
+- [x] Service-level and FastAPI-level MVP workflow rehearsals that run in isolated storage.
+
 ## Current Baseline
 
 The project already has a strong product shell:
@@ -189,7 +221,7 @@ MVP can defer:
 
 ### 7. Backend Contract Tests
 
-Status: partial.
+Status: covered for MVP contract rehearsal; keep protected.
 
 The current public checks compile Python, run frontend sentinel tests, lint, build, run isolated MVP rehearsals through both the catalog services and FastAPI v1 endpoints, cover Archive/Hugging Face acquisition contracts with network-free mocks, and exercise Construct diagnostics exports. Those rehearsals prove the product handoffs from Material ingestion to Trial scoring without touching the developer's main runtime catalog.
 
@@ -277,13 +309,13 @@ These are valid Foundry goals, but they are scope creep before the core loop is 
 
 ## Recommended MVP Sequence
 
-1. Add real local file upload/import for text, markdown, CSV, JSONL, and one PDF path.
-2. Add QA review states and edit/save/export controls.
-3. Add backend workflow tests around the existing SQLite catalog.
-4. Implement a tiny local LoRA trainer adapter behind the Forge runtime boundary.
-5. Make completed real Forge output create a verified Artifact.
-6. Tighten Construct real/simulated labeling and prove one cached small-model streaming path.
-7. Add one readiness gate that blocks unsafe download/load/train actions with clear recovery steps.
+1. Finish real local file ingestion for CSV, JSONL, and one non-scanned PDF path.
+2. Prove model-backed QA generation against a tiny cached model and lock the prompt/template contract.
+3. Implement the tiny local LoRA trainer adapter behind the Forge runtime boundary.
+4. Make completed real Forge output create a verified Artifact with output-file readiness checks.
+5. Prove one cached small-model Construct streaming path and prevent silent simulated fallback during MVP validation.
+6. Add one readiness gate that blocks unsafe download, load, and train actions with clear recovery steps.
+7. Tighten first-run setup docs around baseline app dependencies versus optional ML runtime dependencies.
 8. Run a full manual MVP rehearsal from empty Workshop to Construct Trial.
 
 ## MVP Definition Of Done
