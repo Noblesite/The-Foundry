@@ -30,6 +30,7 @@ The project already has a strong product shell:
 - Construct runtime controls, local model preflight/load/probe, streaming chat endpoint, runtime history, validation history, memory release, and diagnostics bundle preview/export.
 - An isolated MVP rehearsal test that proves Material -> reviewed QA -> JSONL -> Forge simulation -> Artifact -> Construct reply -> Trial scoring.
 - An isolated FastAPI v1 contract rehearsal that proves the same MVP handoffs through public `/api/v1` endpoints.
+- A mocked Archive/Hugging Face API contract rehearsal that proves auth, search, preflight, register, cache, evict, and download-job lifecycle without network calls.
 - Contextual Academy/tooltip components across major workflow stations.
 
 The central risk is that several core actions still look product-complete while using simulated, metadata-derived, or thin local paths underneath.
@@ -189,13 +190,13 @@ MVP can defer:
 
 Status: partial.
 
-The current public checks compile Python, run frontend sentinel tests, lint, build, and run isolated MVP rehearsals through both the catalog services and FastAPI v1 endpoints. Those rehearsals prove the product handoffs from Material ingestion to Trial scoring without touching the developer's main runtime catalog. The remaining gap is mocked external service coverage around Archive/Hugging Face flows and additional runtime diagnostics exports.
+The current public checks compile Python, run frontend sentinel tests, lint, build, run isolated MVP rehearsals through both the catalog services and FastAPI v1 endpoints, and cover Archive/Hugging Face acquisition contracts with network-free mocks. Those rehearsals prove the product handoffs from Material ingestion to Trial scoring without touching the developer's main runtime catalog. The remaining gap is additional runtime diagnostics export coverage.
 
 MVP needs:
 
 - Keep service-level and API-level backend tests for Workshop -> Material -> Assembly Line -> JSONL export -> Forge -> Artifact.
 - Backend tests for Construct runtime events, diagnostics bundle, and validation export.
-- Backend tests for Archive preflight/download-job contracts using mocked Hugging Face calls.
+- Keep backend tests for Archive preflight/download-job contracts using mocked Hugging Face calls.
 - Continued use of temporary test database fixtures so tests do not depend on the developer's local runtime catalog.
 
 MVP can defer:

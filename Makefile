@@ -11,6 +11,7 @@ smoke:
 backend-test:
 	$(PYTHON) scripts/test_foundry_workflow_contract.py
 	$(PYTHON) scripts/test_foundry_api_workflow_contract.py
+	$(PYTHON) scripts/test_foundry_archive_api_contract.py
 
 build:
 	cd EMA/frontend && npm run build
