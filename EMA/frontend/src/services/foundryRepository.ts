@@ -1027,6 +1027,11 @@ export const mockFoundryRepository: FoundryRepository = {
           mode: "mock",
           strategy: "context-sentence",
         },
+        qualityGate: {
+          status: "blocked",
+          reasons: ["row was produced by the deterministic smoke generator"],
+          confidenceThreshold: 0.6,
+        },
         reviewStatus: "draft",
         reviewedAt: null,
       };
@@ -1069,6 +1074,12 @@ export const mockFoundryRepository: FoundryRepository = {
     if (qaPairs.length === 0) {
       throw new Error("This Assembly Line run has no accepted QA pairs to export.");
     }
+    const blockedRows = qaPairs.filter((qaPair) => qaPair.qualityGate?.status === "blocked");
+    if (blockedRows.length > 0 && !request.includeLowQuality) {
+      throw new Error(
+        `QA quality gate blocked export for ${blockedRows.length} row(s). Review rows or enable the low-quality override.`
+      );
+    }
     const material: MaterialSource = {
       id: `mat-export-${Date.now()}`,
       name: request.name || "Training QA Dataset",
@@ -1085,6 +1096,13 @@ export const mockFoundryRepository: FoundryRepository = {
       format: "jsonl",
       qaPairCount: qaPairs.length,
       assemblyLineRunId: request.assemblyLineRunId,
+      qualityGate: {
+        status: blockedRows.length > 0 ? "override" : "passed",
+        checkedRows: qaPairs.length,
+        blockedRows: blockedRows.length,
+        confidenceThreshold: 0.6,
+        override: Boolean(request.includeLowQuality),
+      },
     };
   },
   listForgeRuns: async (_workshopId) =>

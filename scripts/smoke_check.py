@@ -284,6 +284,7 @@ def run_material_import_contract_check() -> int:
         "QAGeneratorRuntimeInput",
         "UpdateQAPairReviewInput",
         "includeDrafts: bool = False",
+        "includeLowQuality: bool = False",
         "Request",
         "request.body()",
     )
@@ -307,6 +308,10 @@ def run_material_import_contract_check() -> int:
         "generator_model",
         "confidence",
         "generation_metadata_json",
+        "QA_QUALITY_CONFIDENCE_THRESHOLD",
+        "_qa_pair_quality_gate",
+        "\"qualityGate\": self._qa_pair_quality_gate",
+        "\"lowQualityOverride\": include_low_quality",
         "\"generatorModel\": row[\"generator_model\"]",
         "\"generationMetadata\": generation_metadata",
         "update_qa_pair_review",

@@ -161,6 +161,11 @@ export interface QAPair {
   generatorModel?: string;
   confidence?: number;
   generationMetadata?: Record<string, unknown>;
+  qualityGate?: {
+    status: "passed" | "blocked" | string;
+    reasons: string[];
+    confidenceThreshold: number;
+  };
   reviewStatus: QAReviewStatus;
   reviewedAt?: string | null;
 }

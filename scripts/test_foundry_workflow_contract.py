@@ -83,6 +83,7 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     assert qa_pairs[0]["generatorModel"] == "deterministic-context-generator"
     assert qa_pairs[0]["confidence"] > 0
     assert qa_pairs[0]["generationMetadata"]["contractVersion"] == "foundry.qa-generation.v1"
+    assert qa_pairs[0]["qualityGate"]["status"] == "blocked"
 
     try:
         await catalog.export_qa_pairs_to_material(workshop["id"], assembly["id"])
@@ -101,9 +102,21 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     assert accepted["reviewStatus"] == "accepted"
     assert accepted["reviewedAt"]
 
+    try:
+        await catalog.export_qa_pairs_to_material(
+            workshop_id=workshop["id"],
+            assembly_line_run_id=assembly["id"],
+            name="Accepted Rows",
+        )
+    except ValueError as error:
+        assert "QA quality gate blocked export" in str(error)
+    else:
+        raise AssertionError("Low-quality QA export should be blocked without override.")
+
     exported = await catalog.export_qa_pairs_to_material(
         workshop_id=workshop["id"],
         assembly_line_run_id=assembly["id"],
+        include_low_quality=True,
         name="Accepted Rows",
     )
     exported_path = catalog_module.BASE_DIR / exported["exportUri"]
@@ -118,6 +131,9 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     assert rows[0]["metadata"]["generatorModel"] == "deterministic-context-generator"
     assert rows[0]["metadata"]["confidence"] > 0
     assert rows[0]["metadata"]["generation"]["contractVersion"] == "foundry.qa-generation.v1"
+    assert rows[0]["metadata"]["lowQualityOverride"] is True
+    assert rows[0]["metadata"]["qualityGate"]["status"] == "blocked"
+    assert exported["qualityGate"]["status"] == "override"
 
     forge_run = await catalog.start_forge(
         workshop_id=workshop["id"],

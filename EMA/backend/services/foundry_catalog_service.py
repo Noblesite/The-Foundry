@@ -28,6 +28,7 @@ SUPPORTED_IMPORT_EXTENSIONS = {
     "transcript": {".txt", ".md", ".text", ".transcript", ".srt", ".vtt"},
     "video-transcript": {".txt", ".md", ".text", ".transcript", ".srt", ".vtt"},
 }
+QA_QUALITY_CONFIDENCE_THRESHOLD = 0.6
 
 
 class FoundryCatalogService:
@@ -905,6 +906,7 @@ class FoundryCatalogService:
             "generatorModel": row["generator_model"] or "legacy-summary",
             "confidence": float(row["confidence"] or 0),
             "generationMetadata": generation_metadata,
+            "qualityGate": self._qa_pair_quality_gate(row, generation_metadata),
             "reviewStatus": row["review_status"] or "draft",
             "reviewedAt": row["reviewed_at"],
         }
@@ -2102,6 +2104,7 @@ class FoundryCatalogService:
         workshop_id: str,
         assembly_line_run_id: str,
         include_drafts: bool = False,
+        include_low_quality: bool = False,
         name: Optional[str] = None,
     ) -> Dict[str, Any]:
         async with self._write_lock:
@@ -2110,6 +2113,7 @@ class FoundryCatalogService:
                     workshop_id,
                     assembly_line_run_id,
                     include_drafts,
+                    include_low_quality,
                     name,
                 )
             )
@@ -2119,6 +2123,7 @@ class FoundryCatalogService:
         workshop_id: str,
         assembly_line_run_id: str,
         include_drafts: bool,
+        include_low_quality: bool,
         name: Optional[str],
     ) -> Dict[str, Any]:
         with self._connect() as connection:
@@ -2170,6 +2175,21 @@ class FoundryCatalogService:
                 raise ValueError(
                     "This Assembly Line run has no accepted QA pairs to export. Review rows first or use the draft override."
                 )
+            quality_gates = [
+                self._qa_pair_quality_gate(
+                    row,
+                    self._decode_json_object(row["generation_metadata_json"]),
+                )
+                for row in rows
+            ]
+            blocked_gates = [gate for gate in quality_gates if gate["status"] != "passed"]
+            if blocked_gates and not include_low_quality:
+                blocked_count = len(blocked_gates)
+                first_reason = blocked_gates[0]["reasons"][0] if blocked_gates[0]["reasons"] else "quality gate failed"
+                raise ValueError(
+                    f"QA quality gate blocked export for {blocked_count} row(s): {first_reason}. "
+                    "Review the QA rows or enable the low-quality override."
+                )
 
             export_dir = DEFAULT_EXPORT_DIR / workshop_id
             export_dir.mkdir(parents=True, exist_ok=True)
@@ -2178,6 +2198,7 @@ class FoundryCatalogService:
 
             with export_path.open("w", encoding="utf-8") as export_file:
                 for index, row in enumerate(rows):
+                    quality_gate = quality_gates[index]
                     payload = {
                         "id": row["id"],
                         "instruction": row["question"],
@@ -2205,6 +2226,8 @@ class FoundryCatalogService:
                             "reviewStatus": row["review_status"],
                             "reviewedAt": row["reviewed_at"],
                             "draftOverride": include_drafts,
+                            "lowQualityOverride": include_low_quality,
+                            "qualityGate": quality_gate,
                         },
                     }
                     export_file.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -2244,7 +2267,39 @@ class FoundryCatalogService:
                 "format": "jsonl",
                 "qaPairCount": len(rows),
                 "assemblyLineRunId": assembly_line_run_id,
+                "qualityGate": {
+                    "status": "override" if blocked_gates and include_low_quality else "passed",
+                    "checkedRows": len(rows),
+                    "blockedRows": len(blocked_gates),
+                    "confidenceThreshold": QA_QUALITY_CONFIDENCE_THRESHOLD,
+                    "override": include_low_quality,
+                },
             }
+
+    def _qa_pair_quality_gate(
+        self,
+        row: sqlite3.Row,
+        generation_metadata: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        reasons = []
+        confidence = float(row["confidence"] or 0)
+        review_status = row["review_status"] or "draft"
+        generator_model = row["generator_model"] or "legacy-summary"
+        if review_status not in {"accepted", "edited"}:
+            reasons.append("row has not been accepted by review")
+        if confidence < QA_QUALITY_CONFIDENCE_THRESHOLD:
+            reasons.append(
+                f"confidence {confidence:.0%} is below the {QA_QUALITY_CONFIDENCE_THRESHOLD:.0%} gate"
+            )
+        if generation_metadata.get("fallbackReason"):
+            reasons.append("row was produced by a generator fallback")
+        if generator_model in {"legacy-summary", "deterministic-context-generator"}:
+            reasons.append("row was produced by the deterministic smoke generator")
+        return {
+            "status": "passed" if not reasons else "blocked",
+            "reasons": reasons,
+            "confidenceThreshold": QA_QUALITY_CONFIDENCE_THRESHOLD,
+        }
 
     async def list_forge_runs(self, workshop_id: str) -> List[Dict[str, Any]]:
         def query():

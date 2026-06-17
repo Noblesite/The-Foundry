@@ -91,6 +91,7 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   const [exportName, setExportName] = useState(`${workshop.name} QA Dataset`);
   const [exportState, setExportState] = useState<string | null>(null);
   const [includeDraftsInExport, setIncludeDraftsInExport] = useState(false);
+  const [includeLowQualityInExport, setIncludeLowQualityInExport] = useState(false);
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<string[]>([]);
   const [assemblyDraft, setAssemblyDraft] = useState<StartAssemblyLineRequest>({
     materialSourceIds: [],
@@ -197,7 +198,10 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
     ).length;
     const rejected = reviewQAPairs.filter((qaPair) => qaPair.reviewStatus === "rejected").length;
     const draft = reviewQAPairs.length - accepted - rejected;
-    return { accepted, rejected, draft };
+    const blocked = reviewQAPairs.filter(
+      (qaPair) => qaPair.qualityGate?.status === "blocked"
+    ).length;
+    return { accepted, rejected, draft, blocked };
   }, [reviewQAPairs]);
 
   const updateDraft = <K extends keyof IngestMaterialRequest>(
@@ -360,6 +364,7 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
         assemblyLineRunId: reviewRunId,
         name: exportName.trim() || `${workshop.name} QA Dataset`,
         includeDrafts: includeDraftsInExport,
+        includeLowQuality: includeLowQualityInExport,
       });
       setMaterials((current) => [
         exportResult.material,
@@ -720,6 +725,9 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
             <span className="status-badge">
               {qaReviewStats.accepted} accepted / {qaReviewStats.draft} draft
             </span>
+            <span className={`status-badge ${qaReviewStats.blocked ? "quality-blocked" : "is-active"}`}>
+              {qaReviewStats.blocked} quality blocked
+            </span>
             <input
               aria-label="Exported Material name"
               type="text"
@@ -734,6 +742,14 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
               />
               <span>Include draft rows</span>
             </label>
+            <label className="toggle-row qa-export-toggle">
+              <input
+                type="checkbox"
+                checked={includeLowQualityInExport}
+                onChange={(event) => setIncludeLowQualityInExport(event.target.checked)}
+              />
+              <span>Override quality gate</span>
+            </label>
             <button
               className="button-secondary"
               type="button"
@@ -741,6 +757,7 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                 !reviewRunId ||
                 reviewQAPairs.length === 0 ||
                 (!includeDraftsInExport && qaReviewStats.accepted === 0) ||
+                (!includeLowQualityInExport && qaReviewStats.blocked > 0) ||
                 isExporting
               }
               onClick={exportQAPairs}
@@ -751,6 +768,11 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
           </div>
         </div>
         {exportState && <p className="save-state success-state">{exportState}</p>}
+        {qaReviewStats.blocked > 0 && !includeLowQualityInExport && (
+          <p className="save-state error-state">
+            Quality gate is blocking {qaReviewStats.blocked} QA row(s). Accept higher-quality rows or use the override.
+          </p>
+        )}
         <div className="assembly-review-grid">
           <div className="review-column">
             <h3>Chunks</h3>
@@ -787,8 +809,18 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                           {Math.round(qaPair.confidence * 100)}% confidence
                         </span>
                       )}
+                      {qaPair.qualityGate?.status === "blocked" && (
+                        <span className="qa-quality-badge qa-quality-blocked">
+                          quality blocked
+                        </span>
+                      )}
                       {qaPair.reviewedAt && <span>{new Date(qaPair.reviewedAt).toLocaleTimeString()}</span>}
                     </div>
+                    {qaPair.qualityGate?.status === "blocked" && (
+                      <p className="qa-quality-note">
+                        {qaPair.qualityGate.reasons.join("; ")}
+                      </p>
+                    )}
                     <label className="field-label" htmlFor={`qa-question-${qaPair.id}`}>
                       Question
                     </label>

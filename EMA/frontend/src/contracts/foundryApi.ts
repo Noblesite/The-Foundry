@@ -208,6 +208,11 @@ export interface QAPairDto {
   generatorModel?: string;
   confidence?: number;
   generationMetadata?: Record<string, unknown>;
+  qualityGate?: {
+    status: "passed" | "blocked" | string;
+    reasons: string[];
+    confidenceThreshold: number;
+  };
   reviewStatus: QAReviewStatus;
   reviewedAt?: string | null;
 }
@@ -218,6 +223,13 @@ export interface ExportQAPairsDto {
   format: "jsonl";
   qaPairCount: number;
   assemblyLineRunId: string;
+  qualityGate?: {
+    status: "passed" | "override" | string;
+    checkedRows: number;
+    blockedRows: number;
+    confidenceThreshold: number;
+    override: boolean;
+  };
 }
 
 export interface ExportTrialsDto {
@@ -356,6 +368,7 @@ export interface ExportQAPairsRequest {
   assemblyLineRunId: string;
   name?: string;
   includeDrafts?: boolean;
+  includeLowQuality?: boolean;
 }
 
 export interface UpdateQAPairReviewRequest {

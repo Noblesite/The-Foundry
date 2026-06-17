@@ -71,6 +71,7 @@ class ExportQAPairsInput(BaseModel):
     assemblyLineRunId: str
     name: str | None = None
     includeDrafts: bool = False
+    includeLowQuality: bool = False
 
 class UpdateQAPairReviewInput(BaseModel):
     question: str
@@ -960,6 +961,7 @@ async def export_foundry_qa_pairs_endpoint(workshop_id: str, data: ExportQAPairs
             workshop_id=workshop_id,
             assembly_line_run_id=run_id,
             include_drafts=data.includeDrafts,
+            include_low_quality=data.includeLowQuality,
             name=data.name.strip() if data.name else None,
         )
         return api_envelope(export)
