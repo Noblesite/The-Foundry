@@ -25,7 +25,7 @@ This is the short steering list. If a task does not support one of these items, 
 
 - [x] Prove real local file ingestion for text, markdown, CSV, JSONL, and one non-scanned PDF path.
 - [x] Prove model-backed QA generation with source-aware prompt templates and visible quality metadata.
-- [ ] Implement one tiny local LoRA trainer adapter behind the existing Forge runtime boundary.
+- [x] Implement one tiny local LoRA trainer adapter behind the existing Forge runtime boundary.
 - [ ] Make real Forge completion create a verified Artifact backed by output files.
 - [ ] Prove one cached small-model Construct streaming path without silent fallback.
 - [ ] Add one end-to-end readiness gate for Archive download, Construct load, and Forge start.
@@ -59,7 +59,7 @@ The project already has a strong product shell:
 - QA review/export paths that create JSONL Materials.
 - Model-backed QA generation contract proof with explicit prompt-template metadata, source fingerprints, visible quality metrics, and deterministic fallback.
 - Real local file extraction for text/markdown, CSV, JSONL/NDJSON, and text-based PDFs through service-level and FastAPI workflow rehearsals.
-- Forge contracts, runtime event files, worker reconciliation, simulated progress, and automatic Artifact metadata for completed training simulations.
+- Forge contracts, runtime event files, worker reconciliation, simulated progress, local trainer adapter contracts, and automatic Artifact metadata for completed training runs.
 - Hugging Face search, auth test, model preflight, download jobs, Archive cataloging, and local cache tracking.
 - Construct runtime controls, local model preflight/load/probe, streaming chat endpoint, runtime history, validation history, memory release, and diagnostics bundle preview/export.
 - An isolated MVP rehearsal test that proves Material -> reviewed QA -> JSONL -> Forge simulation -> Artifact -> Construct reply -> Trial scoring.
@@ -118,16 +118,16 @@ MVP can defer:
 
 ### 2. Real QA Generation and Review State
 
-Status: partial.
+Status: contract covered; quality tuning remains.
 
-The Assembly Line can chunk simple text and produce draft QA pairs with durable review/export states. It now has a model-backed QA generation boundary, runtime configuration, smoke proofing, and row-level provenance: generator model, confidence, and `foundry.qa-generation.v1` metadata. The remaining MVP gap is generation quality: the deterministic fallback is useful for offline smoke tests, but real training data needs a configured local generator model that can read chunk context, weigh what matters, produce instruction/output rows, score confidence, and keep humans in the review loop.
+The Assembly Line can chunk simple text and produce draft QA pairs with durable review/export states. It now has a model-backed QA generation boundary, runtime configuration, smoke proofing, source-aware prompt-template metadata, and row-level provenance: generator model, confidence, and `foundry.qa-generation.v1` metadata. The remaining MVP risk is generation quality, not the contract path: the deterministic fallback is useful for offline smoke tests, but real training data still needs a configured local generator model that can produce useful instruction/output rows and keep humans in the review loop.
 
 MVP needs:
 
-- Model-backed QA generation using a local or configured generator model.
-- A repeatable QA generator quality check against a tiny cached model and a stronger recommended local model.
-- Prompt templates that preserve source context, persona/subject, and answer constraints.
-- Confidence/quality metadata per QA row, including source chunk references.
+- Keep model-backed QA generation using a local or configured generator model.
+- Keep the repeatable QA generator contract proof and add manual quality notes for the recommended local model.
+- Keep prompt templates that preserve source context, persona/subject, and answer constraints.
+- Keep confidence/quality metadata per QA row, including source chunk references.
 - Export only reviewed/accepted rows by default, with an explicit override for draft rows.
 - A visible quality gate before a Material can feed Forge.
 
@@ -139,18 +139,18 @@ MVP can defer:
 
 ### 3. Real Forge Execution
 
-Status: not implemented.
+Status: contract covered; real-model smoke run still manual.
 
-Forge currently validates JSONL, writes contracts/events/metrics, simulates progress, simulates evaluation reports, and creates Artifact metadata. Local Forge mode only checks dependencies; it does not launch LoRA or QLoRA training.
+Forge validates JSONL, writes contracts/events/metrics, simulates progress, simulates evaluation reports, and creates Artifact metadata. Local Forge mode now has a LoRA trainer adapter behind the same durable contract, preflight gates for runtime/dependencies/model cache/memory, worker events for local training, and worker completion that creates an Artifact linked to adapter output files. The automated rehearsal proves this through an injected tiny trainer backend; the full Torch/PEFT run remains a manual smoke path so normal checks stay fast and offline-safe.
 
 MVP needs:
 
-- A trainer adapter that can run one tiny local LoRA job against a tiny cached model and tiny JSONL Material.
-- Clear job lifecycle: queued, preparing, training, saving, completed, failed, canceled.
-- Durable worker events and metrics from the actual trainer process.
-- Artifact metadata linked to actual output files.
-- A CPU/MPS-safe default config for developer hardware.
-- A hard resource guard before training starts.
+- Keep the trainer adapter able to run one tiny local LoRA job against a tiny cached model and tiny JSONL Material.
+- Keep clear job lifecycle events: queued, validating, training, saving, completed, failed.
+- Keep durable worker events and metrics from the trainer process.
+- Keep Artifact metadata linked to adapter output files.
+- Keep CPU/MPS-safe defaults for developer hardware.
+- Keep hard resource guards before training starts.
 
 MVP can defer:
 
@@ -311,14 +311,11 @@ These are valid Foundry goals, but they are scope creep before the core loop is 
 
 ## Recommended MVP Sequence
 
-1. Finish real local file ingestion for CSV, JSONL, and one non-scanned PDF path.
-2. Prove model-backed QA generation against a tiny cached model and lock the prompt/template contract.
-3. Implement the tiny local LoRA trainer adapter behind the Forge runtime boundary.
-4. Make completed real Forge output create a verified Artifact with output-file readiness checks.
-5. Prove one cached small-model Construct streaming path and prevent silent simulated fallback during MVP validation.
-6. Add one readiness gate that blocks unsafe download, load, and train actions with clear recovery steps.
-7. Tighten first-run setup docs around baseline app dependencies versus optional ML runtime dependencies.
-8. Run a full manual MVP rehearsal from empty Workshop to Construct Trial.
+1. Make completed real Forge output create a verified Artifact with output-file readiness checks.
+2. Prove one cached small-model Construct streaming path and prevent silent simulated fallback during MVP validation.
+3. Add one readiness gate that blocks unsafe download, load, and train actions with clear recovery steps.
+4. Tighten first-run setup docs around baseline app dependencies versus optional ML runtime dependencies.
+5. Run a full manual MVP rehearsal from empty Workshop to Construct Trial.
 
 ## MVP Definition Of Done
 

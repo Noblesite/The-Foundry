@@ -160,7 +160,9 @@ def run_forge_adapter_boundary_check() -> int:
         "preflight_local_training",
         "model-cache",
         "memory-fit",
+        "set_local_trainer_backend",
         "execute_local_training",
+        "_execute_trainer_backend",
         "local_training_started",
         "local_training_completed",
     )

@@ -377,6 +377,76 @@ def run_api_workflow(tmp_path: Path) -> None:
             assert preflight["ok"] is False
             assert any(check["id"] == "runtime-mode" for check in preflight["checks"])
 
+            cached_model_dir = forge_module.DEFAULT_FORGE_RUNTIME_DIR / "cached-model-proof"
+            cached_model_dir.mkdir(parents=True, exist_ok=True)
+            (cached_model_dir / "config.json").write_text("{}", encoding="utf-8")
+
+            local_forge = assert_response(
+                client.post(
+                    f"/api/v1/workshops/{workshop['id']}/forges",
+                    json={
+                        "materialSetId": exported["material"]["id"],
+                        "baseModel": str(cached_model_dir),
+                        "method": "LoRA",
+                        "purpose": "training",
+                        "epochs": 1,
+                        "learningRate": "0.0002",
+                        "loadIn4Bit": False,
+                    },
+                )
+            )
+
+            def fake_local_trainer(contract_payload, validation_payload):
+                output_dir = catalog_module.BASE_DIR / contract_payload["outputDir"]
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "adapter_model.safetensors").write_text(
+                    "tiny local trainer proof\n",
+                    encoding="utf-8",
+                )
+                result = {
+                    "adapterPath": str(output_dir.relative_to(catalog_module.BASE_DIR)),
+                    "baseModel": contract_payload["baseModel"],
+                    "device": "cpu",
+                    "loss": 0.1234,
+                    "rowsUsed": 1,
+                    "datasetRows": validation_payload["rowCount"],
+                    "targetModules": ["c_attn"],
+                    "createdAt": "2026-06-17T00:00:00+00:00",
+                }
+                isolated_forge._write_json(output_dir / "trainer-result.json", result)
+                return result
+
+            isolated_forge.mode = "local"
+            isolated_forge._missing_training_dependencies = lambda: []
+            isolated_forge._training_memory_estimate = lambda _model_path: {
+                "fitStatus": "fits",
+                "checkStatus": "pass",
+                "estimatedLoadBytes": 1024,
+                "availableBytes": 4096,
+                "message": "Tiny proof model fits the test budget.",
+            }
+            isolated_forge.set_local_trainer_backend(fake_local_trainer)
+            local_state = assert_response(
+                client.post(f"/api/v1/forges/{local_forge['id']}/worker/run-local")
+            )
+            assert local_state["metrics"]["status"] == "completed"
+            assert local_state["metrics"]["runtimeMode"] == "local"
+            assert local_state["forgeRun"]["status"] == "completed"
+            local_artifacts = assert_response(
+                client.get(f"/api/v1/workshops/{workshop['id']}/artifacts")
+            )
+            local_artifact = next(
+                item
+                for item in local_artifacts
+                if item["id"] == local_state["forgeRun"]["artifactId"]
+            )
+            assert local_artifact["adapterPath"] == local_state["metrics"]["adapterPath"]
+            assert (
+                catalog_module.BASE_DIR / local_artifact["adapterPath"] / "trainer-result.json"
+            ).exists()
+            isolated_forge.set_local_trainer_backend(None)
+            isolated_forge.mode = "simulated"
+
             completed_forge = forge
             for _ in range(10):
                 completed_forge = assert_response(

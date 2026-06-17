@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,6 +40,14 @@ class ForgeTrainingService:
         self.worker = os.getenv("FOUNDRY_FORGE_WORKER", "local-process").strip() or "local-process"
         if self.mode not in {"simulated", "local"}:
             self.mode = "simulated"
+        self._local_trainer_backend: Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]] | None = None
+
+    def set_local_trainer_backend(
+        self,
+        backend: Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]] | None,
+    ) -> None:
+        """Inject a local trainer adapter while keeping the Forge contract boundary stable."""
+        self._local_trainer_backend = backend
 
     def describe_runtime(self) -> ForgeRuntime:
         if self.mode == "simulated":
@@ -337,7 +346,7 @@ class ForgeTrainingService:
                     "worker": self.worker,
                 },
             )
-            result = self._run_lora_training(contract, validation)
+            result = self._execute_trainer_backend(contract, validation)
             self._append_event(
                 forge_run_id,
                 "adapter_saved",
@@ -401,6 +410,15 @@ class ForgeTrainingService:
             "events": self.list_events(forge_run_id),
             "metrics": self.get_metrics(forge_run_id),
         }
+
+    def _execute_trainer_backend(
+        self,
+        contract: Dict[str, Any],
+        validation: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if self._local_trainer_backend:
+            return self._local_trainer_backend(contract, validation)
+        return self._run_lora_training(contract, validation)
 
     def _run_lora_training(
         self,

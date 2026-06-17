@@ -341,6 +341,78 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     else:
         raise AssertionError("Local trainer should be gated behind local runtime mode.")
 
+    cached_model_dir = forge_module.DEFAULT_FORGE_RUNTIME_DIR / "cached-model-proof"
+    cached_model_dir.mkdir(parents=True, exist_ok=True)
+    (cached_model_dir / "config.json").write_text("{}", encoding="utf-8")
+
+    local_forge_run = await catalog.start_forge(
+        workshop_id=workshop["id"],
+        material_id=exported["material"]["id"],
+        base_model=str(cached_model_dir),
+        method="LoRA",
+        purpose="training",
+        epochs=1,
+        learning_rate="0.0002",
+        load_in_4bit=False,
+    )
+    local_contract = forge.build_training_contract(
+        forge_run=local_forge_run,
+        material=exported["material"],
+    )
+
+    def fake_local_trainer(contract_payload, validation_payload):
+        output_dir = catalog_module.BASE_DIR / contract_payload["outputDir"]
+        output_dir.mkdir(parents=True, exist_ok=True)
+        adapter_file = output_dir / "adapter_model.safetensors"
+        adapter_file.write_text("tiny local trainer proof\n", encoding="utf-8")
+        result = {
+            "adapterPath": str(output_dir.relative_to(catalog_module.BASE_DIR)),
+            "baseModel": contract_payload["baseModel"],
+            "device": "cpu",
+            "loss": 0.1234,
+            "rowsUsed": 1,
+            "datasetRows": validation_payload["rowCount"],
+            "targetModules": ["c_attn"],
+            "createdAt": "2026-06-17T00:00:00+00:00",
+        }
+        forge._write_json(output_dir / "trainer-result.json", result)
+        return result
+
+    await forge.configure(mode="local")
+    forge._missing_training_dependencies = lambda: []
+    forge._training_memory_estimate = lambda _model_path: {
+        "fitStatus": "fits",
+        "checkStatus": "pass",
+        "estimatedLoadBytes": 1024,
+        "availableBytes": 4096,
+        "message": "Tiny proof model fits the test budget.",
+    }
+    forge.set_local_trainer_backend(fake_local_trainer)
+    local_readiness = forge.preflight_local_training(local_contract)
+    assert local_readiness["ok"] is True
+    local_state = forge.execute_local_training(local_contract)
+    assert local_state["metrics"]["status"] == "completed"
+    assert local_state["metrics"]["runtimeMode"] == "local"
+    assert local_state["metrics"]["adapterPath"] == local_contract["outputDir"]
+    assert any(event["type"] == "local_training_completed" for event in local_state["events"])
+
+    local_completed = await catalog.complete_forge_from_worker(
+        local_forge_run["id"],
+        adapter_path=local_state["metrics"]["adapterPath"],
+    )
+    local_artifacts = await catalog.list_artifacts(workshop["id"])
+    local_artifact = next(
+        item for item in local_artifacts if item["id"] == local_completed["artifactId"]
+    )
+    assert local_completed["status"] == "completed"
+    assert local_artifact["status"] == "ready"
+    assert local_artifact["adapterPath"] == local_contract["outputDir"]
+    assert (
+        catalog_module.BASE_DIR / local_artifact["adapterPath"] / "trainer-result.json"
+    ).exists()
+    forge.set_local_trainer_backend(None)
+    await forge.configure(mode="simulated")
+
     completed_forge = forge_run
     worker_state = state
     for _ in range(10):
