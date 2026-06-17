@@ -27,6 +27,10 @@ const files = {
     new URL("../src/components/ForgeWorkbench.tsx", import.meta.url),
     "utf8"
   ),
+  materials: await readFile(
+    new URL("../src/components/MaterialsWorkbench.tsx", import.meta.url),
+    "utf8"
+  ),
   workshopCreate: await readFile(
     new URL("../src/components/WorkshopCreateModal.tsx", import.meta.url),
     "utf8"
@@ -140,6 +144,36 @@ assertIncludes(
   files.repository,
   "preflightArchiveModel:",
   "Repository preflights Hugging Face models"
+);
+assertIncludes(
+  files.contracts,
+  "importMaterialFile:",
+  "Frontend contract exposes Material file import route"
+);
+assertIncludes(
+  files.repository,
+  "importMaterialFile:",
+  "Repository imports local Material files"
+);
+assertIncludes(
+  files.repository,
+  "application/octet-stream",
+  "Repository sends Material file bytes without multipart dependencies"
+);
+assertIncludes(
+  files.materials,
+  "type=\"file\"",
+  "Materials workbench renders a local file picker"
+);
+assertIncludes(
+  files.materials,
+  "Import Material",
+  "Materials workbench labels local file imports"
+);
+assertIncludes(
+  files.styles,
+  ".material-form input[type=\"file\"]",
+  "Material file picker is styled"
 );
 assertIncludes(
   files.app,

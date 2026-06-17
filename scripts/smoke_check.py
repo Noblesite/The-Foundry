@@ -200,6 +200,43 @@ def run_trial_contract_check() -> int:
     return 0
 
 
+def run_material_import_contract_check() -> int:
+    api_server = PACKAGE_ROOT / "backend" / "api_server.py"
+    catalog_service = PACKAGE_ROOT / "backend" / "services" / "foundry_catalog_service.py"
+    api_source = api_server.read_text(encoding="utf-8")
+    service_source = catalog_service.read_text(encoding="utf-8")
+
+    required_api_patterns = (
+        "/api/v1/workshops/{workshop_id}/materials/import-file",
+        "import_foundry_material_file_endpoint",
+        "Request",
+        "request.body()",
+    )
+    missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
+    if missing_api:
+        return fail("Material import API boundary is missing: " + ", ".join(missing_api))
+
+    required_service_patterns = (
+        "SUPPORTED_IMPORT_EXTENSIONS",
+        "FOUNDRY_MATERIAL_UPLOAD_MAX_BYTES",
+        "import_material_file",
+        "_import_material_file_sync",
+        "_safe_source_filename",
+        "_read_csv_source",
+        "_read_jsonl_source",
+        "_read_pdf_source",
+        "pypdf",
+    )
+    missing_service = [
+        pattern for pattern in required_service_patterns if pattern not in service_source
+    ]
+    if missing_service:
+        return fail("Material import service contract is missing: " + ", ".join(missing_service))
+
+    print("OK: Material file import contract is present.")
+    return 0
+
+
 def run_construct_runtime_event_contract_check() -> int:
     api_server = PACKAGE_ROOT / "backend" / "api_server.py"
     construct_service = PACKAGE_ROOT / "backend" / "services" / "construct_inference_service.py"
@@ -576,6 +613,7 @@ def main() -> int:
         run_api_transport_boundary_check,
         run_forge_adapter_boundary_check,
         run_trial_contract_check,
+        run_material_import_contract_check,
         run_construct_runtime_event_contract_check,
         run_foundry_runtime_status_contract_check,
         run_model_download_job_contract_check,

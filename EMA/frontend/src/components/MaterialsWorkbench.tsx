@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { IngestMaterialRequest, StartAssemblyLineRequest } from "../contracts/foundryApi";
+import {
+  ImportMaterialFileRequest,
+  IngestMaterialRequest,
+  StartAssemblyLineRequest,
+} from "../contracts/foundryApi";
 import {
   AcademyAction,
   AssemblyLineRun,
@@ -31,6 +35,39 @@ const materialKinds: Array<{ label: string; value: MaterialKind }> = [
   { label: "JSONL dataset", value: "jsonl" },
 ];
 
+const importableMaterialKinds: ImportMaterialFileRequest["kind"][] = [
+  "csv",
+  "pdf",
+  "transcript",
+  "video-transcript",
+  "text",
+  "jsonl",
+];
+
+const inferMaterialKindFromFile = (fileName: string): ImportMaterialFileRequest["kind"] => {
+  const normalized = fileName.toLowerCase();
+  if (normalized.endsWith(".csv")) {
+    return "csv";
+  }
+  if (normalized.endsWith(".pdf")) {
+    return "pdf";
+  }
+  if (normalized.endsWith(".jsonl") || normalized.endsWith(".ndjson")) {
+    return "jsonl";
+  }
+  if (
+    normalized.endsWith(".srt") ||
+    normalized.endsWith(".vtt") ||
+    normalized.endsWith(".transcript")
+  ) {
+    return "transcript";
+  }
+  return "text";
+};
+
+const materialNameFromFile = (fileName: string) =>
+  fileName.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim();
+
 const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   repository,
   summary,
@@ -60,6 +97,8 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isStartingAssembly, setIsStartingAssembly] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -156,14 +195,47 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
     setError(null);
 
     try {
-      const material = await repository.registerMaterial(workshop.id, draft);
+      const trimmedName = draft.name.trim();
+      if (!trimmedName) {
+        throw new Error("Material name cannot be empty.");
+      }
+      const material = selectedFile
+        ? await repository.importMaterialFile(workshop.id, {
+            name: trimmedName,
+            kind: importableMaterialKinds.includes(draft.kind as ImportMaterialFileRequest["kind"])
+              ? (draft.kind as ImportMaterialFileRequest["kind"])
+              : inferMaterialKindFromFile(selectedFile.name),
+            file: selectedFile,
+          })
+        : await repository.registerMaterial(workshop.id, {
+            ...draft,
+            name: trimmedName,
+            sourceUri: draft.sourceUri.trim(),
+          });
       setMaterials((current) => [material, ...current.filter((item) => item.id !== material.id)]);
       setDraft({ name: "", kind: draft.kind, sourceUri: "" });
+      setSelectedFile(null);
+      setFileInputKey((current) => current + 1);
     } catch (saveError: unknown) {
       setError(saveError instanceof Error ? saveError.message : "Could not register Material.");
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleFileSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    setSelectedFile(file);
+    if (!file) {
+      return;
+    }
+    const inferredKind = inferMaterialKindFromFile(file.name);
+    setDraft((current) => ({
+      ...current,
+      name: current.name || materialNameFromFile(file.name) || file.name,
+      kind: inferredKind,
+      sourceUri: "",
+    }));
   };
 
   const startAssemblyLine = async () => {
@@ -261,6 +333,20 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
             required
           />
 
+          <label className="field-label" htmlFor="material-file">Local file</label>
+          <input
+            key={fileInputKey}
+            id="material-file"
+            type="file"
+            accept=".txt,.md,.markdown,.text,.csv,.jsonl,.ndjson,.pdf,.transcript,.srt,.vtt"
+            onChange={handleFileSelection}
+          />
+          {selectedFile && (
+            <p className="save-state">
+              Importing {selectedFile.name} into controlled runtime storage.
+            </p>
+          )}
+
           <label className="field-label" htmlFor="material-kind">Material type</label>
           <select
             id="material-kind"
@@ -279,12 +365,13 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
             value={draft.sourceUri}
             onChange={(event) => updateDraft("sourceUri", event.target.value)}
             placeholder="runtime/materials/sources/episode-summaries.csv"
-            required
+            required={!selectedFile}
+            disabled={Boolean(selectedFile)}
           />
 
           <button className="button-primary" type="submit" disabled={isSaving}>
             <i className="fas fa-box-archive" aria-hidden="true" />
-            {isSaving ? "Staging" : "Stage Material"}
+            {isSaving ? "Staging" : selectedFile ? "Import Material" : "Stage Material"}
           </button>
           {error && <p className="save-state error-state">{error}</p>}
           </form>

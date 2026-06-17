@@ -3,7 +3,7 @@ import json
 from typing import Any, Literal, Set
 from uuid import uuid4
 from datetime import datetime, timezone
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from utilities.logger import get_logger
 from pydantic import BaseModel
@@ -787,6 +787,37 @@ async def register_foundry_material_endpoint(workshop_id: str, data: RegisterMat
         return api_envelope(material)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error))
+
+
+@app.post("/api/v1/workshops/{workshop_id}/materials/import-file")
+async def import_foundry_material_file_endpoint(
+    workshop_id: str,
+    request: Request,
+    name: str = Query(default=""),
+    kind: Literal["csv", "pdf", "transcript", "video-transcript", "text", "jsonl"] = Query(
+        default="text"
+    ),
+    filename: str = Query(default="material.txt"),
+):
+    material_name = name.strip()
+    source_filename = filename.strip()
+    if not material_name:
+        raise HTTPException(status_code=400, detail="Material name cannot be empty.")
+    if not source_filename:
+        raise HTTPException(status_code=400, detail="Material filename cannot be empty.")
+
+    content = await request.body()
+    try:
+        material = await foundry_catalog_service.import_material_file(
+            workshop_id=workshop_id,
+            name=material_name,
+            kind=kind,
+            filename=source_filename,
+            content=content,
+        )
+        return api_envelope(material)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.get("/api/v1/workshops/{workshop_id}/assembly-lines")

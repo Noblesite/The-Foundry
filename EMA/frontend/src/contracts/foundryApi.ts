@@ -45,6 +45,8 @@ export const foundryApiRoutes = {
   workshops: `${FOUNDRY_API_VERSION}/workshops`,
   workshop: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}`,
   materials: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/materials`,
+  importMaterialFile: (workshopId: string) =>
+    `${FOUNDRY_API_VERSION}/workshops/${workshopId}/materials/import-file`,
   assemblyLines: (workshopId: string) =>
     `${FOUNDRY_API_VERSION}/workshops/${workshopId}/assembly-lines`,
   chunks: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/chunks`,
@@ -300,6 +302,12 @@ export interface IngestMaterialRequest {
   kind: MaterialKind;
   sourceUri: string;
   metadata?: Record<string, string>;
+}
+
+export interface ImportMaterialFileRequest {
+  name: string;
+  kind: Exclude<MaterialKind, "website">;
+  file: File;
 }
 
 export interface StartAssemblyLineRequest {

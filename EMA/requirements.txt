@@ -11,6 +11,7 @@ chromadb>=0.6,<1.0
 datasets>=3.3,<4.0
 numpy>=2.0,<3.0
 pandas>=2.2,<3.0
+pypdf>=5.0,<6.0
 scikit-learn>=1.6,<2.0
 sentence-transformers>=3.4,<4.0
 

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 import json
 import math
 import os
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +16,16 @@ from uuid import uuid4
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_DB_PATH = BASE_DIR / "runtime" / "foundry_catalog.db"
 DEFAULT_EXPORT_DIR = BASE_DIR / "runtime" / "materials" / "exports"
+DEFAULT_SOURCE_DIR = BASE_DIR / "runtime" / "materials" / "sources"
+DEFAULT_MATERIAL_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
+SUPPORTED_IMPORT_EXTENSIONS = {
+    "csv": {".csv"},
+    "pdf": {".pdf"},
+    "jsonl": {".jsonl", ".ndjson"},
+    "text": {".txt", ".md", ".markdown", ".text"},
+    "transcript": {".txt", ".md", ".text", ".transcript", ".srt", ".vtt"},
+    "video-transcript": {".txt", ".md", ".text", ".transcript", ".srt", ".vtt"},
+}
 
 
 class FoundryCatalogService:
@@ -1787,6 +1799,118 @@ class FoundryCatalogService:
             ).fetchone()
             return self._material_from_row(row)
 
+    async def import_material_file(
+        self,
+        workshop_id: str,
+        name: str,
+        kind: str,
+        filename: str,
+        content: bytes,
+    ) -> Dict[str, Any]:
+        async with self._write_lock:
+            return await self._run_query(
+                lambda: self._import_material_file_sync(
+                    workshop_id,
+                    name,
+                    kind,
+                    filename,
+                    content,
+                )
+            )
+
+    def _import_material_file_sync(
+        self,
+        workshop_id: str,
+        name: str,
+        kind: str,
+        filename: str,
+        content: bytes,
+    ) -> Dict[str, Any]:
+        if kind not in SUPPORTED_IMPORT_EXTENSIONS:
+            raise ValueError("This Material type cannot be uploaded as a local file yet.")
+        if not content:
+            raise ValueError("Uploaded Material file is empty.")
+
+        max_bytes = self._material_upload_max_bytes()
+        if len(content) > max_bytes:
+            max_mb = round(max_bytes / (1024 * 1024))
+            raise ValueError(f"Uploaded Material exceeds the {max_mb} MB MVP file limit.")
+
+        source_name = Path(filename).name
+        suffix = Path(source_name).suffix.lower()
+        allowed_suffixes = SUPPORTED_IMPORT_EXTENSIONS[kind]
+        if suffix not in allowed_suffixes:
+            supported = ", ".join(sorted(allowed_suffixes))
+            raise ValueError(f"{kind} uploads must use one of these extensions: {supported}.")
+
+        material_id = f"mat-{uuid4().hex[:12]}"
+        safe_filename = self._safe_source_filename(source_name)
+        destination_dir = DEFAULT_SOURCE_DIR / self._safe_export_name(workshop_id)
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        destination_path = destination_dir / f"{material_id}-{safe_filename}"
+        destination_path.write_bytes(content)
+        source_uri = self._runtime_uri(destination_path)
+
+        with self._connect() as connection:
+            workshop = connection.execute(
+                "SELECT id FROM workshops WHERE id = ?",
+                (workshop_id,),
+            ).fetchone()
+            if workshop is None:
+                try:
+                    destination_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                raise ValueError(f"Workshop {workshop_id} was not found.")
+
+            connection.execute(
+                """
+                INSERT INTO materials (
+                    id, workshop_id, name, kind, status, source_uri,
+                    chunk_count, qa_pair_count
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (material_id, workshop_id, name, kind, "staged", source_uri, 0, 0),
+            )
+            connection.execute(
+                """
+                UPDATE workshops
+                SET status = CASE WHEN status = 'planning' THEN 'assembling' ELSE status END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (workshop_id,),
+            )
+            row = connection.execute(
+                "SELECT * FROM materials WHERE id = ?",
+                (material_id,),
+            ).fetchone()
+            return self._material_from_row(row)
+
+    def _material_upload_max_bytes(self) -> int:
+        raw_value = os.getenv("FOUNDRY_MATERIAL_UPLOAD_MAX_BYTES", "").strip()
+        if not raw_value:
+            return DEFAULT_MATERIAL_UPLOAD_MAX_BYTES
+        try:
+            parsed = int(raw_value)
+        except ValueError:
+            return DEFAULT_MATERIAL_UPLOAD_MAX_BYTES
+        return max(1, parsed)
+
+    def _safe_source_filename(self, filename: str) -> str:
+        path = Path(filename).name
+        stem = Path(path).stem
+        suffix = Path(path).suffix.lower()
+        safe_stem = re.sub(r"[^A-Za-z0-9_.-]+", "-", stem).strip("-")
+        return f"{safe_stem or 'material'}{suffix}"
+
+    def _runtime_uri(self, path: Path) -> str:
+        try:
+            return str(path.relative_to(BASE_DIR))
+        except ValueError:
+            return str(path)
+
     async def list_assembly_line_runs(self, workshop_id: str) -> List[Dict[str, Any]]:
         def query():
             with self._connect() as connection:
@@ -2515,7 +2639,7 @@ class FoundryCatalogService:
         chunk_size_tokens: int,
         chunk_overlap_tokens: int,
     ) -> List[Dict[str, Any]]:
-        if material["kind"] not in {"text", "transcript", "video-transcript"}:
+        if material["kind"] not in {"text", "transcript", "video-transcript", "csv", "jsonl", "pdf"}:
             return []
 
         text = self._read_text_source(material["source_uri"])
@@ -2550,6 +2674,13 @@ class FoundryCatalogService:
             source_path = BASE_DIR / source_path
 
         if source_path.is_file():
+            suffix = source_path.suffix.lower()
+            if suffix == ".csv":
+                return self._read_csv_source(source_path)
+            if suffix in {".jsonl", ".ndjson"}:
+                return self._read_jsonl_source(source_path)
+            if suffix == ".pdf":
+                return self._read_pdf_source(source_path)
             return source_path.read_text(encoding="utf-8", errors="ignore")
 
         if source_path.is_dir():
@@ -2560,6 +2691,76 @@ class FoundryCatalogService:
             return "\n\n".join(text_parts)
 
         return ""
+
+    def _read_csv_source(self, source_path: Path) -> str:
+        rows = []
+        with source_path.open("r", encoding="utf-8", errors="ignore", newline="") as csv_file:
+            reader = csv.DictReader(csv_file)
+            if reader.fieldnames:
+                for index, row in enumerate(reader):
+                    values = [
+                        f"{field}: {value}"
+                        for field, value in row.items()
+                        if field and value not in {None, ""}
+                    ]
+                    if values:
+                        rows.append(f"Row {index + 1}. " + "; ".join(values))
+            else:
+                csv_file.seek(0)
+                plain_reader = csv.reader(csv_file)
+                for index, row in enumerate(plain_reader):
+                    values = [value for value in row if value]
+                    if values:
+                        rows.append(f"Row {index + 1}. " + "; ".join(values))
+        return "\n".join(rows)
+
+    def _read_jsonl_source(self, source_path: Path) -> str:
+        rows = []
+        with source_path.open("r", encoding="utf-8", errors="ignore") as jsonl_file:
+            for index, line in enumerate(jsonl_file, start=1):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    payload = json.loads(stripped)
+                except json.JSONDecodeError:
+                    rows.append(stripped)
+                    continue
+                if isinstance(payload, dict):
+                    instruction = str(payload.get("instruction") or payload.get("question") or "").strip()
+                    output = str(payload.get("output") or payload.get("answer") or "").strip()
+                    if instruction or output:
+                        rows.append(f"Row {index}. Instruction: {instruction}. Output: {output}.")
+                    else:
+                        rows.append(
+                            "Row "
+                            + str(index)
+                            + ". "
+                            + "; ".join(
+                                f"{key}: {value}"
+                                for key, value in payload.items()
+                                if value is not None and value != ""
+                            )
+                        )
+                else:
+                    rows.append(str(payload))
+        return "\n".join(rows)
+
+    def _read_pdf_source(self, source_path: Path) -> str:
+        try:
+            from pypdf import PdfReader
+        except ImportError as error:
+            raise ValueError(
+                "PDF extraction requires pypdf. Install project dependencies before assembling PDF Materials."
+            ) from error
+
+        reader = PdfReader(str(source_path))
+        pages = []
+        for index, page in enumerate(reader.pages, start=1):
+            text = page.extract_text() or ""
+            if text.strip():
+                pages.append(f"Page {index}. {text.strip()}")
+        return "\n\n".join(pages)
 
     def _build_qa_pairs(
         self,

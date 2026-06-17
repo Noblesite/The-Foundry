@@ -36,6 +36,7 @@ import {
   ForgeWorkerReconcileDto,
   foundryApiRoutes,
   HuggingFaceAuthCheckDto,
+  ImportMaterialFileRequest,
   IngestMaterialRequest,
   InspectArchiveModelRequest,
   LoadArtifactIntoConstructRequest,
@@ -270,6 +271,10 @@ export interface FoundryRepository {
   registerMaterial: (
     workshopId: string,
     request: IngestMaterialRequest
+  ) => Promise<MaterialSource>;
+  importMaterialFile: (
+    workshopId: string,
+    request: ImportMaterialFileRequest
   ) => Promise<MaterialSource>;
   listAssemblyLineRuns: (workshopId: string) => Promise<AssemblyLineRun[]>;
   startAssemblyLine: (
@@ -850,6 +855,19 @@ export const mockFoundryRepository: FoundryRepository = {
       kind: request.kind,
       status: "staged",
       sourceUri: request.sourceUri,
+      chunkCount: 0,
+      qaPairCount: 0,
+    };
+    mockMaterialSources.unshift(material);
+    return material;
+  },
+  importMaterialFile: async (_workshopId, request) => {
+    const material: MaterialSource = {
+      id: `mat-${request.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      name: request.name,
+      kind: request.kind,
+      status: "staged",
+      sourceUri: `runtime/materials/sources/${request.file.name}`,
       chunkCount: 0,
       qaPairCount: 0,
     };
@@ -1998,6 +2016,24 @@ export const apiFoundryRepository: FoundryRepository = {
         request
       )
     ),
+  importMaterialFile: async (workshopId, request) => {
+    const params = new URLSearchParams({
+      name: request.name,
+      kind: request.kind,
+      filename: request.file.name,
+    });
+    return unwrap(
+      await apiClient.post<ApiEnvelope<MaterialSource>>(
+        `${foundryApiRoutes.importMaterialFile(workshopId)}?${params.toString()}`,
+        await request.file.arrayBuffer(),
+        {
+          headers: {
+            "Content-Type": "application/octet-stream",
+          },
+        }
+      )
+    );
+  },
   listAssemblyLineRuns: async (workshopId) =>
     unwrap(
       await apiClient.get<ApiEnvelope<AssemblyLineRunDto[]>>(

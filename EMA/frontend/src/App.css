@@ -3280,6 +3280,32 @@ input[type="checkbox"] {
   padding: 1rem;
 }
 
+.material-form input[type="file"] {
+  width: 100%;
+  border: 1px dashed rgba(0, 212, 255, 0.34);
+  border-radius: 8px;
+  padding: 0.72rem;
+  background: rgba(13, 17, 23, 0.58);
+  color: var(--text-secondary);
+}
+
+.material-form input[type="file"]::file-selector-button {
+  margin-right: 0.72rem;
+  border: 1px solid rgba(0, 212, 255, 0.36);
+  border-radius: 8px;
+  padding: 0.5rem 0.72rem;
+  background: rgba(0, 212, 255, 0.14);
+  color: var(--arc-blue);
+  font: inherit;
+  cursor: pointer;
+}
+
+.material-form input:disabled {
+  border-color: rgba(119, 140, 152, 0.2);
+  color: var(--text-dim);
+  opacity: 0.78;
+}
+
 .assembly-panel {
   display: grid;
   align-content: start;
