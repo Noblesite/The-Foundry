@@ -4385,6 +4385,56 @@ input[type="checkbox"] {
   background: rgba(13, 17, 23, 0.55);
 }
 
+.qa-review-card {
+  gap: 0.55rem;
+}
+
+.qa-review-card textarea {
+  width: 100%;
+  min-height: 5.5rem;
+  resize: vertical;
+}
+
+.qa-review-card-header,
+.qa-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.qa-review-card-header > span:last-child {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+}
+
+.qa-review-actions {
+  justify-content: flex-end;
+}
+
+.qa-export-toggle {
+  min-height: 2.35rem;
+  border: 1px solid rgba(119, 140, 152, 0.22);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  background: rgba(13, 17, 23, 0.45);
+  white-space: nowrap;
+}
+
+.qa-status-draft {
+  color: var(--text-secondary);
+}
+
+.qa-status-accepted,
+.qa-status-edited {
+  color: var(--arc-blue);
+}
+
+.qa-status-rejected {
+  color: var(--forge-orange);
+}
+
 .review-card strong {
   color: var(--text-primary);
   font-size: 0.84rem;

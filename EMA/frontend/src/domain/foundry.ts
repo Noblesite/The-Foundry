@@ -21,6 +21,7 @@ export type MaterialKind =
   | "text"
   | "jsonl";
 export type MaterialStatus = "staged" | "chunked" | "qa-ready" | "needs-review";
+export type QAReviewStatus = "draft" | "accepted" | "rejected" | "edited";
 export type AssemblyLineStatus = "queued" | "running" | "completed" | "failed";
 export type ForgeRunStatus = "queued" | "running" | "paused" | "completed" | "failed";
 export type ArtifactStatus = "draft" | "trial" | "ready" | "archived";
@@ -156,6 +157,8 @@ export interface QAPair {
   assemblyLineRunId: string;
   question: string;
   answer: string;
+  reviewStatus: QAReviewStatus;
+  reviewedAt?: string | null;
 }
 
 export interface ForgeRun {

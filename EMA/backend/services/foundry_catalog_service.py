@@ -148,6 +148,8 @@ class FoundryCatalogService:
                 assembly_line_run_id TEXT NOT NULL,
                 question TEXT NOT NULL,
                 answer TEXT NOT NULL,
+                review_status TEXT NOT NULL DEFAULT 'draft',
+                reviewed_at TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(workshop_id) REFERENCES workshops(id),
                 FOREIGN KEY(material_id) REFERENCES materials(id),
@@ -347,6 +349,7 @@ class FoundryCatalogService:
             """
         )
         self._ensure_forge_contract_columns(connection)
+        self._ensure_qa_review_columns(connection)
 
     def _ensure_forge_contract_columns(self, connection: sqlite3.Connection) -> None:
         columns = {
@@ -358,6 +361,18 @@ class FoundryCatalogService:
             ("purpose", "ALTER TABLE forge_runs ADD COLUMN purpose TEXT NOT NULL DEFAULT 'training'"),
             ("learning_rate", "ALTER TABLE forge_runs ADD COLUMN learning_rate TEXT"),
             ("load_in_4bit", "ALTER TABLE forge_runs ADD COLUMN load_in_4bit INTEGER NOT NULL DEFAULT 0"),
+        ]
+        for column_name, statement in migrations:
+            if column_name not in columns:
+                connection.execute(statement)
+
+    def _ensure_qa_review_columns(self, connection: sqlite3.Connection) -> None:
+        columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(qa_pairs)").fetchall()
+        }
+        migrations = [
+            ("review_status", "ALTER TABLE qa_pairs ADD COLUMN review_status TEXT NOT NULL DEFAULT 'draft'"),
+            ("reviewed_at", "ALTER TABLE qa_pairs ADD COLUMN reviewed_at TEXT"),
         ]
         for column_name, statement in migrations:
             if column_name not in columns:
@@ -870,6 +885,8 @@ class FoundryCatalogService:
             "assemblyLineRunId": row["assembly_line_run_id"],
             "question": row["question"],
             "answer": row["answer"],
+            "reviewStatus": row["review_status"] or "draft",
+            "reviewedAt": row["reviewed_at"],
         }
 
     async def list_workshops(self) -> List[Dict[str, Any]]:
@@ -1986,10 +2003,85 @@ class FoundryCatalogService:
 
         return await self._run_query(query)
 
+    async def update_qa_pair_review(
+        self,
+        workshop_id: str,
+        qa_pair_id: str,
+        question: str,
+        answer: str,
+        review_status: str,
+    ) -> Dict[str, Any]:
+        async with self._write_lock:
+            return await self._run_query(
+                lambda: self._update_qa_pair_review_sync(
+                    workshop_id,
+                    qa_pair_id,
+                    question,
+                    answer,
+                    review_status,
+                )
+            )
+
+    def _update_qa_pair_review_sync(
+        self,
+        workshop_id: str,
+        qa_pair_id: str,
+        question: str,
+        answer: str,
+        review_status: str,
+    ) -> Dict[str, Any]:
+        if review_status not in {"draft", "accepted", "rejected", "edited"}:
+            raise ValueError("QA review status must be draft, accepted, rejected, or edited.")
+        if not question.strip():
+            raise ValueError("QA question cannot be empty.")
+        if not answer.strip():
+            raise ValueError("QA answer cannot be empty.")
+
+        reviewed_at = (
+            datetime.now(timezone.utc).isoformat()
+            if review_status in {"accepted", "rejected", "edited"}
+            else None
+        )
+        with self._connect() as connection:
+            existing = connection.execute(
+                """
+                SELECT * FROM qa_pairs
+                WHERE id = ? AND workshop_id = ?
+                """,
+                (qa_pair_id, workshop_id),
+            ).fetchone()
+            if existing is None:
+                raise ValueError("QA pair was not found for this Workshop.")
+
+            connection.execute(
+                """
+                UPDATE qa_pairs
+                SET question = ?,
+                    answer = ?,
+                    review_status = ?,
+                    reviewed_at = ?
+                WHERE id = ? AND workshop_id = ?
+                """,
+                (
+                    question.strip(),
+                    answer.strip(),
+                    review_status,
+                    reviewed_at,
+                    qa_pair_id,
+                    workshop_id,
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM qa_pairs WHERE id = ? AND workshop_id = ?",
+                (qa_pair_id, workshop_id),
+            ).fetchone()
+            return self._qa_pair_from_row(row)
+
     async def export_qa_pairs_to_material(
         self,
         workshop_id: str,
         assembly_line_run_id: str,
+        include_drafts: bool = False,
         name: Optional[str] = None,
     ) -> Dict[str, Any]:
         async with self._write_lock:
@@ -1997,6 +2089,7 @@ class FoundryCatalogService:
                 lambda: self._export_qa_pairs_to_material_sync(
                     workshop_id,
                     assembly_line_run_id,
+                    include_drafts,
                     name,
                 )
             )
@@ -2005,6 +2098,7 @@ class FoundryCatalogService:
         self,
         workshop_id: str,
         assembly_line_run_id: str,
+        include_drafts: bool,
         name: Optional[str],
     ) -> Dict[str, Any]:
         with self._connect() as connection:
@@ -2031,6 +2125,8 @@ class FoundryCatalogService:
                     qa_pairs.id,
                     qa_pairs.question,
                     qa_pairs.answer,
+                    qa_pairs.review_status,
+                    qa_pairs.reviewed_at,
                     qa_pairs.material_id,
                     qa_pairs.chunk_id,
                     qa_pairs.assembly_line_run_id,
@@ -2042,12 +2138,15 @@ class FoundryCatalogService:
                 LEFT JOIN materials ON materials.id = qa_pairs.material_id
                 WHERE qa_pairs.workshop_id = ?
                     AND qa_pairs.assembly_line_run_id = ?
+                    AND (? OR qa_pairs.review_status IN ('accepted', 'edited'))
                 ORDER BY qa_pairs.material_id ASC, qa_pairs.created_at ASC
                 """,
-                (workshop_id, assembly_line_run_id),
+                (workshop_id, assembly_line_run_id, 1 if include_drafts else 0),
             ).fetchall()
             if not rows:
-                raise ValueError("This Assembly Line run has no QA pairs to export.")
+                raise ValueError(
+                    "This Assembly Line run has no accepted QA pairs to export. Review rows first or use the draft override."
+                )
 
             export_dir = DEFAULT_EXPORT_DIR / workshop_id
             export_dir.mkdir(parents=True, exist_ok=True)
@@ -2075,6 +2174,9 @@ class FoundryCatalogService:
                         "metadata": {
                             "format": "foundry.qa.v1",
                             "rowIndex": index,
+                            "reviewStatus": row["review_status"],
+                            "reviewedAt": row["reviewed_at"],
+                            "draftOverride": include_drafts,
                         },
                     }
                     export_file.write(json.dumps(payload, ensure_ascii=False) + "\n")

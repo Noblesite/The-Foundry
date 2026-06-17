@@ -51,6 +51,7 @@ import {
   StartForgeRequest,
   TestHuggingFaceAuthRequest,
   TrialDto,
+  UpdateQAPairReviewRequest,
 } from "../contracts/foundryApi";
 import {
   AcademyAction,
@@ -283,6 +284,11 @@ export interface FoundryRepository {
   ) => Promise<AssemblyLineRun>;
   listMaterialChunks: (workshopId: string, runId?: string) => Promise<MaterialChunk[]>;
   listQAPairs: (workshopId: string, runId?: string) => Promise<QAPair[]>;
+  updateQAPairReview: (
+    workshopId: string,
+    qaPairId: string,
+    request: UpdateQAPairReviewRequest
+  ) => Promise<QAPair>;
   exportQAPairs: (
     workshopId: string,
     request: ExportQAPairsRequest
@@ -922,6 +928,8 @@ export const mockFoundryRepository: FoundryRepository = {
         assemblyLineRunId: run.id,
         question: `What does ${material.name} cover?`,
         answer: chunk.text,
+        reviewStatus: "draft",
+        reviewedAt: null,
       };
       mockMaterialChunks.unshift(chunk);
       mockQAPairs.unshift(qaPair);
@@ -937,14 +945,30 @@ export const mockFoundryRepository: FoundryRepository = {
     mockQAPairs.filter(
       (qaPair) => qaPair.workshopId === _workshopId && (!runId || qaPair.assemblyLineRunId === runId)
     ),
+  updateQAPairReview: async (_workshopId, qaPairId, request) => {
+    const qaPair = mockQAPairs.find(
+      (item) => item.workshopId === _workshopId && item.id === qaPairId
+    );
+    if (!qaPair) {
+      throw new Error("QA pair was not found for this Workshop.");
+    }
+    qaPair.question = request.question;
+    qaPair.answer = request.answer;
+    qaPair.reviewStatus = request.reviewStatus;
+    qaPair.reviewedAt = request.reviewStatus === "draft" ? null : new Date().toISOString();
+    return qaPair;
+  },
   exportQAPairs: async (_workshopId, request) => {
     const qaPairs = mockQAPairs.filter(
       (qaPair) =>
         qaPair.workshopId === _workshopId &&
-        qaPair.assemblyLineRunId === request.assemblyLineRunId
+        qaPair.assemblyLineRunId === request.assemblyLineRunId &&
+        (request.includeDrafts ||
+          qaPair.reviewStatus === "accepted" ||
+          qaPair.reviewStatus === "edited")
     );
     if (qaPairs.length === 0) {
-      throw new Error("This Assembly Line run has no QA pairs to export.");
+      throw new Error("This Assembly Line run has no accepted QA pairs to export.");
     }
     const material: MaterialSource = {
       id: `mat-export-${Date.now()}`,
@@ -2058,6 +2082,13 @@ export const apiFoundryRepository: FoundryRepository = {
       await apiClient.get<ApiEnvelope<QAPairDto[]>>(foundryApiRoutes.qaPairs(workshopId), {
         params: runId ? { runId } : undefined,
       })
+    ),
+  updateQAPairReview: async (workshopId, qaPairId, request) =>
+    unwrap(
+      await apiClient.patch<ApiEnvelope<QAPairDto>>(
+        foundryApiRoutes.qaPair(workshopId, qaPairId),
+        request
+      )
     ),
   exportQAPairs: async (workshopId, request) =>
     unwrap(

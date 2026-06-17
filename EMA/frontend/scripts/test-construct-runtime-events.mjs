@@ -151,9 +151,24 @@ assertIncludes(
   "Frontend contract exposes Material file import route"
 );
 assertIncludes(
+  files.contracts,
+  "UpdateQAPairReviewRequest",
+  "Frontend contract supports QA review updates"
+);
+assertIncludes(
+  files.contracts,
+  "includeDrafts?",
+  "QA export contract exposes explicit draft override"
+);
+assertIncludes(
   files.repository,
   "importMaterialFile:",
   "Repository imports local Material files"
+);
+assertIncludes(
+  files.repository,
+  "updateQAPairReview:",
+  "Repository persists QA review edits"
 );
 assertIncludes(
   files.repository,
@@ -171,9 +186,34 @@ assertIncludes(
   "Materials workbench labels local file imports"
 );
 assertIncludes(
+  files.materials,
+  "Include draft rows",
+  "Materials workbench exposes draft export override"
+);
+assertIncludes(
+  files.materials,
+  "saveQAPairReview",
+  "Materials workbench can persist QA review state"
+);
+assertIncludes(
+  files.materials,
+  "Accept",
+  "Materials workbench can accept QA rows"
+);
+assertIncludes(
+  files.materials,
+  "Reject",
+  "Materials workbench can reject QA rows"
+);
+assertIncludes(
   files.styles,
   ".material-form input[type=\"file\"]",
   "Material file picker is styled"
+);
+assertIncludes(
+  files.styles,
+  ".qa-review-card",
+  "QA review cards are styled"
 );
 assertIncludes(
   files.app,

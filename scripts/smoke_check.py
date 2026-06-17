@@ -208,7 +208,11 @@ def run_material_import_contract_check() -> int:
 
     required_api_patterns = (
         "/api/v1/workshops/{workshop_id}/materials/import-file",
+        "/api/v1/workshops/{workshop_id}/qa-pairs/{qa_pair_id}",
         "import_foundry_material_file_endpoint",
+        "update_foundry_qa_pair_review_endpoint",
+        "UpdateQAPairReviewInput",
+        "includeDrafts: bool = False",
         "Request",
         "request.body()",
     )
@@ -226,6 +230,10 @@ def run_material_import_contract_check() -> int:
         "_read_jsonl_source",
         "_read_pdf_source",
         "pypdf",
+        "_ensure_qa_review_columns",
+        "update_qa_pair_review",
+        "review_status IN ('accepted', 'edited')",
+        "\"reviewStatus\": row[\"review_status\"]",
     )
     missing_service = [
         pattern for pattern in required_service_patterns if pattern not in service_source

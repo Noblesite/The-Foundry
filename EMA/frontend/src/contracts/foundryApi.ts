@@ -22,6 +22,7 @@ import {
   MaterialSource,
   MaterialKind,
   MaterialStatus,
+  QAReviewStatus,
   ModelArchiveEntry,
   ModelDownloadJob,
   ModelPlatformProfile,
@@ -51,6 +52,8 @@ export const foundryApiRoutes = {
     `${FOUNDRY_API_VERSION}/workshops/${workshopId}/assembly-lines`,
   chunks: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/chunks`,
   qaPairs: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/qa-pairs`,
+  qaPair: (workshopId: string, qaPairId: string) =>
+    `${FOUNDRY_API_VERSION}/workshops/${workshopId}/qa-pairs/${qaPairId}`,
   exportQAPairs: (workshopId: string) =>
     `${FOUNDRY_API_VERSION}/workshops/${workshopId}/qa-pairs/export`,
   exportTrials: (workshopId: string) =>
@@ -190,6 +193,8 @@ export interface QAPairDto {
   assemblyLineRunId: string;
   question: string;
   answer: string;
+  reviewStatus: QAReviewStatus;
+  reviewedAt?: string | null;
 }
 
 export interface ExportQAPairsDto {
@@ -320,6 +325,13 @@ export interface StartAssemblyLineRequest {
 export interface ExportQAPairsRequest {
   assemblyLineRunId: string;
   name?: string;
+  includeDrafts?: boolean;
+}
+
+export interface UpdateQAPairReviewRequest {
+  question: string;
+  answer: string;
+  reviewStatus: QAReviewStatus;
 }
 
 export interface StartForgeRequest {

@@ -62,6 +62,12 @@ class StartAssemblyLineInput(BaseModel):
 class ExportQAPairsInput(BaseModel):
     assemblyLineRunId: str
     name: str | None = None
+    includeDrafts: bool = False
+
+class UpdateQAPairReviewInput(BaseModel):
+    question: str
+    answer: str
+    reviewStatus: Literal["draft", "accepted", "rejected", "edited"]
 
 class StartForgeInput(BaseModel):
     materialSetId: str
@@ -878,6 +884,25 @@ async def foundry_qa_pairs_endpoint(
     )
 
 
+@app.patch("/api/v1/workshops/{workshop_id}/qa-pairs/{qa_pair_id}")
+async def update_foundry_qa_pair_review_endpoint(
+    workshop_id: str,
+    qa_pair_id: str,
+    data: UpdateQAPairReviewInput,
+):
+    try:
+        qa_pair = await foundry_catalog_service.update_qa_pair_review(
+            workshop_id=workshop_id,
+            qa_pair_id=qa_pair_id,
+            question=data.question,
+            answer=data.answer,
+            review_status=data.reviewStatus,
+        )
+        return api_envelope(qa_pair)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
 @app.post("/api/v1/workshops/{workshop_id}/qa-pairs/export")
 async def export_foundry_qa_pairs_endpoint(workshop_id: str, data: ExportQAPairsInput):
     run_id = data.assemblyLineRunId.strip()
@@ -888,6 +913,7 @@ async def export_foundry_qa_pairs_endpoint(workshop_id: str, data: ExportQAPairs
         export = await foundry_catalog_service.export_qa_pairs_to_material(
             workshop_id=workshop_id,
             assembly_line_run_id=run_id,
+            include_drafts=data.includeDrafts,
             name=data.name.strip() if data.name else None,
         )
         return api_envelope(export)

@@ -87,6 +87,7 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   const [reviewQAPairs, setReviewQAPairs] = useState<QAPair[]>([]);
   const [exportName, setExportName] = useState(`${workshop.name} QA Dataset`);
   const [exportState, setExportState] = useState<string | null>(null);
+  const [includeDraftsInExport, setIncludeDraftsInExport] = useState(false);
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<string[]>([]);
   const [assemblyDraft, setAssemblyDraft] = useState<StartAssemblyLineRequest>({
     materialSourceIds: [],
@@ -97,6 +98,7 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isStartingAssembly, setIsStartingAssembly] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [savingQAPairId, setSavingQAPairId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -166,6 +168,15 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
       { label: "QA pairs", value: qaPairs.toLocaleString() },
     ];
   }, [materials]);
+
+  const qaReviewStats = useMemo(() => {
+    const accepted = reviewQAPairs.filter(
+      (qaPair) => qaPair.reviewStatus === "accepted" || qaPair.reviewStatus === "edited"
+    ).length;
+    const rejected = reviewQAPairs.filter((qaPair) => qaPair.reviewStatus === "rejected").length;
+    const draft = reviewQAPairs.length - accepted - rejected;
+    return { accepted, rejected, draft };
+  }, [reviewQAPairs]);
 
   const updateDraft = <K extends keyof IngestMaterialRequest>(
     key: K,
@@ -280,6 +291,7 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
       const exportResult = await repository.exportQAPairs(workshop.id, {
         assemblyLineRunId: reviewRunId,
         name: exportName.trim() || `${workshop.name} QA Dataset`,
+        includeDrafts: includeDraftsInExport,
       });
       setMaterials((current) => [
         exportResult.material,
@@ -292,6 +304,32 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
       setError(exportError instanceof Error ? exportError.message : "Could not export QA pairs.");
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const updateLocalQAPair = (qaPairId: string, updates: Partial<QAPair>) => {
+    setReviewQAPairs((current) =>
+      current.map((qaPair) => (qaPair.id === qaPairId ? { ...qaPair, ...updates } : qaPair))
+    );
+  };
+
+  const saveQAPairReview = async (
+    qaPair: QAPair,
+    reviewStatus: QAPair["reviewStatus"] = qaPair.reviewStatus
+  ) => {
+    setSavingQAPairId(qaPair.id);
+    setError(null);
+    try {
+      const saved = await repository.updateQAPairReview(workshop.id, qaPair.id, {
+        question: qaPair.question,
+        answer: qaPair.answer,
+        reviewStatus,
+      });
+      updateLocalQAPair(qaPair.id, saved);
+    } catch (reviewError: unknown) {
+      setError(reviewError instanceof Error ? reviewError.message : "Could not save QA review.");
+    } finally {
+      setSavingQAPairId(null);
     }
   };
 
@@ -506,16 +544,32 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
           </div>
           <div className="review-actions">
             <span className="status-badge">{reviewChunks.length} chunks / {reviewQAPairs.length} QA</span>
+            <span className="status-badge">
+              {qaReviewStats.accepted} accepted / {qaReviewStats.draft} draft
+            </span>
             <input
               aria-label="Exported Material name"
               type="text"
               value={exportName}
               onChange={(event) => setExportName(event.target.value)}
             />
+            <label className="toggle-row qa-export-toggle">
+              <input
+                type="checkbox"
+                checked={includeDraftsInExport}
+                onChange={(event) => setIncludeDraftsInExport(event.target.checked)}
+              />
+              <span>Include draft rows</span>
+            </label>
             <button
               className="button-secondary"
               type="button"
-              disabled={!reviewRunId || reviewQAPairs.length === 0 || isExporting}
+              disabled={
+                !reviewRunId ||
+                reviewQAPairs.length === 0 ||
+                (!includeDraftsInExport && qaReviewStats.accepted === 0) ||
+                isExporting
+              }
               onClick={exportQAPairs}
             >
               <i className="fas fa-file-export" aria-hidden="true" />
@@ -547,9 +601,67 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                 <p className="empty-state">Generated QA pairs will appear here before Forge training.</p>
               ) : (
                 reviewQAPairs.slice(0, 8).map((qaPair) => (
-                  <article className="review-card" key={qaPair.id}>
-                    <strong>{qaPair.question}</strong>
-                    <p>{qaPair.answer}</p>
+                  <article className="review-card qa-review-card" key={qaPair.id}>
+                    <div className="qa-review-card-header">
+                      <span className={`status-badge qa-status-${qaPair.reviewStatus}`}>
+                        {qaPair.reviewStatus}
+                      </span>
+                      {qaPair.reviewedAt && <span>{new Date(qaPair.reviewedAt).toLocaleTimeString()}</span>}
+                    </div>
+                    <label className="field-label" htmlFor={`qa-question-${qaPair.id}`}>
+                      Question
+                    </label>
+                    <textarea
+                      id={`qa-question-${qaPair.id}`}
+                      value={qaPair.question}
+                      onChange={(event) =>
+                        updateLocalQAPair(qaPair.id, {
+                          question: event.target.value,
+                          reviewStatus: qaPair.reviewStatus === "accepted" ? "edited" : qaPair.reviewStatus,
+                        })
+                      }
+                      rows={3}
+                    />
+                    <label className="field-label" htmlFor={`qa-answer-${qaPair.id}`}>
+                      Answer
+                    </label>
+                    <textarea
+                      id={`qa-answer-${qaPair.id}`}
+                      value={qaPair.answer}
+                      onChange={(event) =>
+                        updateLocalQAPair(qaPair.id, {
+                          answer: event.target.value,
+                          reviewStatus: qaPair.reviewStatus === "accepted" ? "edited" : qaPair.reviewStatus,
+                        })
+                      }
+                      rows={5}
+                    />
+                    <div className="qa-review-actions">
+                      <button
+                        className="button-secondary button-compact"
+                        type="button"
+                        disabled={savingQAPairId === qaPair.id}
+                        onClick={() => saveQAPairReview(qaPair, "accepted")}
+                      >
+                        Accept
+                      </button>
+                      <button
+                        className="button-secondary button-compact"
+                        type="button"
+                        disabled={savingQAPairId === qaPair.id}
+                        onClick={() => saveQAPairReview(qaPair, "rejected")}
+                      >
+                        Reject
+                      </button>
+                      <button
+                        className="button-secondary button-compact"
+                        type="button"
+                        disabled={savingQAPairId === qaPair.id}
+                        onClick={() => saveQAPairReview(qaPair)}
+                      >
+                        {savingQAPairId === qaPair.id ? "Saving" : "Save"}
+                      </button>
+                    </div>
                   </article>
                 ))
               )}
