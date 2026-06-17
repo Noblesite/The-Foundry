@@ -308,6 +308,11 @@ assertIncludes(
 );
 assertIncludes(
   files.construct,
+  "filteredExport: runtimeValidationExport",
+  "Diagnostics bundle attaches the filtered runtime validation export"
+);
+assertIncludes(
+  files.construct,
   "runtime-validation-drawer-title",
   "Construct workbench renders a validation detail drawer"
 );
@@ -375,6 +380,11 @@ assertIncludes(
   files.construct,
   "foundry-runtime-validations",
   "Runtime validation export uses a Foundry filename"
+);
+assertIncludes(
+  files.construct,
+  "and ${runtimeValidationExport.validationCount} validation run",
+  "Diagnostics preview message includes validation export count"
 );
 assertIncludes(
   files.styles,

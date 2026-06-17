@@ -574,8 +574,22 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setIsPreparingDiagnosticsBundle(true);
     setRuntimeHistoryMessage(null);
     try {
-      const [runtimeHistoryExport, liveStatus] = await Promise.all([
+      const [runtimeHistoryExport, runtimeValidationExport, liveStatus] = await Promise.all([
         repository.exportConstructRuntimeEvents(),
+        repository.exportConstructRuntimeValidations({
+          modelId:
+            runtimeValidationModelFilter === ALL_VALIDATION_FILTER
+              ? undefined
+              : runtimeValidationModelFilter,
+          device:
+            runtimeValidationDeviceFilter === ALL_VALIDATION_FILTER
+              ? undefined
+              : runtimeValidationDeviceFilter,
+          status:
+            runtimeValidationStatusFilter === "all"
+              ? undefined
+              : runtimeValidationStatusFilter,
+        }),
         repository.getFoundryStatus(),
       ]);
       const exportedAt = new Date().toISOString();
@@ -643,9 +657,15 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           result: runtimeSmokeResult,
         },
         validationHistory: {
-          count: runtimeValidations.length,
+          count: runtimeValidationExport.validationCount,
+          filteredExport: runtimeValidationExport,
           selectedValidation: selectedRuntimeValidation,
-          recent: runtimeValidations.slice(0, 10),
+          visiblePage: {
+            page: runtimeValidationPage.page,
+            pageSize: runtimeValidationPage.pageSize,
+            total: runtimeValidationPage.total,
+            items: runtimeValidations,
+          },
         },
         generation: {
           includeLibraryContext,
@@ -657,7 +677,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         fileName: `foundry-construct-diagnostics-${safeTimestamp}.json`,
         bundle,
         eventCount: runtimeHistoryExport.eventCount,
-        validationCount: runtimeValidations.length,
+        validationCount: runtimeValidationExport.validationCount,
         exportedAt,
         redactions: [
           "Hugging Face token value is not exported.",
@@ -668,6 +688,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       setRuntimeHistoryMessage(
         `Prepared diagnostics bundle with ${runtimeHistoryExport.eventCount} runtime event${
           runtimeHistoryExport.eventCount === 1 ? "" : "s"
+        } and ${runtimeValidationExport.validationCount} validation run${
+          runtimeValidationExport.validationCount === 1 ? "" : "s"
         }. Review it before downloading.`
       );
     } catch (historyError: unknown) {
@@ -2174,6 +2196,14 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                       type="button"
                     >
                       {isExportingRuntimeValidations ? "Exporting" : "Export JSON"}
+                    </button>
+                    <button
+                      className="button-secondary button-compact"
+                      disabled={isPreparingDiagnosticsBundle}
+                      onClick={() => void prepareDiagnosticsBundlePreview()}
+                      type="button"
+                    >
+                      {isPreparingDiagnosticsBundle ? "Preparing" : "Preview Bundle"}
                     </button>
                   </div>
                 </div>
