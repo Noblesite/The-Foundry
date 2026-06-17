@@ -322,6 +322,11 @@ assertIncludes(
 );
 assertIncludes(
   files.contracts,
+  "runForgeSmokeProof:",
+  "Frontend contract exposes tiny Forge proof route"
+);
+assertIncludes(
+  files.contracts,
   "runLocalForgeWorker:",
   "Frontend contract exposes local Forge worker route"
 );
@@ -329,6 +334,11 @@ assertIncludes(
   files.repository,
   "preflightLocalForgeWorker:",
   "Repository exposes local Forge worker preflight"
+);
+assertIncludes(
+  files.repository,
+  "runForgeSmokeProof:",
+  "Repository exposes tiny Forge proof execution"
 );
 assertIncludes(
   files.repository,
@@ -342,6 +352,11 @@ assertIncludes(
 );
 assertIncludes(
   files.domain,
+  "export interface ForgeSmokeProofResult",
+  "Forge smoke proof has a typed domain contract"
+);
+assertIncludes(
+  files.domain,
   "local_training_completed",
   "Forge event contract includes local training completion"
 );
@@ -349,6 +364,11 @@ assertIncludes(
   files.forge,
   "Preflight Local",
   "Forge workbench can preflight the local trainer adapter"
+);
+assertIncludes(
+  files.forge,
+  "Run Tiny Forge Proof",
+  "Forge workbench can launch the tiny Forge proof"
 );
 assertIncludes(
   files.forge,

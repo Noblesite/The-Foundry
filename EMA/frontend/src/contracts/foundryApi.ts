@@ -16,6 +16,7 @@ import {
   ConstructRuntimePreflightResult,
   ForgeTrainingContract,
   ForgeLocalTrainerPreflightResult,
+  ForgeSmokeProofResult,
   ForgePurpose,
   ForgeWorkerReconcileResult,
   ForgeWorkerState,
@@ -76,6 +77,7 @@ export const foundryApiRoutes = {
     `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/evaluation/weak-samples/export`,
   forgeRuntime: `${FOUNDRY_API_VERSION}/forges/runtime`,
   configureForgeRuntime: `${FOUNDRY_API_VERSION}/forges/runtime/configure`,
+  runForgeSmokeProof: `${FOUNDRY_API_VERSION}/forges/smoke-proof`,
   artifacts: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/artifacts`,
   artifact: (artifactId: string) => `${FOUNDRY_API_VERSION}/artifacts/${artifactId}`,
   constructs: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/constructs`,
@@ -254,6 +256,11 @@ export interface ForgeRunDto {
 
 export type ForgeWorkerReconcileDto = ForgeWorkerReconcileResult;
 export type ForgeLocalTrainerPreflightDto = ForgeLocalTrainerPreflightResult;
+export type ForgeSmokeProofDto = ForgeSmokeProofResult;
+
+export interface ForgeSmokeProofRequest {
+  runTraining: boolean;
+}
 
 export interface ArtifactDto {
   id: string;

@@ -33,6 +33,8 @@ import {
   ExportTrialsDto,
   ExportTrialsRequest,
   ForgeLocalTrainerPreflightDto,
+  ForgeSmokeProofDto,
+  ForgeSmokeProofRequest,
   ForgeRunDto,
   ForgeWorkerReconcileDto,
   foundryApiRoutes,
@@ -78,6 +80,7 @@ import {
   FoundryNavigationItem,
   ForgeEvaluationReport,
   ForgeLocalTrainerPreflightResult,
+  ForgeSmokeProofResult,
   ForgeTrainingContract,
   ForgeWorkerReconcileResult,
   ForgeWorkerState,
@@ -303,6 +306,7 @@ export interface FoundryRepository {
   reconcileForgeWorkerState: (forgeRunId: string) => Promise<ForgeWorkerReconcileResult>;
   preflightLocalForgeWorker: (forgeRunId: string) => Promise<ForgeLocalTrainerPreflightResult>;
   runLocalForgeWorker: (forgeRunId: string) => Promise<ForgeWorkerReconcileResult>;
+  runForgeSmokeProof: (request: ForgeSmokeProofRequest) => Promise<ForgeSmokeProofResult>;
   getForgeRuntime: () => Promise<ForgeRuntime>;
   configureForgeRuntime: (request: ConfigureForgeRuntimeRequest) => Promise<ForgeRuntime>;
   listArtifacts: (workshopId: string) => Promise<Artifact[]>;
@@ -1508,6 +1512,64 @@ export const mockFoundryRepository: FoundryRepository = {
       validation: { valid: true, message: "Mock local trainer completed." },
     };
   },
+  runForgeSmokeProof: async (request) => {
+    await mockFoundryRepository.configureForgeRuntime({
+      mode: "local",
+      worker: "local-process",
+    });
+    const smokeMaterial: MaterialSource = {
+      id: `mat-smoke-${Date.now()}`,
+      name: "Local Forge Smoke JSONL",
+      kind: "jsonl",
+      status: "qa-ready",
+      sourceUri: "runtime/materials/exports/smoke/local-forge-smoke.jsonl",
+      chunkCount: 1,
+      qaPairCount: 1,
+    };
+    mockMaterialSources.unshift(smokeMaterial);
+    const forgeRun = await mockFoundryRepository.startForge(mockDashboardSummary.workshop.id, {
+      materialSetId: smokeMaterial.id,
+      baseModel: "sshleifer/tiny-gpt2",
+      method: "LoRA",
+      purpose: "training",
+      epochs: 1,
+      learningRate: "0.0002",
+      loadIn4Bit: false,
+    });
+    const preflight = await mockFoundryRepository.preflightLocalForgeWorker(forgeRun.id);
+    let latestForgeRun = forgeRun;
+    let workerState = forgeRun.workerState || mockForgeWorkerStates[forgeRun.id];
+    let artifact: Artifact | null = null;
+    if (request.runTraining && preflight.ok) {
+      const trained = await mockFoundryRepository.runLocalForgeWorker(forgeRun.id);
+      latestForgeRun = trained.forgeRun || forgeRun;
+      workerState = {
+        events: trained.events,
+        metrics: trained.metrics,
+      };
+      artifact =
+        mockArtifacts.find((entry) => entry.id === latestForgeRun.artifactId) || null;
+    }
+    return {
+      workshop: mockDashboardSummary.workshop,
+      material: smokeMaterial,
+      forgeRun: latestForgeRun,
+      contract: preflight.contract,
+      workerState,
+      preflight,
+      ranTraining: Boolean(request.runTraining && preflight.ok),
+      artifact,
+      blocked: preflight.ok
+        ? []
+        : preflight.checks
+            .filter((check) => check.status === "fail")
+            .map((check) => ({
+              id: check.id,
+              label: check.label,
+              detail: check.detail,
+            })),
+    };
+  },
   getForgeRuntime: async () => mockForgeRuntime,
   configureForgeRuntime: async (request) => {
     mockForgeRuntime = {
@@ -2362,6 +2424,13 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.post<ApiEnvelope<ForgeWorkerReconcileDto>>(
         foundryApiRoutes.runLocalForgeWorker(forgeRunId)
+      )
+    ),
+  runForgeSmokeProof: async (request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ForgeSmokeProofDto>>(
+        foundryApiRoutes.runForgeSmokeProof,
+        request
       )
     ),
   getForgeRuntime: async () =>

@@ -245,6 +245,11 @@ export interface ForgeMetrics {
     current: number;
     total: number;
   };
+  loss?: number;
+  adapterPath?: string;
+  outputDir?: string;
+  runtimeMode?: string;
+  device?: string;
   evaluationReport?: ForgeEvaluationReport;
 }
 
@@ -323,6 +328,22 @@ export interface ForgeLocalTrainerPreflightResult {
     maxLength: number;
   };
   createdAt: string;
+}
+
+export interface ForgeSmokeProofResult {
+  workshop: Workshop;
+  material: MaterialSource;
+  forgeRun: ForgeRun;
+  contract: ForgeTrainingContract;
+  workerState: ForgeWorkerState;
+  preflight: ForgeLocalTrainerPreflightResult;
+  ranTraining: boolean;
+  artifact?: Artifact | null;
+  blocked: Array<{
+    id: string;
+    label: string;
+    detail: string;
+  }>;
 }
 
 export interface Artifact {

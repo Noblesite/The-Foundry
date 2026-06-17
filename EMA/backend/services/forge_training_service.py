@@ -937,6 +937,9 @@ class ForgeTrainingService:
         }
 
     def _local_training_device(self, torch_module: Any) -> str:
+        configured = os.getenv("FOUNDRY_FORGE_TRAIN_DEVICE", "").strip().lower()
+        if configured in {"cpu", "cuda", "mps"}:
+            return configured
         if torch_module.cuda.is_available():
             return "cuda"
         if getattr(torch_module.backends, "mps", None) and torch_module.backends.mps.is_available():

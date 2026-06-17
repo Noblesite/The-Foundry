@@ -77,6 +77,11 @@ prints the preflight result. The second command runs the trainer only after the
 same preflight passes. Cache `sshleifer/tiny-gpt2` in the Archive before using
 `--run`.
 
+The Forge station exposes the same flow as `Preflight Tiny Proof` and
+`Run Tiny Forge Proof` in the Trainer Adapter panel. The training step runs in
+an isolated worker process so native Torch/PEFT teardown cannot take down the
+API server after adapter files and metrics have been written.
+
 For older rows or interrupted local development runs, the drawer can reconcile
 worker state. Reconciliation rebuilds the training contract from catalog data,
 validates the JSONL Material, and restores worker metrics/events without
@@ -117,6 +122,7 @@ GET  /api/v1/forges/{forge_run_id}/events
 POST /api/v1/forges/{forge_run_id}/worker/reconcile
 POST /api/v1/forges/{forge_run_id}/worker/preflight-local
 POST /api/v1/forges/{forge_run_id}/worker/run-local
+POST /api/v1/forges/smoke-proof
 POST /api/v1/workshops/{workshop_id}/forges
 POST /api/v1/forges/{forge_run_id}/simulate
 ```

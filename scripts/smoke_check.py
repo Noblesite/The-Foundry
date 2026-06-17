@@ -119,10 +119,14 @@ def run_api_transport_boundary_check() -> int:
 def run_forge_adapter_boundary_check() -> int:
     api_server = PACKAGE_ROOT / "backend" / "api_server.py"
     forge_service = PACKAGE_ROOT / "backend" / "services" / "forge_training_service.py"
+    smoke_service = PACKAGE_ROOT / "backend" / "services" / "forge_smoke_service.py"
     smoke_script = REPO_ROOT / "scripts" / "run_local_forge_smoke.py"
+    worker_script = REPO_ROOT / "scripts" / "run_forge_contract_worker.py"
     api_source = api_server.read_text(encoding="utf-8")
     service_source = forge_service.read_text(encoding="utf-8")
+    smoke_service_source = smoke_service.read_text(encoding="utf-8")
     smoke_source = smoke_script.read_text(encoding="utf-8")
+    worker_source = worker_script.read_text(encoding="utf-8")
 
     required_api_patterns = (
         "ForgeTrainingService",
@@ -132,6 +136,8 @@ def run_forge_adapter_boundary_check() -> int:
         "worker/reconcile",
         "worker/preflight-local",
         "worker/run-local",
+        "/api/v1/forges/smoke-proof",
+        "LocalForgeSmokeService",
         "complete_forge_from_worker",
         "adapter_path=state[\"metrics\"].get(\"adapterPath\")",
     )
@@ -167,12 +173,27 @@ def run_forge_adapter_boundary_check() -> int:
             + ", ".join(missing_service)
         )
 
-    required_smoke_patterns = (
+    required_smoke_service_patterns = (
         "SMOKE_MODEL_ID = \"sshleifer/tiny-gpt2\"",
         "local-forge-smoke.jsonl",
         "preflight_local_training",
         "complete_forge_from_worker",
         "adapter_path=worker_state[\"metrics\"].get(\"adapterPath\")",
+        "run_forge_contract_worker.py",
+        "subprocess.run",
+    )
+    missing_smoke_service = [
+        pattern for pattern in required_smoke_service_patterns
+        if pattern not in smoke_service_source
+    ]
+    if missing_smoke_service:
+        return fail(
+            "Local Forge smoke service markers are missing: "
+            + ", ".join(missing_smoke_service)
+        )
+
+    required_smoke_patterns = (
+        "LocalForgeSmokeService",
         "parser.add_argument(\n        \"--run\"",
     )
     missing_smoke = [
@@ -182,6 +203,21 @@ def run_forge_adapter_boundary_check() -> int:
         return fail(
             "Local Forge smoke script markers are missing: "
             + ", ".join(missing_smoke)
+        )
+
+    required_worker_patterns = (
+        "FOUNDRY_FORGE_RUNTIME_MODE",
+        "FOUNDRY_FORGE_TRAIN_DEVICE",
+        "execute_local_training",
+        "get_metrics",
+    )
+    missing_worker = [
+        pattern for pattern in required_worker_patterns if pattern not in worker_source
+    ]
+    if missing_worker:
+        return fail(
+            "Local Forge worker script markers are missing: "
+            + ", ".join(missing_worker)
         )
 
     print("OK: Forge runtime adapter contract is present.")

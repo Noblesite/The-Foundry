@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from fastapi.responses import JSONResponse, StreamingResponse
 from backend.services.chat_orchestration_service import ChatOrchestrationService
 from backend.services.construct_inference_service import ConstructInferenceService
+from backend.services.forge_smoke_service import LocalForgeSmokeService
 from backend.services.forge_training_service import ForgeTrainingService
 from backend.services.foundry_catalog_service import FoundryCatalogService
 from backend.services.huggingface_model_service import HuggingFaceModelService
@@ -112,6 +113,9 @@ class ConstructRuntimeProbeInput(BaseModel):
     maxNewTokens: int = 24
     device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
 
+class ForgeSmokeProofInput(BaseModel):
+    runTraining: bool = False
+
 class ConstructRuntimeEventInput(BaseModel):
     type: Literal["handoff", "preflight", "configure", "load", "unload", "probe", "smoke"]
     status: Literal["running", "passed", "warning", "failed", "info"]
@@ -192,6 +196,7 @@ construct_inference_service = ConstructInferenceService()
 forge_training_service = ForgeTrainingService()
 foundry_catalog_service = FoundryCatalogService()
 huggingface_model_service = HuggingFaceModelService(foundry_catalog_service)
+local_forge_smoke_service = LocalForgeSmokeService(foundry_catalog_service, forge_training_service)
 
 active_connections: Set[WebSocket] = set()
 
@@ -482,6 +487,16 @@ async def configure_foundry_forge_runtime_endpoint(data: ForgeRuntimeInput):
             worker=data.worker,
         )
         return api_envelope(runtime)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.post("/api/v1/forges/smoke-proof")
+async def run_foundry_forge_smoke_proof_endpoint(data: ForgeSmokeProofInput):
+    try:
+        return api_envelope(
+            await local_forge_smoke_service.prepare(run_training=data.runTraining)
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 

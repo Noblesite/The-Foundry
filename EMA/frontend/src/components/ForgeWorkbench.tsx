@@ -9,6 +9,7 @@ import {
   ForgePurpose,
   ForgeRuntime,
   ForgeRuntimeMode,
+  ForgeSmokeProofResult,
   ForgeTrainingContract,
   ForgeWorkerState,
   MaterialSource,
@@ -99,6 +100,8 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   const [localTrainerPreflights, setLocalTrainerPreflights] = useState<
     Record<string, ForgeLocalTrainerPreflightResult>
   >({});
+  const [smokeProofResult, setSmokeProofResult] = useState<ForgeSmokeProofResult | null>(null);
+  const [smokeProofMode, setSmokeProofMode] = useState<"preflight" | "training" | null>(null);
   const [forgeDetailError, setForgeDetailError] = useState<string | null>(null);
   const [forgeRuntime, setForgeRuntime] = useState<ForgeRuntime | null>(null);
   const [runtimeModeDraft, setRuntimeModeDraft] = useState<ForgeRuntimeMode>("simulated");
@@ -328,6 +331,46 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
       setError(runtimeError instanceof Error ? runtimeError.message : "Could not configure Forge runtime.");
     } finally {
       setIsConfiguringRuntime(false);
+    }
+  };
+
+  const runForgeSmokeProof = async (runTraining: boolean) => {
+    setError(null);
+    setStatusText(null);
+    setSmokeProofMode(runTraining ? "training" : "preflight");
+
+    try {
+      const result = await repository.runForgeSmokeProof({ runTraining });
+      setSmokeProofResult(result);
+      setMaterials((current) => [
+        result.material,
+        ...current.filter((material) => material.id !== result.material.id),
+      ]);
+      setForgeRuns((current) => [
+        result.forgeRun,
+        ...current.filter((run) => run.id !== result.forgeRun.id),
+      ]);
+      setWorkerStates((current) => ({
+        ...current,
+        [result.forgeRun.id]: result.workerState,
+      }));
+      setLocalTrainerPreflights((current) => ({
+        ...current,
+        [result.forgeRun.id]: result.preflight,
+      }));
+      setForgeRuntime(result.preflight.runtime);
+      setRuntimeModeDraft(result.preflight.runtime.mode);
+      setStatusText(
+        result.ranTraining
+          ? `Tiny Forge proof completed. Artifact ${result.artifact?.id || result.forgeRun.artifactId} is ready.`
+          : result.preflight.ok
+            ? "Tiny Forge proof preflight passed."
+            : "Tiny Forge proof is blocked. Review the failed checks."
+      );
+    } catch (proofError: unknown) {
+      setError(proofError instanceof Error ? proofError.message : "Could not run Tiny Forge proof.");
+    } finally {
+      setSmokeProofMode(null);
     }
   };
 
@@ -849,7 +892,73 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                 {isConfiguringRuntime ? "Configuring" : "Configure"}
               </button>
             </div>
+            <div className="runtime-action-row">
+              <button
+                className="button-secondary"
+                type="button"
+                onClick={() => void runForgeSmokeProof(false)}
+                disabled={smokeProofMode !== null}
+              >
+                <i className="fas fa-list-check" aria-hidden="true" />
+                {smokeProofMode === "preflight" ? "Checking" : "Preflight Tiny Proof"}
+              </button>
+              <button
+                className="button-primary"
+                type="button"
+                onClick={() => void runForgeSmokeProof(true)}
+                disabled={smokeProofMode !== null}
+              >
+                <i className="fas fa-flask-vial" aria-hidden="true" />
+                {smokeProofMode === "training" ? "Training" : "Run Tiny Forge Proof"}
+              </button>
+            </div>
           </div>
+
+          {smokeProofResult && (
+            <article className={`forge-smoke-card readiness-${smokeProofResult.preflight.status}`}>
+              <div className="runtime-readiness-header">
+                <div>
+                  <p className="panel-kicker">Tiny Forge Proof</p>
+                  <strong>
+                    {smokeProofResult.ranTraining
+                      ? "Training completed"
+                      : smokeProofResult.preflight.title}
+                  </strong>
+                  <span>
+                    {smokeProofResult.forgeRun.id} / {smokeProofResult.material.sourceUri}
+                  </span>
+                </div>
+                <span className={`status-badge readiness-${smokeProofResult.preflight.status}`}>
+                  {smokeProofResult.preflight.status}
+                </span>
+              </div>
+              <div className="runtime-preflight-stats">
+                <div>
+                  <span>Model</span>
+                  <strong>{smokeProofResult.preflight.model.baseModel}</strong>
+                </div>
+                <div>
+                  <span>Rows</span>
+                  <strong>
+                    {Number(smokeProofResult.preflight.validation.rowCount || 0).toLocaleString()}
+                  </strong>
+                </div>
+                <div>
+                  <span>Loss</span>
+                  <strong>{smokeProofResult.workerState.metrics.loss ?? "n/a"}</strong>
+                </div>
+                <div>
+                  <span>Artifact</span>
+                  <strong>{smokeProofResult.artifact?.id || smokeProofResult.forgeRun.artifactId || "pending"}</strong>
+                </div>
+              </div>
+              <p className="runtime-readiness-gate">
+                {smokeProofResult.ranTraining
+                  ? `Adapter saved at ${smokeProofResult.workerState.metrics.adapterPath || "runtime output"}.`
+                  : smokeProofResult.preflight.nextAction}
+              </p>
+            </article>
+          )}
 
           <ConceptTooltip label="Why an adapter boundary?" title="Forge Runtime">
             The Forge screen creates a training contract first. The simulator can
