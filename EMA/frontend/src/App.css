@@ -2388,6 +2388,63 @@ input[type="checkbox"] {
   color: var(--arc-blue);
 }
 
+.diagnostics-redaction-audit {
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid rgba(212, 160, 23, 0.18);
+  border-radius: 8px;
+  padding: 0.68rem;
+  background: rgba(212, 160, 23, 0.055);
+}
+
+.diagnostics-redaction-audit-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.diagnostics-redaction-audit-header strong,
+.diagnostics-redaction-row strong,
+.diagnostics-redaction-row span {
+  display: block;
+}
+
+.diagnostics-redaction-audit-header strong {
+  color: var(--brass);
+  font-size: 0.76rem;
+}
+
+.diagnostics-redaction-audit-header span,
+.diagnostics-redaction-row span,
+.diagnostics-redaction-row p,
+.diagnostics-redaction-audit > p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+
+.diagnostics-redaction-list {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.diagnostics-redaction-row {
+  display: grid;
+  gap: 0.32rem;
+  border: 1px solid rgba(119, 140, 152, 0.16);
+  border-radius: 8px;
+  padding: 0.5rem;
+  background: rgba(13, 17, 23, 0.42);
+}
+
+.diagnostics-redaction-row strong {
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
 .diagnostics-validation-inspector {
   display: grid;
   gap: 0.55rem;

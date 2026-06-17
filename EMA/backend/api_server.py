@@ -269,6 +269,46 @@ def build_foundry_runtime_status() -> dict[str, Any]:
     }
 
 
+def build_diagnostics_redaction_audit() -> list[dict[str, str]]:
+    return [
+        {
+            "field": "settings.huggingFaceToken",
+            "status": "excluded",
+            "risk": "credential",
+            "reason": "Access tokens can grant model and account access.",
+            "policy": "Never export secret token values in diagnostics bundles.",
+        },
+        {
+            "field": "settings.huggingFaceUsername",
+            "status": "excluded",
+            "risk": "identity",
+            "reason": "Account identifiers are not required for runtime debugging.",
+            "policy": "Exclude user identifiers unless explicitly needed for a support workflow.",
+        },
+        {
+            "field": "sourceMaterial.contents",
+            "status": "excluded",
+            "risk": "private-data",
+            "reason": "Uploaded documents, transcripts, and prompts can contain copyrighted or private data.",
+            "policy": "Export metadata and runtime state only; do not bundle source content.",
+        },
+        {
+            "field": "chat.messages",
+            "status": "excluded",
+            "risk": "private-data",
+            "reason": "Conversation text may include user secrets or unpublished source material.",
+            "policy": "Export runtime event metadata instead of full chat transcripts.",
+        },
+        {
+            "field": "local.paths",
+            "status": "limited",
+            "risk": "system-fingerprint",
+            "reason": "Absolute paths can reveal usernames and local workstation structure.",
+            "policy": "Prefer model identifiers and cache status over full filesystem paths.",
+        },
+    ]
+
+
 async def build_construct_diagnostics_bundle(
     *,
     model_id: str | None = None,
@@ -282,6 +322,7 @@ async def build_construct_diagnostics_bundle(
         device=device,
         status=status,
     )
+    redaction_audit = build_diagnostics_redaction_audit()
     return {
         "contractVersion": "foundry.construct.diagnostics-bundle.v1",
         "exportedAt": exported_at,
@@ -297,10 +338,10 @@ async def build_construct_diagnostics_bundle(
             "filteredExport": validation_history,
         },
         "redactions": [
-            "Hugging Face token value is not exported.",
-            "Source material contents and chat message text are not bundled.",
-            "Frontend-only settings are not included in the backend diagnostics bundle.",
+            f"{entry['field']}: {entry['status']} ({entry['risk']})"
+            for entry in redaction_audit
         ],
+        "redactionAudit": redaction_audit,
     }
 
 

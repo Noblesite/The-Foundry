@@ -465,6 +465,13 @@ export interface ConstructDiagnosticsBundleExport {
     };
   };
   redactions?: string[];
+  redactionAudit?: Array<{
+    field: string;
+    status: string;
+    risk: string;
+    reason: string;
+    policy: string;
+  }>;
   [key: string]: unknown;
 }
 

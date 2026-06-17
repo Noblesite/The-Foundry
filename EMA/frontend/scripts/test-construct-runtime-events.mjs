@@ -173,6 +173,11 @@ assertIncludes(
 );
 assertIncludes(
   files.domain,
+  "redactionAudit?",
+  "Runtime diagnostics bundle exposes structured redaction audit"
+);
+assertIncludes(
+  files.domain,
   "export interface ConstructRuntimeValidationQuery",
   "Runtime validation query contract"
 );
@@ -325,6 +330,16 @@ assertIncludes(
   files.construct,
   "Validation export",
   "Diagnostics preview labels the attached validation export"
+);
+assertIncludes(
+  files.construct,
+  "Redaction audit",
+  "Diagnostics preview renders redaction audit"
+);
+assertIncludes(
+  files.construct,
+  "diagnosticsBundlePreview.redactionAudit",
+  "Diagnostics preview consumes structured redaction audit"
 );
 assertIncludes(
   files.construct,
@@ -575,6 +590,11 @@ assertIncludes(
   files.styles,
   ".diagnostics-validation-inspector",
   "Diagnostics validation inspector is styled"
+);
+assertIncludes(
+  files.styles,
+  ".diagnostics-redaction-audit",
+  "Diagnostics redaction audit is styled"
 );
 assertIncludes(
   files.construct,

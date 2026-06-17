@@ -229,6 +229,8 @@ def run_construct_runtime_event_contract_check() -> int:
         "export_foundry_construct_runtime_diagnostics_endpoint",
         "create_foundry_construct_runtime_validation_endpoint",
         "build_construct_diagnostics_bundle",
+        "build_diagnostics_redaction_audit",
+        "\"redactionAudit\"",
     )
     missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
     if missing_api:

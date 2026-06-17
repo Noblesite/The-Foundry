@@ -274,6 +274,13 @@ interface DiagnosticsBundlePreview {
   bundle: Record<string, unknown>;
   eventCount: number;
   validationCount: number;
+  redactionAudit: Array<{
+    field: string;
+    status: string;
+    risk: string;
+    reason: string;
+    policy: string;
+  }>;
   validationSummary: {
     filters: {
       modelId?: string | null;
@@ -585,6 +592,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           filters: runtimeValidationExport.filters,
           validations: runtimeValidationExport.validations.slice(0, 5),
         },
+        redactionAudit: diagnosticsBundle.redactionAudit || [],
         exportedAt,
         redactions: diagnosticsBundle.redactions || [
           "Hugging Face token value is not exported.",
@@ -2558,6 +2566,30 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                       {redaction}
                     </span>
                   ))}
+                </div>
+                <div className="diagnostics-redaction-audit">
+                  <div className="diagnostics-redaction-audit-header">
+                    <strong>Redaction audit</strong>
+                    <span>{diagnosticsBundlePreview.redactionAudit.length} rules checked</span>
+                  </div>
+                  {diagnosticsBundlePreview.redactionAudit.length > 0 ? (
+                    <div className="diagnostics-redaction-list">
+                      {diagnosticsBundlePreview.redactionAudit.map((entry) => (
+                        <div className="diagnostics-redaction-row" key={entry.field}>
+                          <div>
+                            <strong>{entry.field}</strong>
+                            <span>
+                              {entry.status} / {entry.risk}
+                            </span>
+                          </div>
+                          <p>{entry.reason}</p>
+                          <span>{entry.policy}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>No structured redaction audit was provided by this bundle.</p>
+                  )}
                 </div>
                 <div className="diagnostics-validation-inspector">
                   <div className="diagnostics-validation-header">
