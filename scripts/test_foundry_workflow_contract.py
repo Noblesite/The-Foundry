@@ -8,6 +8,7 @@ import json
 import shutil
 import sys
 import tempfile
+from io import BytesIO
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +19,96 @@ from EMA.backend.services import forge_training_service as forge_module
 from EMA.backend.services import foundry_catalog_service as catalog_module
 from EMA.backend.services.forge_training_service import ForgeTrainingService
 from EMA.backend.services.foundry_catalog_service import FoundryCatalogService
+
+
+def tiny_pdf_bytes(text: str) -> bytes:
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=612, height=792)
+    font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+        }
+    )
+    page[NameObject("/Resources")] = DictionaryObject(
+        {NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})}
+    )
+    stream = DecodedStreamObject()
+    safe_text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    stream.set_data(f"BT /F1 12 Tf 72 720 Td ({safe_text}) Tj ET".encode("utf-8"))
+    page[NameObject("/Contents")] = stream
+    buffer = BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
+
+
+async def exercise_material_ingestion_formats(
+    catalog: FoundryCatalogService,
+    workshop_id: str,
+) -> None:
+    imports = [
+        {
+            "name": "Markdown Notes",
+            "kind": "text",
+            "filename": "notes.md",
+            "content": b"Marshall markdown notes explain water rescue teamwork.",
+            "expected": "markdown notes explain water rescue",
+        },
+        {
+            "name": "CSV Episodes",
+            "kind": "csv",
+            "filename": "episodes.csv",
+            "content": (
+                b"episode,summary\n"
+                b"Pups Save the Bay,Marshall coordinates a ladder rescue.\n"
+            ),
+            "expected": "episode: Pups Save the Bay",
+        },
+        {
+            "name": "JSONL QA",
+            "kind": "jsonl",
+            "filename": "qa.jsonl",
+            "content": (
+                b'{"instruction":"Who drives the fire truck?","output":"Marshall drives the fire truck."}\n'
+            ),
+            "expected": "Instruction: Who drives the fire truck",
+        },
+        {
+            "name": "PDF Guide",
+            "kind": "pdf",
+            "filename": "guide.pdf",
+            "content": tiny_pdf_bytes("Marshall PDF rescue notes mention ladder safety."),
+            "expected": "Marshall PDF rescue notes mention ladder safety",
+        },
+    ]
+    materials = []
+    for item in imports:
+        material = await catalog.import_material_file(
+            workshop_id=workshop_id,
+            name=item["name"],
+            kind=item["kind"],
+            filename=item["filename"],
+            content=item["content"],
+        )
+        assert material["status"] == "staged"
+        assert (catalog_module.BASE_DIR / material["sourceUri"]).exists()
+        materials.append({**item, "id": material["id"]})
+
+    assembly = await catalog.start_assembly_line(
+        workshop_id=workshop_id,
+        material_source_ids=[material["id"] for material in materials],
+        chunk_size_tokens=128,
+        chunk_overlap_tokens=0,
+        qa_pairs_per_source=1,
+    )
+    chunks = await catalog.list_material_chunks(workshop_id, assembly["id"])
+    chunk_text = "\n".join(chunk["text"] for chunk in chunks)
+    for material in materials:
+        assert material["expected"] in chunk_text
 
 
 async def exercise_workflow(tmp_path: Path) -> None:
@@ -61,6 +152,8 @@ async def _exercise_workflow(tmp_path: Path) -> None:
         voice_target="Engineer",
         base_model="sshleifer/tiny-gpt2",
     )
+    await exercise_material_ingestion_formats(catalog, workshop["id"])
+
     material = await catalog.import_material_file(
         workshop_id=workshop["id"],
         name="Local Notes",

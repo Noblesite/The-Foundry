@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import warnings
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -32,11 +33,110 @@ from backend.services.foundry_catalog_service import FoundryCatalogService
 from backend.services.huggingface_model_service import HuggingFaceModelService
 
 
+def tiny_pdf_bytes(text: str) -> bytes:
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=612, height=792)
+    font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+        }
+    )
+    page[NameObject("/Resources")] = DictionaryObject(
+        {NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})}
+    )
+    stream = DecodedStreamObject()
+    safe_text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    stream.set_data(f"BT /F1 12 Tf 72 720 Td ({safe_text}) Tj ET".encode("utf-8"))
+    page[NameObject("/Contents")] = stream
+    buffer = BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
+
+
 def assert_response(response, expected_status: int = 200) -> dict[str, Any]:
     assert response.status_code == expected_status, response.text
     payload = response.json()
     assert "requestId" in payload
     return payload["data"]
+
+
+def exercise_material_ingestion_formats(client: TestClient, workshop_id: str) -> None:
+    imports = [
+        {
+            "name": "Markdown Notes",
+            "kind": "text",
+            "filename": "notes.md",
+            "content": b"Marshall markdown notes explain water rescue teamwork.",
+            "expected": "markdown notes explain water rescue",
+        },
+        {
+            "name": "CSV Episodes",
+            "kind": "csv",
+            "filename": "episodes.csv",
+            "content": (
+                b"episode,summary\n"
+                b"Pups Save the Bay,Marshall coordinates a ladder rescue.\n"
+            ),
+            "expected": "episode: Pups Save the Bay",
+        },
+        {
+            "name": "JSONL QA",
+            "kind": "jsonl",
+            "filename": "qa.jsonl",
+            "content": (
+                b'{"instruction":"Who drives the fire truck?","output":"Marshall drives the fire truck."}\n'
+            ),
+            "expected": "Instruction: Who drives the fire truck",
+        },
+        {
+            "name": "PDF Guide",
+            "kind": "pdf",
+            "filename": "guide.pdf",
+            "content": tiny_pdf_bytes("Marshall PDF rescue notes mention ladder safety."),
+            "expected": "Marshall PDF rescue notes mention ladder safety",
+        },
+    ]
+    material_ids = []
+    for item in imports:
+        material = assert_response(
+            client.post(
+                f"/api/v1/workshops/{workshop_id}/materials/import-file",
+                params={
+                    "name": item["name"],
+                    "kind": item["kind"],
+                    "filename": item["filename"],
+                },
+                content=item["content"],
+            )
+        )
+        assert material["status"] == "staged"
+        material_ids.append(material["id"])
+
+    assembly = assert_response(
+        client.post(
+            f"/api/v1/workshops/{workshop_id}/assembly-lines",
+            json={
+                "materialSourceIds": material_ids,
+                "chunkSizeTokens": 128,
+                "chunkOverlapTokens": 0,
+                "qaPairsPerSource": 1,
+            },
+        )
+    )
+    chunks = assert_response(
+        client.get(
+            f"/api/v1/workshops/{workshop_id}/chunks",
+            params={"runId": assembly["id"]},
+        )
+    )
+    chunk_text = "\n".join(chunk["text"] for chunk in chunks)
+    for item in imports:
+        assert item["expected"] in chunk_text
 
 
 def run_api_workflow(tmp_path: Path) -> None:
@@ -89,6 +189,7 @@ def run_api_workflow(tmp_path: Path) -> None:
                     },
                 )
             )
+            exercise_material_ingestion_formats(client, workshop["id"])
 
             material = assert_response(
                 client.post(

@@ -23,7 +23,7 @@ This is the short steering list. If a task does not support one of these items, 
 
 ### Critical Path
 
-- [ ] Prove real local file ingestion for text, markdown, CSV, JSONL, and one non-scanned PDF path.
+- [x] Prove real local file ingestion for text, markdown, CSV, JSONL, and one non-scanned PDF path.
 - [ ] Prove model-backed QA generation with source-aware prompt templates and visible quality metadata.
 - [ ] Implement one tiny local LoRA trainer adapter behind the existing Forge runtime boundary.
 - [ ] Make real Forge completion create a verified Artifact backed by output files.
@@ -57,6 +57,7 @@ The project already has a strong product shell:
 - FastAPI `/api/v1` contracts for the main workflow.
 - SQLite catalog persistence for Workshops, Materials, Assembly Lines, QA pairs, Forges, Artifacts, Constructs, Trials, model Archive entries, download jobs, and runtime validations.
 - QA review/export paths that create JSONL Materials.
+- Real local file extraction for text/markdown, CSV, JSONL/NDJSON, and text-based PDFs through service-level and FastAPI workflow rehearsals.
 - Forge contracts, runtime event files, worker reconciliation, simulated progress, and automatic Artifact metadata for completed training simulations.
 - Hugging Face search, auth test, model preflight, download jobs, Archive cataloging, and local cache tracking.
 - Construct runtime controls, local model preflight/load/probe, streaming chat endpoint, runtime history, validation history, memory release, and diagnostics bundle preview/export.
@@ -92,16 +93,16 @@ Do not add before MVP unless one of the items above is blocked:
 
 ### 1. Real Material Ingestion
 
-Status: partial.
+Status: covered for MVP file types; still limited by explicit MVP constraints.
 
-The current Materials flow registers a source URI. Text, transcript, and video-transcript sources can be read from local text-like files or directories. CSV, PDF, website, and non-text video inputs are represented by kind and estimated chunks, not real extraction.
+The Materials flow can import controlled local files, copy them into runtime storage, and extract text from text/markdown, CSV, JSONL/NDJSON, and text-based PDFs. Website and non-text video inputs remain represented by kind and estimated chunks, not real extraction.
 
 MVP needs:
 
-- Backend upload/import contracts for local files.
-- A controlled runtime Materials directory with copied files, not user-entered paths only.
-- Real text extraction for `.txt`, `.md`, `.csv`, and `.jsonl`.
-- At least one real PDF path, even if MVP marks scanned/image PDFs as unsupported.
+- Keep backend upload/import contracts for local files.
+- Keep controlled runtime Materials directory copies, not user-entered paths only.
+- Keep real text extraction for `.txt`, `.md`, `.csv`, `.jsonl`, `.ndjson`, and text-based `.pdf`.
+- Keep the explicit unsupported state for scanned/image-only PDFs.
 - Website ingestion should be either a real single-page fetcher or explicitly deferred from MVP.
 - Clear per-source status: staged, extracting, extracted, failed, unsupported.
 - User-visible errors when a source cannot be read.
