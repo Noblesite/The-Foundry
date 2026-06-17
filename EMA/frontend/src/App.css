@@ -2388,6 +2388,91 @@ input[type="checkbox"] {
   color: var(--arc-blue);
 }
 
+.diagnostics-validation-inspector {
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid rgba(0, 212, 255, 0.16);
+  border-radius: 8px;
+  padding: 0.68rem;
+  background: rgba(13, 17, 23, 0.46);
+}
+
+.diagnostics-validation-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.diagnostics-validation-header strong,
+.diagnostics-validation-header span,
+.diagnostics-validation-filters span,
+.diagnostics-validation-row strong,
+.diagnostics-validation-row span {
+  display: block;
+}
+
+.diagnostics-validation-header strong {
+  color: var(--arc-blue);
+  font-size: 0.76rem;
+}
+
+.diagnostics-validation-header span,
+.diagnostics-validation-filters span,
+.diagnostics-validation-row span,
+.diagnostics-validation-inspector p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+
+.diagnostics-validation-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.diagnostics-validation-filters span {
+  border: 1px solid rgba(119, 140, 152, 0.16);
+  border-radius: 999px;
+  padding: 0.16rem 0.42rem;
+  background: rgba(119, 140, 152, 0.08);
+}
+
+.diagnostics-validation-filters strong {
+  color: var(--text-primary);
+}
+
+.diagnostics-validation-list {
+  display: grid;
+  gap: 0.36rem;
+}
+
+.diagnostics-validation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 0.55fr);
+  gap: 0.45rem;
+  border: 1px solid rgba(119, 140, 152, 0.14);
+  border-radius: 8px;
+  padding: 0.48rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.diagnostics-validation-row.is-passed {
+  border-color: rgba(0, 212, 255, 0.24);
+}
+
+.diagnostics-validation-row.is-failed {
+  border-color: rgba(255, 138, 0, 0.34);
+}
+
+.diagnostics-validation-row strong {
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
 .diagnostics-preview-details {
   color: var(--text-dim);
   font-size: 0.72rem;

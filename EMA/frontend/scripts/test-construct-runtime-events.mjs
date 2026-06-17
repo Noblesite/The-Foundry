@@ -313,6 +313,16 @@ assertIncludes(
 );
 assertIncludes(
   files.construct,
+  "validationSummary",
+  "Diagnostics preview has a validation export summary"
+);
+assertIncludes(
+  files.construct,
+  "Validation export",
+  "Diagnostics preview labels the attached validation export"
+);
+assertIncludes(
+  files.construct,
   "runtime-validation-drawer-title",
   "Construct workbench renders a validation detail drawer"
 );
@@ -540,6 +550,11 @@ assertIncludes(
   files.styles,
   ".diagnostics-preview-panel",
   "Diagnostics preview panel is styled"
+);
+assertIncludes(
+  files.styles,
+  ".diagnostics-validation-inspector",
+  "Diagnostics validation inspector is styled"
 );
 assertIncludes(
   files.construct,

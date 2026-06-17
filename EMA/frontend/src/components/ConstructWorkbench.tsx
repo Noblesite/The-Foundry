@@ -298,6 +298,14 @@ interface DiagnosticsBundlePreview {
   bundle: Record<string, unknown>;
   eventCount: number;
   validationCount: number;
+  validationSummary: {
+    filters: {
+      modelId?: string | null;
+      device?: string | null;
+      status?: ConstructRuntimeValidation["status"] | null;
+    };
+    validations: ConstructRuntimeValidation[];
+  };
   exportedAt: string;
   redactions: string[];
 }
@@ -678,6 +686,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         bundle,
         eventCount: runtimeHistoryExport.eventCount,
         validationCount: runtimeValidationExport.validationCount,
+        validationSummary: {
+          filters: runtimeValidationExport.filters,
+          validations: runtimeValidationExport.validations.slice(0, 5),
+        },
         exportedAt,
         redactions: [
           "Hugging Face token value is not exported.",
@@ -2652,6 +2664,69 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                       {redaction}
                     </span>
                   ))}
+                </div>
+                <div className="diagnostics-validation-inspector">
+                  <div className="diagnostics-validation-header">
+                    <div>
+                      <strong>Validation export</strong>
+                      <span>
+                        {diagnosticsBundlePreview.validationCount} run
+                        {diagnosticsBundlePreview.validationCount === 1 ? "" : "s"} attached
+                      </span>
+                    </div>
+                    <span>
+                      {diagnosticsBundlePreview.validationSummary.validations.length} shown
+                    </span>
+                  </div>
+                  <div className="diagnostics-validation-filters">
+                    <span>
+                      Model{" "}
+                      <strong>
+                        {diagnosticsBundlePreview.validationSummary.filters.modelId
+                          ? shortModelId(
+                              diagnosticsBundlePreview.validationSummary.filters.modelId
+                            )
+                          : "all"}
+                      </strong>
+                    </span>
+                    <span>
+                      Device{" "}
+                      <strong>
+                        {diagnosticsBundlePreview.validationSummary.filters.device || "all"}
+                      </strong>
+                    </span>
+                    <span>
+                      Status{" "}
+                      <strong>
+                        {diagnosticsBundlePreview.validationSummary.filters.status || "all"}
+                      </strong>
+                    </span>
+                  </div>
+                  {diagnosticsBundlePreview.validationSummary.validations.length > 0 ? (
+                    <div className="diagnostics-validation-list">
+                      {diagnosticsBundlePreview.validationSummary.validations.map((validation) => (
+                        <div
+                          className={`diagnostics-validation-row is-${validation.status}`}
+                          key={validation.id}
+                        >
+                          <div>
+                            <strong>{shortModelId(validation.modelId)}</strong>
+                            <span>{validation.device}</span>
+                          </div>
+                          <div>
+                            <strong>{validation.status}</strong>
+                            <span>{formatRuntimeTimestamp(validation.createdAt)}</span>
+                          </div>
+                          <div>
+                            <strong>{validation.totalTokens}</strong>
+                            <span>{validation.durationSeconds}s</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>No validation rows match the active filters.</p>
+                  )}
                 </div>
                 <details className="diagnostics-preview-details">
                   <summary>Bundle section keys</summary>
