@@ -66,6 +66,9 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     qa_pairs = await catalog.list_qa_pairs(workshop["id"], assembly["id"])
     assert chunks and "Marshall helps the team" in chunks[0]["text"]
     assert qa_pairs and qa_pairs[0]["reviewStatus"] == "draft"
+    assert qa_pairs[0]["generatorModel"] == "deterministic-context-generator"
+    assert qa_pairs[0]["confidence"] > 0
+    assert qa_pairs[0]["generationMetadata"]["contractVersion"] == "foundry.qa-generation.v1"
 
     try:
         await catalog.export_qa_pairs_to_material(workshop["id"], assembly["id"])
@@ -98,6 +101,9 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     ]
     assert len(rows) == 1
     assert rows[0]["metadata"]["reviewStatus"] == "accepted"
+    assert rows[0]["metadata"]["generatorModel"] == "deterministic-context-generator"
+    assert rows[0]["metadata"]["confidence"] > 0
+    assert rows[0]["metadata"]["generation"]["contractVersion"] == "foundry.qa-generation.v1"
 
     forge_run = await catalog.start_forge(
         workshop_id=workshop["id"],

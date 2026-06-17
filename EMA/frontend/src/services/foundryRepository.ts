@@ -936,6 +936,13 @@ export const mockFoundryRepository: FoundryRepository = {
         assemblyLineRunId: run.id,
         question: `What does ${material.name} cover?`,
         answer: chunk.text,
+        generatorModel: "deterministic-context-generator",
+        confidence: 0.68,
+        generationMetadata: {
+          contractVersion: "foundry.qa-generation.v1",
+          mode: "mock",
+          strategy: "context-sentence",
+        },
         reviewStatus: "draft",
         reviewedAt: null,
       };

@@ -268,8 +268,10 @@ def run_trial_contract_check() -> int:
 def run_material_import_contract_check() -> int:
     api_server = PACKAGE_ROOT / "backend" / "api_server.py"
     catalog_service = PACKAGE_ROOT / "backend" / "services" / "foundry_catalog_service.py"
+    qa_generation_service = PACKAGE_ROOT / "backend" / "services" / "qa_generation_service.py"
     api_source = api_server.read_text(encoding="utf-8")
     service_source = catalog_service.read_text(encoding="utf-8")
+    qa_generation_source = qa_generation_service.read_text(encoding="utf-8")
 
     required_api_patterns = (
         "/api/v1/workshops/{workshop_id}/materials/import-file",
@@ -296,6 +298,13 @@ def run_material_import_contract_check() -> int:
         "_read_pdf_source",
         "pypdf",
         "_ensure_qa_review_columns",
+        "QAGenerationService",
+        "QAGenerationRequest",
+        "generator_model",
+        "confidence",
+        "generation_metadata_json",
+        "\"generatorModel\": row[\"generator_model\"]",
+        "\"generationMetadata\": generation_metadata",
         "update_qa_pair_review",
         "review_status IN ('accepted', 'edited')",
         "\"reviewStatus\": row[\"review_status\"]",
@@ -305,6 +314,23 @@ def run_material_import_contract_check() -> int:
     ]
     if missing_service:
         return fail("Material import service contract is missing: " + ", ".join(missing_service))
+
+    required_qa_generator_patterns = (
+        "foundry.qa-generation.v1",
+        "FOUNDRY_QA_GENERATOR_MODE",
+        "_generate_with_transformers",
+        "_generate_deterministic",
+        "confidence",
+    )
+    missing_qa_generator = [
+        pattern for pattern in required_qa_generator_patterns
+        if pattern not in qa_generation_source
+    ]
+    if missing_qa_generator:
+        return fail(
+            "Material QA generation contract is missing: "
+            + ", ".join(missing_qa_generator)
+        )
 
     print("OK: Material file import contract is present.")
     return 0

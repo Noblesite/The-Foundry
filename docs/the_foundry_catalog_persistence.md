@@ -27,7 +27,7 @@ Suggested first tables:
 - `workshops`: project/workshop metadata, subject, voice target, status.
 - `materials`: uploaded files, crawled pages, source URI, chunk and QA counts.
 - `material_chunks`: generated text chunks tied to a Material and Assembly Line run.
-- `qa_pairs`: generated question-answer rows tied to chunks and Materials.
+- `qa_pairs`: generated question-answer rows tied to chunks and Materials, including generator model, confidence, and generation metadata for review and export lineage.
 - `forge_runs`: training/QA generation jobs, status, progress, epoch metadata.
 - `artifacts`: model adapters, checkpoints, versions, trial scores.
 - `constructs`: runnable inference configurations tied to artifacts.

@@ -606,6 +606,14 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                       <span className={`status-badge qa-status-${qaPair.reviewStatus}`}>
                         {qaPair.reviewStatus}
                       </span>
+                      <span className="qa-generator-badge">
+                        {qaPair.generatorModel || "generator pending"}
+                      </span>
+                      {typeof qaPair.confidence === "number" && (
+                        <span className="qa-confidence-badge">
+                          {Math.round(qaPair.confidence * 100)}% confidence
+                        </span>
+                      )}
                       {qaPair.reviewedAt && <span>{new Date(qaPair.reviewedAt).toLocaleTimeString()}</span>}
                     </div>
                     <label className="field-label" htmlFor={`qa-question-${qaPair.id}`}>

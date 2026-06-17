@@ -157,6 +157,9 @@ export interface QAPair {
   assemblyLineRunId: string;
   question: string;
   answer: string;
+  generatorModel?: string;
+  confidence?: number;
+  generationMetadata?: Record<string, unknown>;
   reviewStatus: QAReviewStatus;
   reviewedAt?: string | null;
 }

@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+from .qa_generation_service import QAGenerationRequest, QAGenerationService
+
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_DB_PATH = BASE_DIR / "runtime" / "foundry_catalog.db"
@@ -42,6 +44,7 @@ class FoundryCatalogService:
         )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._write_lock = asyncio.Lock()
+        self.qa_generator = QAGenerationService()
         self._initialize_database()
 
     def _connect(self) -> sqlite3.Connection:
@@ -148,6 +151,9 @@ class FoundryCatalogService:
                 assembly_line_run_id TEXT NOT NULL,
                 question TEXT NOT NULL,
                 answer TEXT NOT NULL,
+                generator_model TEXT NOT NULL DEFAULT 'legacy-summary',
+                confidence REAL NOT NULL DEFAULT 0,
+                generation_metadata_json TEXT NOT NULL DEFAULT '{}',
                 review_status TEXT NOT NULL DEFAULT 'draft',
                 reviewed_at TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -373,6 +379,9 @@ class FoundryCatalogService:
         migrations = [
             ("review_status", "ALTER TABLE qa_pairs ADD COLUMN review_status TEXT NOT NULL DEFAULT 'draft'"),
             ("reviewed_at", "ALTER TABLE qa_pairs ADD COLUMN reviewed_at TEXT"),
+            ("generator_model", "ALTER TABLE qa_pairs ADD COLUMN generator_model TEXT NOT NULL DEFAULT 'legacy-summary'"),
+            ("confidence", "ALTER TABLE qa_pairs ADD COLUMN confidence REAL NOT NULL DEFAULT 0"),
+            ("generation_metadata_json", "ALTER TABLE qa_pairs ADD COLUMN generation_metadata_json TEXT NOT NULL DEFAULT '{}'"),
         ]
         for column_name, statement in migrations:
             if column_name not in columns:
@@ -876,7 +885,15 @@ class FoundryCatalogService:
             "tokenCount": row["token_count"],
         }
 
+    def _decode_json_object(self, value: Optional[str]) -> Dict[str, Any]:
+        try:
+            decoded = json.loads(value or "{}")
+        except (TypeError, ValueError):
+            return {}
+        return decoded if isinstance(decoded, dict) else {}
+
     def _qa_pair_from_row(self, row: sqlite3.Row) -> Dict[str, Any]:
+        generation_metadata = self._decode_json_object(row["generation_metadata_json"])
         return {
             "id": row["id"],
             "workshopId": row["workshop_id"],
@@ -885,6 +902,9 @@ class FoundryCatalogService:
             "assemblyLineRunId": row["assembly_line_run_id"],
             "question": row["question"],
             "answer": row["answer"],
+            "generatorModel": row["generator_model"] or "legacy-summary",
+            "confidence": float(row["confidence"] or 0),
+            "generationMetadata": generation_metadata,
             "reviewStatus": row["review_status"] or "draft",
             "reviewedAt": row["reviewed_at"],
         }
@@ -2125,6 +2145,9 @@ class FoundryCatalogService:
                     qa_pairs.id,
                     qa_pairs.question,
                     qa_pairs.answer,
+                    qa_pairs.generator_model,
+                    qa_pairs.confidence,
+                    qa_pairs.generation_metadata_json,
                     qa_pairs.review_status,
                     qa_pairs.reviewed_at,
                     qa_pairs.material_id,
@@ -2174,6 +2197,11 @@ class FoundryCatalogService:
                         "metadata": {
                             "format": "foundry.qa.v1",
                             "rowIndex": index,
+                            "generatorModel": row["generator_model"],
+                            "confidence": float(row["confidence"] or 0),
+                            "generation": self._decode_json_object(
+                                row["generation_metadata_json"]
+                            ),
                             "reviewStatus": row["review_status"],
                             "reviewedAt": row["reviewed_at"],
                             "draftOverride": include_drafts,
@@ -2712,6 +2740,9 @@ class FoundryCatalogService:
                     run_id,
                     qa_pair["question"],
                     qa_pair["answer"],
+                    qa_pair.get("generator_model", "legacy-summary"),
+                    float(qa_pair.get("confidence", 0) or 0),
+                    json.dumps(qa_pair.get("generation_metadata", {})),
                 )
                 for output in material_outputs
                 for qa_pair in output["qa_pairs"]
@@ -2721,9 +2752,10 @@ class FoundryCatalogService:
                     """
                     INSERT INTO qa_pairs (
                         id, workshop_id, material_id, chunk_id,
-                        assembly_line_run_id, question, answer
+                        assembly_line_run_id, question, answer,
+                        generator_model, confidence, generation_metadata_json
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     qa_rows,
                 )
@@ -2950,16 +2982,21 @@ class FoundryCatalogService:
         qa_pairs_per_source: int,
     ) -> List[Dict[str, Any]]:
         qa_pairs = []
-        for chunk in chunks[:qa_pairs_per_source]:
-            answer = self._summarize_chunk_answer(chunk["text"])
-            qa_pairs.append(
-                {
-                    "id": f"qa-{uuid4().hex[:12]}",
-                    "chunk_id": chunk["id"],
-                    "question": f"What does {material['name']} say about this part of the source?",
-                    "answer": answer,
-                }
+        requested_count = max(1, qa_pairs_per_source)
+        for chunk in chunks:
+            remaining_count = requested_count - len(qa_pairs)
+            if remaining_count <= 0:
+                break
+            generated_rows = self.qa_generator.generate(
+                QAGenerationRequest(
+                    material_name=material["name"],
+                    material_kind=material["kind"],
+                    chunk_id=chunk["id"],
+                    chunk_text=chunk["text"],
+                    qa_pair_count=remaining_count,
+                )
             )
+            qa_pairs.extend(generated_rows[:remaining_count])
         return qa_pairs
 
     def _summarize_chunk_answer(self, text: str) -> str:
