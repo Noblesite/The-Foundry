@@ -445,6 +445,29 @@ export interface ConstructRuntimeValidationExport {
   validations: ConstructRuntimeValidation[];
 }
 
+export interface ConstructDiagnosticsBundleExport {
+  contractVersion: "foundry.construct.diagnostics-bundle.v1";
+  exportedAt: string;
+  format?: "json";
+  source?: "backend" | "frontend" | string;
+  serviceStatus?: FoundryRuntimeStatus | null;
+  runtime?: Record<string, unknown>;
+  runtimeHistory: ConstructRuntimeHistoryExport;
+  validationHistory: {
+    count: number;
+    filteredExport: ConstructRuntimeValidationExport;
+    selectedValidation?: ConstructRuntimeValidation | null;
+    visiblePage?: {
+      page: number;
+      pageSize: number;
+      total: number;
+      items: ConstructRuntimeValidation[];
+    };
+  };
+  redactions?: string[];
+  [key: string]: unknown;
+}
+
 export interface ConstructRuntimeValidationQuery {
   modelId?: string;
   device?: string;

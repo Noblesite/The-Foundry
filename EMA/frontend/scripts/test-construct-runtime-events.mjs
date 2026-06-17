@@ -168,6 +168,11 @@ assertIncludes(
 );
 assertIncludes(
   files.domain,
+  "export interface ConstructDiagnosticsBundleExport",
+  "Runtime diagnostics bundle export contract"
+);
+assertIncludes(
+  files.domain,
   "export interface ConstructRuntimeValidationQuery",
   "Runtime validation query contract"
 );
@@ -308,8 +313,8 @@ assertIncludes(
 );
 assertIncludes(
   files.construct,
-  "filteredExport: runtimeValidationExport",
-  "Diagnostics bundle attaches the filtered runtime validation export"
+  "diagnosticsBundle.validationHistory.filteredExport",
+  "Diagnostics bundle attaches the backend filtered runtime validation export"
 );
 assertIncludes(
   files.construct,
@@ -372,9 +377,19 @@ assertIncludes(
   "Repository exports filtered runtime validations"
 );
 assertIncludes(
+  files.repository,
+  "exportConstructDiagnosticsBundle:",
+  "Repository exports backend diagnostics bundles"
+);
+assertIncludes(
   files.contracts,
   "exportConstructRuntimeValidations:",
   "Frontend contract exposes runtime validation export route"
+);
+assertIncludes(
+  files.contracts,
+  "exportConstructRuntimeDiagnostics:",
+  "Frontend contract exposes runtime diagnostics export route"
 );
 assertIncludes(
   files.repository,
@@ -529,7 +544,12 @@ assertIncludes(
 assertIncludes(
   files.construct,
   "prepareDiagnosticsBundlePreview",
-  "Construct workbench can assemble support diagnostics before download"
+  "Construct workbench can preview support diagnostics before download"
+);
+assertIncludes(
+  files.construct,
+  "repository.exportConstructDiagnosticsBundle",
+  "Construct workbench requests backend diagnostics bundles"
 );
 assertIncludes(
   files.construct,
@@ -558,11 +578,11 @@ assertIncludes(
 );
 assertIncludes(
   files.construct,
-  "huggingFaceTokenSaved",
+  "Hugging Face token value is not exported.",
   "Diagnostics bundle redacts Hugging Face token values"
 );
 assertIncludes(
-  files.construct,
+  files.domain,
   "contractVersion: \"foundry.construct.diagnostics-bundle.v1\"",
   "Diagnostics bundle exposes a versioned contract"
 );

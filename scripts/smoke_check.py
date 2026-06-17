@@ -216,6 +216,7 @@ def run_construct_runtime_event_contract_check() -> int:
         "/api/v1/constructs/runtime/events/clear",
         "/api/v1/constructs/runtime/validations",
         "/api/v1/constructs/runtime/validations/export",
+        "/api/v1/constructs/runtime/diagnostics/export",
         "ConstructRuntimeValidationInput",
         "modelId: str | None = None",
         "pageSize: int = 25",
@@ -225,7 +226,9 @@ def run_construct_runtime_event_contract_check() -> int:
         "clear_foundry_construct_runtime_events_endpoint",
         "foundry_construct_runtime_validations_endpoint",
         "export_foundry_construct_runtime_validations_endpoint",
+        "export_foundry_construct_runtime_diagnostics_endpoint",
         "create_foundry_construct_runtime_validation_endpoint",
+        "build_construct_diagnostics_bundle",
     )
     missing_api = [pattern for pattern in required_api_patterns if pattern not in api_source]
     if missing_api:

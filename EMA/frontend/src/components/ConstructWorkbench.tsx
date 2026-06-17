@@ -269,30 +269,6 @@ const downloadJsonFile = (fileName: string, data: unknown) => {
   URL.revokeObjectURL(objectUrl);
 };
 
-const safeWorkspaceSettingsSnapshot = (settings: WorkspaceSettings) => ({
-  huggingFaceUsernameSaved: Boolean(settings.huggingFaceUsername),
-  huggingFaceTokenSaved: Boolean(settings.huggingFaceToken),
-  defaultBaseModel: settings.defaultBaseModel,
-  modelName: settings.modelName,
-  subjectMatter: settings.subjectMatter,
-  characterVoice: settings.characterVoice,
-  sourceDirectory: settings.sourceDirectory,
-  outputDirectory: settings.outputDirectory,
-  contextWindow: settings.contextWindow,
-  maxNewTokens: settings.maxNewTokens,
-  temperature: settings.temperature,
-  topP: settings.topP,
-  qaPairsPerSource: settings.qaPairsPerSource,
-  trainingMethod: settings.trainingMethod,
-  epochs: settings.epochs,
-  learningRate: settings.learningRate,
-  loadIn4Bit: settings.loadIn4Bit,
-  enableStreaming: settings.enableStreaming,
-  constructRuntimeMode: settings.constructRuntimeMode,
-  constructModelId: settings.constructModelId,
-  constructDevice: settings.constructDevice,
-});
-
 interface DiagnosticsBundlePreview {
   fileName: string;
   bundle: Record<string, unknown>;
@@ -582,108 +558,27 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     setIsPreparingDiagnosticsBundle(true);
     setRuntimeHistoryMessage(null);
     try {
-      const [runtimeHistoryExport, runtimeValidationExport, liveStatus] = await Promise.all([
-        repository.exportConstructRuntimeEvents(),
-        repository.exportConstructRuntimeValidations({
-          modelId:
-            runtimeValidationModelFilter === ALL_VALIDATION_FILTER
-              ? undefined
-              : runtimeValidationModelFilter,
-          device:
-            runtimeValidationDeviceFilter === ALL_VALIDATION_FILTER
-              ? undefined
-              : runtimeValidationDeviceFilter,
-          status:
-            runtimeValidationStatusFilter === "all"
-              ? undefined
-              : runtimeValidationStatusFilter,
-        }),
-        repository.getFoundryStatus(),
-      ]);
-      const exportedAt = new Date().toISOString();
+      const diagnosticsBundle = await repository.exportConstructDiagnosticsBundle({
+        modelId:
+          runtimeValidationModelFilter === ALL_VALIDATION_FILTER
+            ? undefined
+            : runtimeValidationModelFilter,
+        device:
+          runtimeValidationDeviceFilter === ALL_VALIDATION_FILTER
+            ? undefined
+            : runtimeValidationDeviceFilter,
+        status:
+          runtimeValidationStatusFilter === "all"
+            ? undefined
+            : runtimeValidationStatusFilter,
+      });
+      const runtimeHistoryExport = diagnosticsBundle.runtimeHistory;
+      const runtimeValidationExport = diagnosticsBundle.validationHistory.filteredExport;
+      const exportedAt = diagnosticsBundle.exportedAt || new Date().toISOString();
       const safeTimestamp = exportedAt.replace(/[:.]/g, "-");
-      const readinessSnapshot = preflightResult
-        ? buildRuntimeReadinessSummary(preflightResult)
-        : null;
-      const bundle = {
-        contractVersion: "foundry.construct.diagnostics-bundle.v1",
-        exportedAt,
-        dataSource: {
-          mode: activeFoundryDataSource.mode,
-          label: activeFoundryDataSource.label,
-          badge: activeFoundryDataSource.badge,
-          liveConstruct: activeFoundryDataSource.liveConstruct,
-          liveCatalog: activeFoundryDataSource.liveCatalog,
-        },
-        serviceStatus: liveStatus || sourceStatus || null,
-        construct: {
-          id: activeConstruct.id,
-          name: activeConstruct.name,
-          status: activeConstruct.status,
-          artifactId: activeConstruct.artifactId,
-          streamingEnabled: activeConstruct.streamingEnabled,
-          contextWindow: activeConstruct.contextWindow,
-          maxNewTokens: activeConstruct.maxNewTokens,
-          temperature: activeConstruct.temperature,
-        },
-        artifact: {
-          id: activeArtifact.id,
-          name: activeArtifact.name,
-          version: activeArtifact.version,
-          status: activeArtifact.status,
-          baseModel: activeArtifact.baseModel,
-          adapterPath: activeArtifact.adapterPath,
-          forgeRunId: activeArtifact.forgeRunId,
-        },
-        runtime: {
-          current: runtime,
-          mode: runtimeMode,
-          detail: runtimeDetail,
-          phase: runtimeLoadPhase,
-          target: runtimeLoadTarget,
-          loadedModel,
-          loadEvent,
-          memory: runtimeMemory,
-          memoryCleanup: {
-            status: memoryCleanupStatus,
-            finishedAt: memoryCleanupFinishedAt,
-            methods: memoryCleanupMethods,
-            cacheSizeBefore: memoryCleanupCacheBefore,
-            cacheSizeAfter: memoryCleanupCacheAfter,
-          },
-        },
-        settings: safeWorkspaceSettingsSnapshot(settings),
-        preflight: {
-          result: preflightResult,
-          readiness: readinessSnapshot,
-          confirmedCautionTarget,
-          gateMessage: readinessGateMessage,
-        },
-        smokeTest: {
-          status: runtimeSmokeStatus,
-          message: runtimeSmokeMessage,
-          result: runtimeSmokeResult,
-        },
-        validationHistory: {
-          count: runtimeValidationExport.validationCount,
-          filteredExport: runtimeValidationExport,
-          selectedValidation: selectedRuntimeValidation,
-          visiblePage: {
-            page: runtimeValidationPage.page,
-            pageSize: runtimeValidationPage.pageSize,
-            total: runtimeValidationPage.total,
-            items: runtimeValidations,
-          },
-        },
-        generation: {
-          includeLibraryContext,
-          lastInspection,
-        },
-        runtimeHistory: runtimeHistoryExport,
-      };
       setDiagnosticsBundlePreview({
         fileName: `foundry-construct-diagnostics-${safeTimestamp}.json`,
-        bundle,
+        bundle: diagnosticsBundle,
         eventCount: runtimeHistoryExport.eventCount,
         validationCount: runtimeValidationExport.validationCount,
         validationSummary: {
@@ -691,9 +586,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           validations: runtimeValidationExport.validations.slice(0, 5),
         },
         exportedAt,
-        redactions: [
+        redactions: diagnosticsBundle.redactions || [
           "Hugging Face token value is not exported.",
-          "Hugging Face username is reduced to a saved/not saved flag.",
           "Source material contents and chat message text are not bundled.",
         ],
       });

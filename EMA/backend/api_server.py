@@ -269,6 +269,41 @@ def build_foundry_runtime_status() -> dict[str, Any]:
     }
 
 
+async def build_construct_diagnostics_bundle(
+    *,
+    model_id: str | None = None,
+    device: str | None = None,
+    status: Literal["passed", "failed"] | None = None,
+) -> dict[str, Any]:
+    exported_at = utc_now()
+    runtime_history = construct_inference_service.export_runtime_events()
+    validation_history = await foundry_catalog_service.export_construct_runtime_validations(
+        model_id=model_id,
+        device=device,
+        status=status,
+    )
+    return {
+        "contractVersion": "foundry.construct.diagnostics-bundle.v1",
+        "exportedAt": exported_at,
+        "format": "json",
+        "source": "backend",
+        "serviceStatus": build_foundry_runtime_status(),
+        "runtime": {
+            "current": construct_inference_service.runtime_payload(),
+        },
+        "runtimeHistory": runtime_history,
+        "validationHistory": {
+            "count": validation_history["validationCount"],
+            "filteredExport": validation_history,
+        },
+        "redactions": [
+            "Hugging Face token value is not exported.",
+            "Source material contents and chat message text are not bundled.",
+            "Frontend-only settings are not included in the backend diagnostics bundle.",
+        ],
+    }
+
+
 @app.get("/api/v1/foundry/status")
 async def foundry_runtime_status_endpoint():
     return api_envelope(build_foundry_runtime_status())
@@ -343,6 +378,21 @@ async def export_foundry_construct_runtime_validations_endpoint(
 ):
     return api_envelope(
         await foundry_catalog_service.export_construct_runtime_validations(
+            model_id=modelId,
+            device=device,
+            status=status,
+        )
+    )
+
+
+@app.get("/api/v1/constructs/runtime/diagnostics/export")
+async def export_foundry_construct_runtime_diagnostics_endpoint(
+    modelId: str | None = None,
+    device: str | None = None,
+    status: Literal["passed", "failed"] | None = None,
+):
+    return api_envelope(
+        await build_construct_diagnostics_bundle(
             model_id=modelId,
             device=device,
             status=status,

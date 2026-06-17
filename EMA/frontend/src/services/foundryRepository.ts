@@ -17,6 +17,7 @@ import {
   ConstructDto,
   ConstructChatRequest,
   ConstructChatResponseDto,
+  ExportConstructDiagnosticsBundleDto,
   ConstructRuntimeValidationPageDto,
   ConstructRuntimeValidationDto,
   ConstructRuntimePreflightDto,
@@ -58,6 +59,7 @@ import {
   Construct,
   ConstructChatResponse,
   ConstructChatStreamEvent,
+  ConstructDiagnosticsBundleExport,
   ConstructRuntimeEvent,
   ConstructRuntime,
   ConstructRuntimeHistoryExport,
@@ -187,6 +189,32 @@ const constructRuntimeValidationExport = (
   };
 };
 
+const constructDiagnosticsBundleExport = (
+  runtimeHistory: ConstructRuntimeHistoryExport,
+  validationHistory: ConstructRuntimeValidationExport,
+  serviceStatus?: FoundryRuntimeStatus | null,
+  runtime?: ConstructRuntime
+): ConstructDiagnosticsBundleExport => ({
+  contractVersion: "foundry.construct.diagnostics-bundle.v1",
+  exportedAt: new Date().toISOString(),
+  format: "json",
+  source: "frontend-fallback",
+  serviceStatus: serviceStatus || null,
+  runtime: {
+    current: runtime || runtimeHistory.runtime,
+  },
+  runtimeHistory,
+  validationHistory: {
+    count: validationHistory.validationCount,
+    filteredExport: validationHistory,
+  },
+  redactions: [
+    "Hugging Face token value is not exported.",
+    "Source material contents and chat message text are not bundled.",
+    "Frontend fallback diagnostics include only repository-safe runtime fields.",
+  ],
+});
+
 export interface FoundryRepository {
   getFoundryStatus: () => Promise<FoundryRuntimeStatus>;
   createWorkshop: (request: CreateWorkshopRequest) => Promise<Workshop>;
@@ -250,6 +278,9 @@ export interface FoundryRepository {
     request: CreateConstructRuntimeEventRequest
   ) => Promise<ConstructRuntimeEvent>;
   exportConstructRuntimeEvents: () => Promise<ExportConstructRuntimeEventsDto>;
+  exportConstructDiagnosticsBundle: (
+    query?: Omit<ConstructRuntimeValidationQuery, "page" | "pageSize">
+  ) => Promise<ConstructDiagnosticsBundleExport>;
   clearConstructRuntimeEvents: () => Promise<ClearConstructRuntimeEventsDto>;
   listConstructRuntimeValidations: (
     query?: ConstructRuntimeValidationQuery
@@ -1372,6 +1403,13 @@ export const mockFoundryRepository: FoundryRepository = {
     runtime: mockConstructRuntime,
     events: mockConstructRuntimeEvents,
   }),
+  exportConstructDiagnosticsBundle: async (query) =>
+    constructDiagnosticsBundleExport(
+      await mockFoundryRepository.exportConstructRuntimeEvents(),
+      constructRuntimeValidationExport(mockConstructRuntimeValidations, query),
+      null,
+      mockConstructRuntime
+    ),
   clearConstructRuntimeEvents: async () => {
     const deletedCount = mockConstructRuntimeEvents.length;
     mockConstructRuntimeEvents = [];
@@ -2125,6 +2163,35 @@ export const apiFoundryRepository: FoundryRepository = {
       };
     }
   },
+  exportConstructDiagnosticsBundle: async (query = {}) => {
+    try {
+      return unwrap(
+        await apiClient.get<ApiEnvelope<ExportConstructDiagnosticsBundleDto>>(
+          foundryApiRoutes.exportConstructRuntimeDiagnostics,
+          {
+            params: {
+              modelId: query.modelId || undefined,
+              device: query.device || undefined,
+              status: query.status || undefined,
+            },
+          }
+        )
+      );
+    } catch {
+      const [runtimeHistory, validationHistory, runtimeStatus, serviceStatus] = await Promise.all([
+        apiFoundryRepository.exportConstructRuntimeEvents(),
+        apiFoundryRepository.exportConstructRuntimeValidations(query),
+        apiFoundryRepository.getConstructRuntime(),
+        apiFoundryRepository.getFoundryStatus().catch(() => null),
+      ]);
+      return constructDiagnosticsBundleExport(
+        runtimeHistory,
+        validationHistory,
+        serviceStatus,
+        runtimeStatus
+      );
+    }
+  },
   clearConstructRuntimeEvents: async () => {
     try {
       return unwrap(
@@ -2341,6 +2408,7 @@ const constructApiOverrides: Pick<
   | "listConstructRuntimeEvents"
   | "recordConstructRuntimeEvent"
   | "exportConstructRuntimeEvents"
+  | "exportConstructDiagnosticsBundle"
   | "clearConstructRuntimeEvents"
   | "listConstructRuntimeValidations"
   | "exportConstructRuntimeValidations"
@@ -2372,6 +2440,7 @@ const constructApiOverrides: Pick<
   listConstructRuntimeEvents: apiFoundryRepository.listConstructRuntimeEvents,
   recordConstructRuntimeEvent: apiFoundryRepository.recordConstructRuntimeEvent,
   exportConstructRuntimeEvents: apiFoundryRepository.exportConstructRuntimeEvents,
+  exportConstructDiagnosticsBundle: apiFoundryRepository.exportConstructDiagnosticsBundle,
   clearConstructRuntimeEvents: apiFoundryRepository.clearConstructRuntimeEvents,
   listConstructRuntimeValidations: apiFoundryRepository.listConstructRuntimeValidations,
   exportConstructRuntimeValidations: apiFoundryRepository.exportConstructRuntimeValidations,
