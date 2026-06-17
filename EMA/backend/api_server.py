@@ -61,6 +61,12 @@ class StartAssemblyLineInput(BaseModel):
     chunkOverlapTokens: int
     qaPairsPerSource: int
 
+class QAGeneratorRuntimeInput(BaseModel):
+    mode: Literal["deterministic", "transformers", "local"]
+    modelId: str = "sshleifer/tiny-gpt2"
+    maxNewTokens: int = 320
+    temperature: float = 0.2
+
 class ExportQAPairsInput(BaseModel):
     assemblyLineRunId: str
     name: str | None = None
@@ -845,6 +851,30 @@ async def import_foundry_material_file_endpoint(
 @app.get("/api/v1/workshops/{workshop_id}/assembly-lines")
 async def foundry_assembly_lines_endpoint(workshop_id: str):
     return api_envelope(await foundry_catalog_service.list_assembly_line_runs(workshop_id))
+
+
+@app.get("/api/v1/assembly-line/qa-generator/runtime")
+async def foundry_qa_generator_runtime_endpoint():
+    return api_envelope(foundry_catalog_service.qa_generator.runtime_payload())
+
+
+@app.post("/api/v1/assembly-line/qa-generator/runtime/configure")
+async def configure_foundry_qa_generator_runtime_endpoint(data: QAGeneratorRuntimeInput):
+    try:
+        runtime = foundry_catalog_service.qa_generator.configure(
+            mode=data.mode,
+            model_id=data.modelId,
+            max_new_tokens=data.maxNewTokens,
+            temperature=data.temperature,
+        )
+        return api_envelope(runtime)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.post("/api/v1/assembly-line/qa-generator/smoke-proof")
+async def smoke_proof_foundry_qa_generator_endpoint():
+    return api_envelope(await asyncio.to_thread(foundry_catalog_service.qa_generator.smoke_proof))
 
 
 @app.post("/api/v1/workshops/{workshop_id}/assembly-lines")

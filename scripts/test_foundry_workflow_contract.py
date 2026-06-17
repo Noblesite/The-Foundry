@@ -36,6 +36,20 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     catalog = FoundryCatalogService(db_path=str(tmp_path / "catalog.db"))
     forge = ForgeTrainingService()
 
+    qa_runtime = catalog.qa_generator.runtime_payload()
+    assert qa_runtime["contractVersion"] == "foundry.qa-generator.runtime.v1"
+    assert qa_runtime["mode"] == "deterministic"
+    configured_runtime = catalog.qa_generator.configure(
+        mode="deterministic",
+        model_id="sshleifer/tiny-gpt2",
+        max_new_tokens=128,
+        temperature=0.1,
+    )
+    assert configured_runtime["ready"] is True
+    qa_smoke = catalog.qa_generator.smoke_proof()
+    assert qa_smoke["contractVersion"] == "foundry.qa-generator.smoke-proof.v1"
+    assert qa_smoke["rows"][0]["generationMetadata"]["contractVersion"] == "foundry.qa-generation.v1"
+
     workshop = await catalog.create_workshop(
         name="MVP Contract Workshop",
         subject="Foundry",

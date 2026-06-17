@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  ConfigureQAGeneratorRuntimeRequest,
   ImportMaterialFileRequest,
   IngestMaterialRequest,
   StartAssemblyLineRequest,
@@ -11,6 +12,8 @@ import {
   MaterialKind,
   MaterialSource,
   QAPair,
+  QAGeneratorRuntime,
+  QAGeneratorSmokeProof,
   SectionSummary,
   Workshop,
 } from "../domain/foundry";
@@ -102,6 +105,17 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [qaGeneratorRuntime, setQAGeneratorRuntime] = useState<QAGeneratorRuntime | null>(null);
+  const [qaGeneratorDraft, setQAGeneratorDraft] = useState<ConfigureQAGeneratorRuntimeRequest>({
+    mode: "deterministic",
+    modelId: "sshleifer/tiny-gpt2",
+    maxNewTokens: 320,
+    temperature: 0.2,
+  });
+  const [qaGeneratorSmokeProof, setQAGeneratorSmokeProof] =
+    useState<QAGeneratorSmokeProof | null>(null);
+  const [isConfiguringGenerator, setIsConfiguringGenerator] = useState(false);
+  const [isRunningGeneratorSmoke, setIsRunningGeneratorSmoke] = useState(false);
 
   useEffect(() => {
     let isCurrent = true;
@@ -109,11 +123,19 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
     Promise.all([
       repository.listMaterials(workshop.id),
       repository.listAssemblyLineRuns(workshop.id),
+      repository.getQAGeneratorRuntime(),
     ])
-      .then(([sources, runs]) => {
+      .then(([sources, runs, runtime]) => {
         if (isCurrent) {
           setMaterials(sources);
           setAssemblyRuns(runs);
+          setQAGeneratorRuntime(runtime);
+          setQAGeneratorDraft({
+            mode: runtime.mode,
+            modelId: runtime.modelId,
+            maxNewTokens: runtime.maxNewTokens,
+            temperature: runtime.temperature,
+          });
           setReviewRunId(runs[0]?.id);
           setSelectedMaterialIds(sources.filter((source) => source.status === "staged").map((source) => source.id));
         }
@@ -190,6 +212,13 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
     value: StartAssemblyLineRequest[K]
   ) => {
     setAssemblyDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateQAGeneratorDraft = <K extends keyof ConfigureQAGeneratorRuntimeRequest>(
+    key: K,
+    value: ConfigureQAGeneratorRuntimeRequest[K]
+  ) => {
+    setQAGeneratorDraft((current) => ({ ...current, [key]: value }));
   };
 
   const toggleMaterialSelection = (materialId: string) => {
@@ -275,6 +304,45 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
       );
     } finally {
       setIsStartingAssembly(false);
+    }
+  };
+
+  const configureQAGenerator = async () => {
+    setIsConfiguringGenerator(true);
+    setError(null);
+    try {
+      const runtime = await repository.configureQAGeneratorRuntime({
+        ...qaGeneratorDraft,
+        modelId: qaGeneratorDraft.modelId.trim() || "sshleifer/tiny-gpt2",
+        maxNewTokens: Number(qaGeneratorDraft.maxNewTokens),
+        temperature: Number(qaGeneratorDraft.temperature),
+      });
+      setQAGeneratorRuntime(runtime);
+      setQAGeneratorDraft({
+        mode: runtime.mode,
+        modelId: runtime.modelId,
+        maxNewTokens: runtime.maxNewTokens,
+        temperature: runtime.temperature,
+      });
+      setQAGeneratorSmokeProof(null);
+    } catch (runtimeError: unknown) {
+      setError(runtimeError instanceof Error ? runtimeError.message : "Could not configure QA generator.");
+    } finally {
+      setIsConfiguringGenerator(false);
+    }
+  };
+
+  const runQAGeneratorSmokeProof = async () => {
+    setIsRunningGeneratorSmoke(true);
+    setError(null);
+    try {
+      const smokeProof = await repository.runQAGeneratorSmokeProof();
+      setQAGeneratorSmokeProof(smokeProof);
+      setQAGeneratorRuntime(smokeProof.runtime);
+    } catch (smokeError: unknown) {
+      setError(smokeError instanceof Error ? smokeError.message : "Could not run QA generator smoke proof.");
+    } finally {
+      setIsRunningGeneratorSmoke(false);
     }
   };
 
@@ -418,6 +486,111 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
             <div>
               <p className="section-eyebrow">Assembly Line</p>
               <h2>Prepare QA Pairs</h2>
+            </div>
+
+            <div className="qa-generator-panel">
+              <div className="runtime-readiness-header">
+                <div>
+                  <span className="panel-kicker">QA Generator</span>
+                  <strong>{qaGeneratorRuntime?.status || "loading"}</strong>
+                  <p>{qaGeneratorRuntime?.detail || "Reading generator runtime state..."}</p>
+                </div>
+                <span className={`status-badge ${qaGeneratorRuntime?.ready ? "is-active" : ""}`}>
+                  {qaGeneratorRuntime?.ready ? "Ready" : "Review"}
+                </span>
+              </div>
+
+              <div className="settings-grid">
+                <div>
+                  <label className="field-label" htmlFor="qa-generator-mode">Mode</label>
+                  <select
+                    id="qa-generator-mode"
+                    value={qaGeneratorDraft.mode}
+                    onChange={(event) =>
+                      updateQAGeneratorDraft(
+                        "mode",
+                        event.target.value as ConfigureQAGeneratorRuntimeRequest["mode"]
+                      )
+                    }
+                  >
+                    <option value="deterministic">Deterministic smoke</option>
+                    <option value="transformers">Local Transformers</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="field-label" htmlFor="qa-generator-model">Generator model</label>
+                  <input
+                    id="qa-generator-model"
+                    type="text"
+                    value={qaGeneratorDraft.modelId}
+                    onChange={(event) => updateQAGeneratorDraft("modelId", event.target.value)}
+                    placeholder="sshleifer/tiny-gpt2"
+                  />
+                </div>
+              </div>
+
+              <div className="settings-grid">
+                <div>
+                  <label className="field-label" htmlFor="qa-generator-max-tokens">Max new tokens</label>
+                  <input
+                    id="qa-generator-max-tokens"
+                    type="number"
+                    min={24}
+                    max={2048}
+                    step={16}
+                    value={qaGeneratorDraft.maxNewTokens}
+                    onChange={(event) =>
+                      updateQAGeneratorDraft("maxNewTokens", Number(event.target.value))
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="field-label" htmlFor="qa-generator-temperature">Temperature</label>
+                  <input
+                    id="qa-generator-temperature"
+                    type="number"
+                    min={0}
+                    max={1.5}
+                    step={0.1}
+                    value={qaGeneratorDraft.temperature}
+                    onChange={(event) =>
+                      updateQAGeneratorDraft("temperature", Number(event.target.value))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="runtime-action-row">
+                <button
+                  className="button-secondary button-compact"
+                  type="button"
+                  disabled={isConfiguringGenerator}
+                  onClick={configureQAGenerator}
+                >
+                  {isConfiguringGenerator ? "Configuring" : "Configure"}
+                </button>
+                <button
+                  className="button-secondary button-compact"
+                  type="button"
+                  disabled={isRunningGeneratorSmoke}
+                  onClick={runQAGeneratorSmokeProof}
+                >
+                  {isRunningGeneratorSmoke ? "Testing" : "Smoke proof"}
+                </button>
+              </div>
+
+              {qaGeneratorSmokeProof && (
+                <div className={`qa-generator-proof qa-generator-proof-${qaGeneratorSmokeProof.status}`}>
+                  <strong>{qaGeneratorSmokeProof.status}</strong>
+                  <p>{qaGeneratorSmokeProof.summary}</p>
+                  {qaGeneratorSmokeProof.rows[0] && (
+                    <span>
+                      {qaGeneratorSmokeProof.rows[0].generatorModel} /{" "}
+                      {Math.round((qaGeneratorSmokeProof.rows[0].confidence || 0) * 100)}%
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="settings-grid">

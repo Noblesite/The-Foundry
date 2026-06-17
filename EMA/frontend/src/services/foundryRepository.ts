@@ -14,6 +14,7 @@ import {
   ClearConstructRuntimeEventsDto,
   ConfigureConstructRuntimeRequest,
   ConfigureForgeRuntimeRequest,
+  ConfigureQAGeneratorRuntimeRequest,
   ConstructDto,
   ConstructChatRequest,
   ConstructChatResponseDto,
@@ -47,6 +48,8 @@ import {
   ModelDownloadJobDto,
   MaterialChunkDto,
   QAPairDto,
+  QAGeneratorRuntimeDto,
+  QAGeneratorSmokeProofDto,
   PreflightConstructRuntimeRequest,
   ProbeConstructRuntimeRequest,
   SearchArchiveModelsRequest,
@@ -95,6 +98,8 @@ import {
   ModelSearchResult,
   NavigationSection,
   QAPair,
+  QAGeneratorRuntime,
+  QAGeneratorSmokeProof,
   SectionSummary,
   Trial,
   Workshop,
@@ -283,6 +288,11 @@ export interface FoundryRepository {
     request: ImportMaterialFileRequest
   ) => Promise<MaterialSource>;
   listAssemblyLineRuns: (workshopId: string) => Promise<AssemblyLineRun[]>;
+  getQAGeneratorRuntime: () => Promise<QAGeneratorRuntime>;
+  configureQAGeneratorRuntime: (
+    request: ConfigureQAGeneratorRuntimeRequest
+  ) => Promise<QAGeneratorRuntime>;
+  runQAGeneratorSmokeProof: () => Promise<QAGeneratorSmokeProof>;
   startAssemblyLine: (
     workshopId: string,
     request: StartAssemblyLineRequest
@@ -444,6 +454,19 @@ const mockUiCatalog: UiCatalogItem[] = [
 const mockAssemblyLineRuns: AssemblyLineRun[] = [];
 const mockMaterialChunks: MaterialChunk[] = [];
 const mockQAPairs: QAPair[] = [];
+let mockQAGeneratorRuntime: QAGeneratorRuntime = {
+  contractVersion: "foundry.qa-generator.runtime.v1",
+  mode: "deterministic",
+  modelId: "sshleifer/tiny-gpt2",
+  maxNewTokens: 320,
+  temperature: 0.2,
+  ready: true,
+  status: "ready",
+  detail: "Using the offline deterministic QA generator for fast smoke tests.",
+  dependencies: {
+    transformers: false,
+  },
+};
 const mockForgeRuns: ForgeRun[] = [...mockDashboardSummary.forgeQueue];
 const mockArtifacts: Artifact[] = [mockDashboardSummary.currentArtifact];
 const mockTrials: Trial[] = [];
@@ -889,6 +912,67 @@ export const mockFoundryRepository: FoundryRepository = {
     return material;
   },
   listAssemblyLineRuns: async () => mockAssemblyLineRuns,
+  getQAGeneratorRuntime: async () => mockQAGeneratorRuntime,
+  configureQAGeneratorRuntime: async (request) => {
+    mockQAGeneratorRuntime = {
+      ...mockQAGeneratorRuntime,
+      mode: request.mode,
+      modelId: request.modelId || "sshleifer/tiny-gpt2",
+      maxNewTokens: request.maxNewTokens,
+      temperature: request.temperature,
+      ready: request.mode === "deterministic",
+      status: request.mode === "deterministic" ? "ready" : "blocked",
+      detail:
+        request.mode === "deterministic"
+          ? "Using the offline deterministic QA generator for fast smoke tests."
+          : "Mock Transformers mode is visible but not available without the backend runtime.",
+      dependencies: {
+        transformers: false,
+      },
+    };
+    return mockQAGeneratorRuntime;
+  },
+  runQAGeneratorSmokeProof: async () => {
+    const row: QAPair = {
+      id: `qa-smoke-${Date.now()}`,
+      workshopId: mockDashboardSummary.workshop.id,
+      materialId: "mat-smoke-qa-generator",
+      chunkId: "chk-smoke-qa-generator",
+      assemblyLineRunId: "asm-smoke-qa-generator",
+      question: "What should a model learn about Marshall from the smoke material?",
+      answer: "Marshall helps the team solve emergencies and keeps trying until everyone is safe.",
+      generatorModel:
+        mockQAGeneratorRuntime.mode === "deterministic"
+          ? "deterministic-context-generator"
+          : mockQAGeneratorRuntime.modelId,
+      confidence: 0.68,
+      generationMetadata: {
+        contractVersion: "foundry.qa-generation.v1",
+        mode: mockQAGeneratorRuntime.mode,
+        strategy: "context-sentence",
+      },
+      reviewStatus: "draft",
+      reviewedAt: null,
+    };
+    const status = mockQAGeneratorRuntime.ready ? "passed" : "warning";
+    return {
+      contractVersion: "foundry.qa-generator.smoke-proof.v1",
+      status,
+      runtime: mockQAGeneratorRuntime,
+      request: {
+        materialName: "Foundry QA Smoke Material",
+        materialKind: "text",
+        chunkId: row.chunkId,
+        qaPairCount: 1,
+      },
+      rows: [row],
+      summary:
+        status === "passed"
+          ? "QA generator produced a draft row."
+          : "QA generator produced a mock fallback row because Transformers is unavailable.",
+      createdAt: new Date().toISOString(),
+    };
+  },
   startAssemblyLine: async (_workshopId, request) => {
     const selectedMaterials = mockMaterialSources.filter((material) =>
       request.materialSourceIds.includes(material.id)
@@ -2351,6 +2435,25 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.get<ApiEnvelope<AssemblyLineRunDto[]>>(
         foundryApiRoutes.assemblyLines(workshopId)
+      )
+    ),
+  getQAGeneratorRuntime: async () =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<QAGeneratorRuntimeDto>>(
+        foundryApiRoutes.qaGeneratorRuntime
+      )
+    ),
+  configureQAGeneratorRuntime: async (request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<QAGeneratorRuntimeDto>>(
+        foundryApiRoutes.configureQAGeneratorRuntime,
+        request
+      )
+    ),
+  runQAGeneratorSmokeProof: async () =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<QAGeneratorSmokeProofDto>>(
+        foundryApiRoutes.runQAGeneratorSmokeProof
       )
     ),
   startAssemblyLine: async (workshopId, request) =>

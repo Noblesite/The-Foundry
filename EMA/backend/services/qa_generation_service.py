@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import os
 import re
+from datetime import datetime, timezone
 from dataclasses import dataclass
+from importlib.util import find_spec
 from typing import Any, Dict, List
 from uuid import uuid4
 
@@ -26,16 +28,89 @@ class QAGenerationService:
         self.max_new_tokens = int(os.getenv("FOUNDRY_QA_GENERATOR_MAX_NEW_TOKENS", "320"))
         self.temperature = float(os.getenv("FOUNDRY_QA_GENERATOR_TEMPERATURE", "0.2"))
 
+    def runtime_payload(self) -> Dict[str, Any]:
+        transformers_available = find_spec("transformers") is not None
+        ready = self.mode == "deterministic" or transformers_available
+        return {
+            "mode": self.mode,
+            "modelId": self.model_id,
+            "maxNewTokens": self.max_new_tokens,
+            "temperature": self.temperature,
+            "ready": ready,
+            "status": "ready" if ready else "blocked",
+            "detail": self._runtime_detail(transformers_available),
+            "dependencies": {
+                "transformers": transformers_available,
+            },
+            "contractVersion": "foundry.qa-generator.runtime.v1",
+        }
+
+    def configure(
+        self,
+        *,
+        mode: str,
+        model_id: str,
+        max_new_tokens: int,
+        temperature: float,
+    ) -> Dict[str, Any]:
+        normalized_mode = mode.strip().lower()
+        if normalized_mode not in {"deterministic", "transformers", "local"}:
+            raise ValueError("QA generator mode must be deterministic or transformers.")
+        self.mode = "transformers" if normalized_mode == "local" else normalized_mode
+        self.model_id = model_id.strip() or "sshleifer/tiny-gpt2"
+        self.max_new_tokens = max(24, min(2048, int(max_new_tokens)))
+        self.temperature = max(0.0, min(1.5, float(temperature)))
+        return self.runtime_payload()
+
+    def smoke_proof(self) -> Dict[str, Any]:
+        request = QAGenerationRequest(
+            material_name="Foundry QA Smoke Material",
+            material_kind="text",
+            chunk_id=f"chk-smoke-{uuid4().hex[:8]}",
+            chunk_text=(
+                "Marshall is a fire pup who helps the team solve emergencies. "
+                "He is brave, energetic, and sometimes clumsy, but he keeps trying "
+                "until everyone is safe."
+            ),
+            qa_pair_count=1,
+        )
+        rows = self.generate(request)
+        public_rows = [self._public_row(row) for row in rows]
+        generator_model = rows[0].get("generator_model") if rows else None
+        metadata = rows[0].get("generation_metadata", {}) if rows else {}
+        fallback_reason = metadata.get("fallbackReason") if isinstance(metadata, dict) else None
+        status = "passed" if rows else "failed"
+        if fallback_reason:
+            status = "warning"
+        return {
+            "contractVersion": "foundry.qa-generator.smoke-proof.v1",
+            "status": status,
+            "runtime": self.runtime_payload(),
+            "request": {
+                "materialName": request.material_name,
+                "materialKind": request.material_kind,
+                "chunkId": request.chunk_id,
+                "qaPairCount": request.qa_pair_count,
+            },
+            "rows": public_rows,
+            "summary": self._smoke_summary(status, generator_model, fallback_reason),
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        }
+
     def generate(self, request: QAGenerationRequest) -> List[Dict[str, Any]]:
         if self.mode in {"transformers", "local"}:
             try:
                 rows = self._generate_with_transformers(request)
                 if rows:
                     return rows
-            except Exception:
+            except Exception as error:
                 # Assembly Lines should still produce reviewable draft rows when the
                 # optional generator model is unavailable. Metadata records fallback.
-                pass
+                return self._generate_deterministic(
+                    request,
+                    fallback_reason=f"{type(error).__name__}: {error}",
+                    requested_model_id=self.model_id,
+                )
         return self._generate_deterministic(request)
 
     def _generate_with_transformers(self, request: QAGenerationRequest) -> List[Dict[str, Any]]:
@@ -75,7 +150,12 @@ class QAGenerationService:
             )
         return rows
 
-    def _generate_deterministic(self, request: QAGenerationRequest) -> List[Dict[str, Any]]:
+    def _generate_deterministic(
+        self,
+        request: QAGenerationRequest,
+        fallback_reason: str | None = None,
+        requested_model_id: str | None = None,
+    ) -> List[Dict[str, Any]]:
         compact = " ".join(request.chunk_text.split())
         sentences = self._sentences(compact)
         key_terms = self._key_terms(compact)
@@ -95,6 +175,8 @@ class QAGenerationService:
                     strategy="context-sentence",
                     model_id="deterministic-context-generator",
                     row_index=index,
+                    fallback_reason=fallback_reason,
+                    requested_model_id=requested_model_id,
                 )
             )
         return rows
@@ -109,7 +191,25 @@ class QAGenerationService:
         strategy: str,
         model_id: str,
         row_index: int,
+        fallback_reason: str | None = None,
+        requested_model_id: str | None = None,
     ) -> Dict[str, Any]:
+        metadata = {
+            "contractVersion": "foundry.qa-generation.v1",
+            "mode": self.mode,
+            "strategy": strategy,
+            "rowIndex": row_index,
+            "source": {
+                "chunkId": request.chunk_id,
+                "materialName": request.material_name,
+                "materialKind": request.material_kind,
+                "characterCount": len(request.chunk_text),
+                "tokenEstimate": len(request.chunk_text.split()),
+            },
+        }
+        if fallback_reason:
+            metadata["fallbackReason"] = fallback_reason
+            metadata["requestedModelId"] = requested_model_id
         return {
             "id": f"qa-{uuid4().hex[:12]}",
             "chunk_id": request.chunk_id,
@@ -117,19 +217,7 @@ class QAGenerationService:
             "answer": answer,
             "generator_model": model_id,
             "confidence": round(max(0.0, min(1.0, confidence)), 2),
-            "generation_metadata": {
-                "contractVersion": "foundry.qa-generation.v1",
-                "mode": self.mode,
-                "strategy": strategy,
-                "rowIndex": row_index,
-                "source": {
-                    "chunkId": request.chunk_id,
-                    "materialName": request.material_name,
-                    "materialKind": request.material_kind,
-                    "characterCount": len(request.chunk_text),
-                    "tokenEstimate": len(request.chunk_text.split()),
-                },
-            },
+            "generation_metadata": metadata,
         }
 
     def _prompt(self, request: QAGenerationRequest) -> str:
@@ -200,3 +288,37 @@ class QAGenerationService:
         if key_terms:
             return 0.68
         return 0.58
+
+    def _runtime_detail(self, transformers_available: bool) -> str:
+        if self.mode == "deterministic":
+            return "Using the offline deterministic QA generator for fast smoke tests."
+        if transformers_available:
+            return f"Transformers QA generator is configured for {self.model_id}."
+        return "Transformers is not importable, so generation will fall back to deterministic drafts."
+
+    def _smoke_summary(
+        self,
+        status: str,
+        generator_model: str | None,
+        fallback_reason: Any,
+    ) -> str:
+        if status == "passed":
+            return f"QA generator produced a draft row with {generator_model or 'the configured model'}."
+        if status == "warning":
+            return (
+                "QA generator produced a fallback draft row because the configured "
+                f"model path was unavailable: {fallback_reason}"
+            )
+        return "QA generator did not produce a draft row."
+
+    def _public_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "id": row.get("id"),
+            "question": row.get("question"),
+            "answer": row.get("answer"),
+            "generatorModel": row.get("generator_model"),
+            "confidence": row.get("confidence"),
+            "generationMetadata": row.get("generation_metadata", {}),
+            "reviewStatus": "draft",
+            "reviewedAt": None,
+        }

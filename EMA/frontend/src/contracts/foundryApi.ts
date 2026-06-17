@@ -17,6 +17,8 @@ import {
   ForgeTrainingContract,
   ForgeLocalTrainerPreflightResult,
   ForgeSmokeProofResult,
+  QAGeneratorRuntime,
+  QAGeneratorSmokeProof,
   ForgePurpose,
   ForgeWorkerReconcileResult,
   ForgeWorkerState,
@@ -78,6 +80,9 @@ export const foundryApiRoutes = {
   forgeRuntime: `${FOUNDRY_API_VERSION}/forges/runtime`,
   configureForgeRuntime: `${FOUNDRY_API_VERSION}/forges/runtime/configure`,
   runForgeSmokeProof: `${FOUNDRY_API_VERSION}/forges/smoke-proof`,
+  qaGeneratorRuntime: `${FOUNDRY_API_VERSION}/assembly-line/qa-generator/runtime`,
+  configureQAGeneratorRuntime: `${FOUNDRY_API_VERSION}/assembly-line/qa-generator/runtime/configure`,
+  runQAGeneratorSmokeProof: `${FOUNDRY_API_VERSION}/assembly-line/qa-generator/smoke-proof`,
   artifacts: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/artifacts`,
   artifact: (artifactId: string) => `${FOUNDRY_API_VERSION}/artifacts/${artifactId}`,
   constructs: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/constructs`,
@@ -260,6 +265,8 @@ export interface ForgeRunDto {
 export type ForgeWorkerReconcileDto = ForgeWorkerReconcileResult;
 export type ForgeLocalTrainerPreflightDto = ForgeLocalTrainerPreflightResult;
 export type ForgeSmokeProofDto = ForgeSmokeProofResult;
+export type QAGeneratorRuntimeDto = QAGeneratorRuntime;
+export type QAGeneratorSmokeProofDto = QAGeneratorSmokeProof;
 
 export interface ForgeSmokeProofRequest {
   runTraining: boolean;
@@ -336,6 +343,13 @@ export interface StartAssemblyLineRequest {
   chunkSizeTokens: number;
   chunkOverlapTokens: number;
   qaPairsPerSource: number;
+}
+
+export interface ConfigureQAGeneratorRuntimeRequest {
+  mode: "deterministic" | "transformers";
+  modelId: string;
+  maxNewTokens: number;
+  temperature: number;
 }
 
 export interface ExportQAPairsRequest {

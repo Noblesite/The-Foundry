@@ -23,6 +23,7 @@ export type MaterialKind =
 export type MaterialStatus = "staged" | "chunked" | "qa-ready" | "needs-review";
 export type QAReviewStatus = "draft" | "accepted" | "rejected" | "edited";
 export type AssemblyLineStatus = "queued" | "running" | "completed" | "failed";
+export type QAGeneratorMode = "deterministic" | "transformers";
 export type ForgeRunStatus = "queued" | "running" | "paused" | "completed" | "failed";
 export type ArtifactStatus = "draft" | "trial" | "ready" | "archived";
 export type ConstructStatus = "offline" | "warming" | "streaming" | "paused";
@@ -162,6 +163,46 @@ export interface QAPair {
   generationMetadata?: Record<string, unknown>;
   reviewStatus: QAReviewStatus;
   reviewedAt?: string | null;
+}
+
+export interface QAGeneratorRuntime {
+  contractVersion: "foundry.qa-generator.runtime.v1";
+  mode: QAGeneratorMode;
+  modelId: string;
+  maxNewTokens: number;
+  temperature: number;
+  ready: boolean;
+  status: "ready" | "blocked" | string;
+  detail: string;
+  dependencies: {
+    transformers: boolean;
+  };
+}
+
+export interface QAGeneratorSmokeRow {
+  id: string;
+  question: string;
+  answer: string;
+  generatorModel?: string;
+  confidence?: number;
+  generationMetadata?: Record<string, unknown>;
+  reviewStatus: QAReviewStatus;
+  reviewedAt?: string | null;
+}
+
+export interface QAGeneratorSmokeProof {
+  contractVersion: "foundry.qa-generator.smoke-proof.v1";
+  status: "passed" | "warning" | "failed" | string;
+  runtime: QAGeneratorRuntime;
+  request: {
+    materialName: string;
+    materialKind: MaterialKind | string;
+    chunkId: string;
+    qaPairCount: number;
+  };
+  rows: QAGeneratorSmokeRow[];
+  summary: string;
+  createdAt: string;
 }
 
 export interface ForgeRun {

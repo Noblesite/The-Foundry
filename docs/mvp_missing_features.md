@@ -62,11 +62,12 @@ MVP can defer:
 
 Status: partial.
 
-The Assembly Line can chunk simple text and produce draft QA pairs with durable review/export states. It now has a model-backed QA generation boundary and stores row-level provenance: generator model, confidence, and `foundry.qa-generation.v1` metadata. The remaining MVP gap is generation quality: the deterministic fallback is useful for offline smoke tests, but real training data needs a configured local generator model that can read chunk context, weigh what matters, produce instruction/output rows, score confidence, and keep humans in the review loop.
+The Assembly Line can chunk simple text and produce draft QA pairs with durable review/export states. It now has a model-backed QA generation boundary, runtime configuration, smoke proofing, and row-level provenance: generator model, confidence, and `foundry.qa-generation.v1` metadata. The remaining MVP gap is generation quality: the deterministic fallback is useful for offline smoke tests, but real training data needs a configured local generator model that can read chunk context, weigh what matters, produce instruction/output rows, score confidence, and keep humans in the review loop.
 
 MVP needs:
 
 - Model-backed QA generation using a local or configured generator model.
+- A repeatable QA generator quality check against a tiny cached model and a stronger recommended local model.
 - Prompt templates that preserve source context, persona/subject, and answer constraints.
 - Confidence/quality metadata per QA row, including source chunk references.
 - Export only reviewed/accepted rows by default, with an explicit override for draft rows.

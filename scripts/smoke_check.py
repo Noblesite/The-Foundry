@@ -278,6 +278,10 @@ def run_material_import_contract_check() -> int:
         "/api/v1/workshops/{workshop_id}/qa-pairs/{qa_pair_id}",
         "import_foundry_material_file_endpoint",
         "update_foundry_qa_pair_review_endpoint",
+        "/api/v1/assembly-line/qa-generator/runtime",
+        "/api/v1/assembly-line/qa-generator/runtime/configure",
+        "/api/v1/assembly-line/qa-generator/smoke-proof",
+        "QAGeneratorRuntimeInput",
         "UpdateQAPairReviewInput",
         "includeDrafts: bool = False",
         "Request",
@@ -317,9 +321,15 @@ def run_material_import_contract_check() -> int:
 
     required_qa_generator_patterns = (
         "foundry.qa-generation.v1",
+        "foundry.qa-generator.runtime.v1",
+        "foundry.qa-generator.smoke-proof.v1",
         "FOUNDRY_QA_GENERATOR_MODE",
+        "runtime_payload",
+        "smoke_proof",
+        "configure",
         "_generate_with_transformers",
         "_generate_deterministic",
+        "fallbackReason",
         "confidence",
     )
     missing_qa_generator = [

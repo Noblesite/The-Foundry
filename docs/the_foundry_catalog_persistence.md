@@ -40,6 +40,11 @@ The default local database path is `EMA/runtime/foundry_catalog.db`. Override it
 with `FOUNDRY_CATALOG_DB_PATH` when tests or deployments need an isolated
 catalog.
 
+The QA generator runtime is process-level configuration exposed through the
+Assembly Line API. It defaults to a deterministic offline generator for public
+smoke tests, can be configured for a local Transformers model, and writes
+generator provenance into each QA row before export.
+
 The `ui_component_catalog` table should be treated as metadata, not as server
 rendering authority. The React app should keep rendering locally; SQL should
 help the app decide what metadata, lessons, cache keys, and configuration belong
