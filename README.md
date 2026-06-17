@@ -164,6 +164,7 @@ The Foundry uses domain terms that support the learn-by-building experience:
 - [Product Architecture](docs/the_foundry_product_architecture.md)
 - [Catalog Persistence](docs/the_foundry_catalog_persistence.md)
 - [Forge Runtime Adapter](docs/forge_runtime_adapter.md)
+- [MVP Missing Features](docs/mvp_missing_features.md)
 - [Roadmap](docs/roadmap.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
