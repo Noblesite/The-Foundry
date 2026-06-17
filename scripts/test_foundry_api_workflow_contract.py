@@ -28,10 +28,15 @@ from fastapi.testclient import TestClient
 from backend import api_server
 from backend.services import forge_training_service as forge_module
 from backend.services import foundry_catalog_service as catalog_module
+from backend.services.construct_inference_service import ConstructInferenceService
 from backend.services.forge_smoke_service import LocalForgeSmokeService
 from backend.services.forge_training_service import ForgeTrainingService
 from backend.services.foundry_catalog_service import FoundryCatalogService
 from backend.services.huggingface_model_service import HuggingFaceModelService
+
+
+def sse_lines(response_text: str) -> list[str]:
+    return [line.strip() for line in response_text.splitlines() if line.strip()]
 
 
 def tiny_pdf_bytes(text: str) -> bytes:
@@ -239,6 +244,7 @@ def run_api_workflow(tmp_path: Path) -> None:
     original_forge_service = api_server.forge_training_service
     original_huggingface_service = api_server.huggingface_model_service
     original_smoke_service = api_server.local_forge_smoke_service
+    original_construct_service = api_server.construct_inference_service
 
     catalog_module.DEFAULT_SOURCE_DIR = runtime_root / "sources"
     catalog_module.DEFAULT_EXPORT_DIR = runtime_root / "exports"
@@ -246,8 +252,13 @@ def run_api_workflow(tmp_path: Path) -> None:
 
     isolated_catalog = FoundryCatalogService(db_path=str(tmp_path / "catalog.db"))
     isolated_forge = ForgeTrainingService()
+    isolated_construct = ConstructInferenceService()
+    isolated_construct.runtime_event_db_path = tmp_path / "construct-runtime-events.db"
+    isolated_construct._runtime_events = []
+    isolated_construct._initialize_runtime_event_store()
     api_server.foundry_catalog_service = isolated_catalog
     api_server.forge_training_service = isolated_forge
+    api_server.construct_inference_service = isolated_construct
     api_server.huggingface_model_service = HuggingFaceModelService(isolated_catalog)
     api_server.local_forge_smoke_service = LocalForgeSmokeService(
         isolated_catalog,
@@ -454,6 +465,73 @@ def run_api_workflow(tmp_path: Path) -> None:
                 )
             )
             assert local_construct["artifactId"] == local_artifact["id"]
+
+            stream_tokens = ["Marshall", " is", " ready", "."]
+            isolated_construct.set_transformers_stream_backend(
+                lambda _prepared, _message, _system_prompt: stream_tokens
+            )
+            configured_construct_runtime = assert_response(
+                client.post(
+                    "/api/v1/constructs/runtime/configure",
+                    json={
+                        "mode": "transformers",
+                        "modelId": str(cached_model_dir),
+                        "device": "cpu",
+                    },
+                )
+            )
+            assert configured_construct_runtime["mode"] == "transformers"
+            streamed = client.post(
+                f"/api/v1/constructs/{local_construct['id']}/chat/stream",
+                json={
+                    "conversationId": "mvp-api-real-stream",
+                    "message": "Respond as the trained character.",
+                    "includeLibraryContext": False,
+                    "maxNewTokens": 16,
+                    "temperature": 0.0,
+                },
+            )
+            assert streamed.status_code == 200, streamed.text
+            lines = sse_lines(streamed.text)
+            assert any(line.startswith("event: token") for line in lines)
+            assert any('"token": "Marshall"' in line for line in lines)
+            assert any(line.startswith("event: done") for line in lines)
+            assert '"mode": "transformers"' in streamed.text
+            assert '"status": "loaded"' in streamed.text
+
+            isolated_construct.set_transformers_stream_backend(None)
+            assert_response(
+                client.post(
+                    "/api/v1/constructs/runtime/configure",
+                    json={
+                        "mode": "transformers",
+                        "modelId": "missing-local-construct-model",
+                        "device": "cpu",
+                    },
+                )
+            )
+            failed_stream = client.post(
+                f"/api/v1/constructs/{local_construct['id']}/chat/stream",
+                json={
+                    "conversationId": "mvp-api-real-stream-failure",
+                    "message": "This should fail loudly.",
+                    "includeLibraryContext": False,
+                    "maxNewTokens": 16,
+                    "temperature": 0.0,
+                },
+            )
+            assert failed_stream.status_code == 200, failed_stream.text
+            failed_lines = sse_lines(failed_stream.text)
+            assert any(line.startswith("event: error") for line in failed_lines)
+            assert "could not start" in failed_stream.text
+            assert "fell back to the simulator" not in failed_stream.text
+            isolated_construct.set_transformers_stream_backend(None)
+            assert_response(
+                client.post(
+                    "/api/v1/constructs/runtime/configure",
+                    json={"mode": "simulated", "modelId": "", "device": "auto"},
+                )
+            )
             isolated_forge.set_local_trainer_backend(None)
             isolated_forge.mode = "simulated"
 
@@ -541,6 +619,7 @@ def run_api_workflow(tmp_path: Path) -> None:
         api_server.forge_training_service = original_forge_service
         api_server.huggingface_model_service = original_huggingface_service
         api_server.local_forge_smoke_service = original_smoke_service
+        api_server.construct_inference_service = original_construct_service
         catalog_module.DEFAULT_SOURCE_DIR = original_source_dir
         catalog_module.DEFAULT_EXPORT_DIR = original_export_dir
         forge_module.DEFAULT_FORGE_RUNTIME_DIR = original_forge_dir

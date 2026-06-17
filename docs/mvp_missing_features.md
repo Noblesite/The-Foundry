@@ -27,7 +27,7 @@ This is the short steering list. If a task does not support one of these items, 
 - [x] Prove model-backed QA generation with source-aware prompt templates and visible quality metadata.
 - [x] Implement one tiny local LoRA trainer adapter behind the existing Forge runtime boundary.
 - [x] Make real Forge completion create a verified Artifact backed by output files.
-- [ ] Prove one cached small-model Construct streaming path without silent fallback.
+- [x] Prove one cached small-model Construct streaming path without silent fallback.
 - [ ] Add one end-to-end readiness gate for Archive download, Construct load, and Forge start.
 - [ ] Run a clean manual MVP rehearsal from empty Workshop to saved Trial.
 
@@ -61,7 +61,7 @@ The project already has a strong product shell:
 - Real local file extraction for text/markdown, CSV, JSONL/NDJSON, and text-based PDFs through service-level and FastAPI workflow rehearsals.
 - Forge contracts, runtime event files, worker reconciliation, simulated progress, local trainer adapter contracts, verified Artifact readiness, and automatic Artifact metadata for completed training runs.
 - Hugging Face search, auth test, model preflight, download jobs, Archive cataloging, and local cache tracking.
-- Construct runtime controls, local model preflight/load/probe, streaming chat endpoint, runtime history, validation history, memory release, and diagnostics bundle preview/export.
+- Construct runtime controls, local model preflight/load/probe, cached-model streaming proof, no-silent-fallback stream errors, runtime history, validation history, memory release, and diagnostics bundle preview/export.
 - An isolated MVP rehearsal test that proves Material -> reviewed QA -> JSONL -> Forge simulation -> Artifact -> Construct reply -> Trial scoring.
 - An isolated FastAPI v1 contract rehearsal that proves the same MVP handoffs through public `/api/v1` endpoints.
 - A mocked Archive/Hugging Face API contract rehearsal that proves auth, search, preflight, register, cache, evict, and download-job lifecycle without network calls.
@@ -182,16 +182,16 @@ MVP can defer:
 
 ### 5. Construct Small-Model Happy Path
 
-Status: partial.
+Status: covered for MVP contract rehearsal; real dependency smoke remains manual.
 
-Construct has a real Transformers streaming path, local Archive checks, preflight, load, probe, unload, memory release, and diagnostics. The default remains simulated, and runtime failure can fall back to simulated text.
+Construct has a real Transformers streaming path, local Archive checks, preflight, load, probe, unload, memory release, and diagnostics. The default remains simulated for first-run friendliness. In Transformers mode, stream failures now produce explicit error events instead of silently returning simulator text. The API rehearsal proves a cached local-model stream through the public SSE endpoint with an injected tiny backend, then proves an uncached model fails loudly.
 
 MVP needs:
 
-- One documented, repeatable small model path from Archive download to Construct streaming.
-- UI mode labeling that makes simulation versus real Transformers unmistakable.
-- A no-surprise fallback policy: if real local inference fails during MVP validation, show failure and recovery steps instead of silently acting like success.
-- Automated smoke coverage for the local small-model path when dependencies and cached model are present.
+- Keep one documented, repeatable small model path from Archive download to Construct streaming.
+- Keep UI mode labeling that makes simulation versus real Transformers unmistakable.
+- Keep the no-surprise fallback policy: if real local inference fails during MVP validation, show failure and recovery steps instead of silently acting like success.
+- Keep automated contract coverage for the cached-model stream path and add optional full dependency smoke notes.
 - Runtime compatibility notes for macOS/MPS, CUDA, and CPU.
 
 MVP can defer:
@@ -311,10 +311,9 @@ These are valid Foundry goals, but they are scope creep before the core loop is 
 
 ## Recommended MVP Sequence
 
-1. Prove one cached small-model Construct streaming path and prevent silent simulated fallback during MVP validation.
-2. Add one readiness gate that blocks unsafe download, load, and train actions with clear recovery steps.
-3. Tighten first-run setup docs around baseline app dependencies versus optional ML runtime dependencies.
-4. Run a full manual MVP rehearsal from empty Workshop to Construct Trial.
+1. Add one readiness gate that blocks unsafe download, load, and train actions with clear recovery steps.
+2. Tighten first-run setup docs around baseline app dependencies versus optional ML runtime dependencies.
+3. Run a full manual MVP rehearsal from empty Workshop to Construct Trial.
 
 ## MVP Definition Of Done
 

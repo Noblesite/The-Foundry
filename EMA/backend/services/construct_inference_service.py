@@ -4,6 +4,7 @@ import asyncio
 import gc
 import json
 import os
+from collections.abc import Callable
 from queue import Empty
 import re
 import sqlite3
@@ -65,6 +66,7 @@ class ConstructInferenceService:
             in {"1", "true", "yes"}
         )
         self._model_cache: Dict[str, Any] = {}
+        self._transformers_stream_backend: Callable[[Dict[str, Any], str, Optional[str]], list[str]] | None = None
         self._active_loaded_model_id = ""
         self._last_load_event: Dict[str, Any] = {
             "status": "idle",
@@ -88,6 +90,13 @@ class ConstructInferenceService:
             "cacheSizeAfter": 0,
         }
         self._initialize_runtime_event_store()
+
+    def set_transformers_stream_backend(
+        self,
+        backend: Callable[[Dict[str, Any], str, Optional[str]], list[str]] | None,
+    ) -> None:
+        """Inject a streaming backend while preserving the Transformers runtime contract."""
+        self._transformers_stream_backend = backend
 
     def describe_runtime(self) -> InferenceRuntime:
         active_loaded_model_id = (
@@ -681,6 +690,31 @@ class ConstructInferenceService:
             model_reference = self._resolve_model_reference(target_model)
             started_at = time.perf_counter()
             event_started_at = self._utc_now()
+            if self._transformers_stream_backend:
+                tokens = self._transformers_stream_backend(
+                    prepared_response,
+                    user_message,
+                    system_prompt,
+                )
+                self._active_loaded_model_id = target_model
+                self._model_cache[target_model] = {
+                    "tokenizer": None,
+                    "model": {
+                        "device": self.device_preference,
+                        "modelReference": model_reference,
+                    },
+                }
+                self._record_load_event(
+                    status="loaded",
+                    model_id=target_model,
+                    device=self.device_preference,
+                    duration_seconds=round(time.perf_counter() - started_at, 3),
+                    started_at=event_started_at,
+                )
+                for token in tokens:
+                    yield token
+                    await asyncio.sleep(0)
+                return
             tokenizer, model = await self._load_transformers_model(
                 model_reference,
                 cache_key=target_model,
@@ -701,13 +735,19 @@ class ConstructInferenceService:
                 duration_seconds=None,
                 failure_reason=str(error),
             )
-            fallback = (
-                "Local Transformers inference could not start, so The Foundry "
-                f"fell back to the simulator. Reason: {error}"
+            self.record_runtime_event(
+                event_type="smoke",
+                status="failed",
+                title="Transformers stream failed before generation",
+                detail=str(error),
+                model_id=self.model_id or prepared_response["artifact"]["baseModel"],
+                runtime_status="failed",
+                source="backend",
             )
-            async for token in self._stream_simulated(fallback):
-                yield token
-            return
+            raise RuntimeError(
+                "Local Transformers inference could not start. "
+                f"Resolve the runtime issue and retry. Reason: {error}"
+            ) from error
 
         generation = prepared_response["generation"]
         prompt = self._build_prompt(prepared_response, user_message, system_prompt)
@@ -716,13 +756,19 @@ class ConstructInferenceService:
             from transformers import TextIteratorStreamer
             import torch
         except Exception as error:
-            fallback = (
-                "Transformers runtime is not importable in this environment. "
-                f"Reason: {error}"
+            self.record_runtime_event(
+                event_type="smoke",
+                status="failed",
+                title="Transformers stream failed before generation",
+                detail=str(error),
+                model_id=target_model,
+                runtime_status="failed",
+                source="backend",
             )
-            async for token in self._stream_simulated(fallback):
-                yield token
-            return
+            raise RuntimeError(
+                "Transformers runtime is not importable in this environment. "
+                f"Install optional ML dependencies and retry. Reason: {error}"
+            ) from error
 
         inputs = tokenizer(prompt, return_tensors="pt")
         device = next(model.parameters()).device
