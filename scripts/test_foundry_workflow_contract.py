@@ -49,6 +49,11 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     qa_smoke = catalog.qa_generator.smoke_proof()
     assert qa_smoke["contractVersion"] == "foundry.qa-generator.smoke-proof.v1"
     assert qa_smoke["rows"][0]["generationMetadata"]["contractVersion"] == "foundry.qa-generation.v1"
+    qa_quality = catalog.qa_generator.quality_proof()
+    assert qa_quality["contractVersion"] == "foundry.qa-generator.quality-proof.v1"
+    assert len(qa_quality["results"]) == 2
+    assert qa_quality["results"][0]["label"] == "Deterministic smoke"
+    assert qa_quality["results"][0]["quality"]["score"] > 0
 
     workshop = await catalog.create_workshop(
         name="MVP Contract Workshop",

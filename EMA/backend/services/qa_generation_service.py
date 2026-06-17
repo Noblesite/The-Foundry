@@ -63,17 +63,7 @@ class QAGenerationService:
         return self.runtime_payload()
 
     def smoke_proof(self) -> Dict[str, Any]:
-        request = QAGenerationRequest(
-            material_name="Foundry QA Smoke Material",
-            material_kind="text",
-            chunk_id=f"chk-smoke-{uuid4().hex[:8]}",
-            chunk_text=(
-                "Marshall is a fire pup who helps the team solve emergencies. "
-                "He is brave, energetic, and sometimes clumsy, but he keeps trying "
-                "until everyone is safe."
-            ),
-            qa_pair_count=1,
-        )
+        request = self._proof_request()
         rows = self.generate(request)
         public_rows = [self._public_row(row) for row in rows]
         generator_model = rows[0].get("generator_model") if rows else None
@@ -97,6 +87,74 @@ class QAGenerationService:
             "createdAt": datetime.now(timezone.utc).isoformat(),
         }
 
+    def quality_proof(self) -> Dict[str, Any]:
+        request = self._proof_request()
+        deterministic_service = QAGenerationService()
+        deterministic_service.configure(
+            mode="deterministic",
+            model_id=self.model_id,
+            max_new_tokens=self.max_new_tokens,
+            temperature=self.temperature,
+        )
+        deterministic_rows = deterministic_service.generate(request)
+        deterministic_result = self._quality_proof_result(
+            label="Deterministic smoke",
+            status="passed" if deterministic_rows else "failed",
+            rows=deterministic_rows,
+            source_text=request.chunk_text,
+        )
+
+        model_service = QAGenerationService()
+        model_service.configure(
+            mode="transformers",
+            model_id=self.model_id,
+            max_new_tokens=min(self.max_new_tokens, 160),
+            temperature=self.temperature,
+        )
+        try:
+            model_rows = model_service._generate_with_transformers(
+                request,
+                local_files_only=True,
+            )
+            model_result = self._quality_proof_result(
+                label="Cached local model",
+                status="passed" if model_rows else "warning",
+                rows=model_rows,
+                source_text=request.chunk_text,
+                detail=(
+                    "Cached model generated a parseable QA row."
+                    if model_rows
+                    else "Cached model responded, but did not return parseable QA JSON."
+                ),
+            )
+        except Exception as error:
+            model_result = self._quality_proof_result(
+                label="Cached local model",
+                status="warning",
+                rows=[],
+                source_text=request.chunk_text,
+                detail=(
+                    "Cached model proof could not run without downloading or loading "
+                    f"the configured model: {type(error).__name__}: {error}"
+                ),
+            )
+
+        results = [deterministic_result, model_result]
+        return {
+            "contractVersion": "foundry.qa-generator.quality-proof.v1",
+            "runtime": self.runtime_payload(),
+            "request": {
+                "materialName": request.material_name,
+                "materialKind": request.material_kind,
+                "chunkId": request.chunk_id,
+                "qaPairCount": request.qa_pair_count,
+            },
+            "sourceText": request.chunk_text,
+            "results": results,
+            "recommendation": self._quality_proof_recommendation(results),
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        }
+
     def generate(self, request: QAGenerationRequest) -> List[Dict[str, Any]]:
         if self.mode in {"transformers", "local"}:
             try:
@@ -113,13 +171,26 @@ class QAGenerationService:
                 )
         return self._generate_deterministic(request)
 
-    def _generate_with_transformers(self, request: QAGenerationRequest) -> List[Dict[str, Any]]:
-        from transformers import pipeline
+    def _generate_with_transformers(
+        self,
+        request: QAGenerationRequest,
+        local_files_only: bool = False,
+    ) -> List[Dict[str, Any]]:
+        from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+
+        tokenizer = AutoTokenizer.from_pretrained(
+            self.model_id,
+            local_files_only=local_files_only,
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            self.model_id,
+            local_files_only=local_files_only,
+        )
 
         generator = pipeline(
             "text-generation",
-            model=self.model_id,
-            tokenizer=self.model_id,
+            model=model,
+            tokenizer=tokenizer,
             device=-1,
         )
         prompt = self._prompt(request)
@@ -288,6 +359,97 @@ class QAGenerationService:
         if key_terms:
             return 0.68
         return 0.58
+
+    def _proof_request(self) -> QAGenerationRequest:
+        return QAGenerationRequest(
+            material_name="Foundry QA Proof Material",
+            material_kind="text",
+            chunk_id=f"chk-proof-{uuid4().hex[:8]}",
+            chunk_text=(
+                "Marshall is a Dalmatian fire pup from Adventure Bay. He drives a "
+                "fire truck, uses a water cannon, and helps the Paw Patrol during "
+                "fire and medical emergencies. Marshall is brave and energetic, and "
+                "he often recovers from clumsy moments by focusing on helping others."
+            ),
+            qa_pair_count=1,
+        )
+
+    def _quality_proof_result(
+        self,
+        *,
+        label: str,
+        status: str,
+        rows: List[Dict[str, Any]],
+        source_text: str,
+        detail: str | None = None,
+    ) -> Dict[str, Any]:
+        public_rows = [self._public_row(row) for row in rows]
+        quality = self._score_quality(rows[0], source_text) if rows else self._empty_quality()
+        return {
+            "label": label,
+            "status": status,
+            "detail": detail or self._quality_detail(status, quality),
+            "rows": public_rows,
+            "quality": quality,
+        }
+
+    def _score_quality(self, row: Dict[str, Any], source_text: str) -> Dict[str, Any]:
+        question = str(row.get("question", ""))
+        answer = str(row.get("answer", ""))
+        source_terms = set(self._key_terms(source_text.lower()))
+        answer_terms = set(self._key_terms(answer.lower()))
+        overlap = len(source_terms.intersection(answer_terms))
+        overlap_score = min(1.0, overlap / max(1, min(5, len(source_terms))))
+        answer_length_score = min(1.0, max(0.0, len(answer.split()) / 18))
+        question_score = 1.0 if question.strip().endswith("?") else 0.55
+        confidence = float(row.get("confidence", 0) or 0)
+        metadata = row.get("generation_metadata", {})
+        fallback_penalty = 0.18 if isinstance(metadata, dict) and metadata.get("fallbackReason") else 0
+        score = max(
+            0.0,
+            min(
+                1.0,
+                confidence * 0.35
+                + overlap_score * 0.3
+                + answer_length_score * 0.2
+                + question_score * 0.15
+                - fallback_penalty,
+            ),
+        )
+        return {
+            "score": round(score, 2),
+            "confidence": round(confidence, 2),
+            "sourceOverlap": round(overlap_score, 2),
+            "answerLength": len(answer.split()),
+            "questionFormed": question_score == 1.0,
+            "fallback": fallback_penalty > 0,
+        }
+
+    def _empty_quality(self) -> Dict[str, Any]:
+        return {
+            "score": 0,
+            "confidence": 0,
+            "sourceOverlap": 0,
+            "answerLength": 0,
+            "questionFormed": False,
+            "fallback": True,
+        }
+
+    def _quality_detail(self, status: str, quality: Dict[str, Any]) -> str:
+        if status == "passed":
+            return f"Generated a QA row with a {quality['score']:.0%} proof score."
+        if status == "warning":
+            return "Generated output needs review before it can become training Material."
+        return "No QA row was generated."
+
+    def _quality_proof_recommendation(self, results: List[Dict[str, Any]]) -> str:
+        model_result = next(
+            (result for result in results if result["label"] == "Cached local model"),
+            None,
+        )
+        if model_result and model_result["status"] == "passed":
+            return "Compare the model row against the deterministic row, then promote the stronger generator for real Materials."
+        return "Cache a tiny generator model first, then rerun the proof to compare model-aware QA against deterministic drafts."
 
     def _runtime_detail(self, transformers_available: bool) -> str:
         if self.mode == "deterministic":

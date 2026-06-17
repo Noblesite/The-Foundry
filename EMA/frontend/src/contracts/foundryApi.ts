@@ -18,6 +18,7 @@ import {
   ForgeLocalTrainerPreflightResult,
   ForgeSmokeProofResult,
   QAGeneratorRuntime,
+  QAGeneratorQualityProof,
   QAGeneratorSmokeProof,
   ForgePurpose,
   ForgeWorkerReconcileResult,
@@ -83,6 +84,7 @@ export const foundryApiRoutes = {
   qaGeneratorRuntime: `${FOUNDRY_API_VERSION}/assembly-line/qa-generator/runtime`,
   configureQAGeneratorRuntime: `${FOUNDRY_API_VERSION}/assembly-line/qa-generator/runtime/configure`,
   runQAGeneratorSmokeProof: `${FOUNDRY_API_VERSION}/assembly-line/qa-generator/smoke-proof`,
+  runQAGeneratorQualityProof: `${FOUNDRY_API_VERSION}/assembly-line/qa-generator/quality-proof`,
   artifacts: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/artifacts`,
   artifact: (artifactId: string) => `${FOUNDRY_API_VERSION}/artifacts/${artifactId}`,
   constructs: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/constructs`,
@@ -279,6 +281,7 @@ export type ForgeLocalTrainerPreflightDto = ForgeLocalTrainerPreflightResult;
 export type ForgeSmokeProofDto = ForgeSmokeProofResult;
 export type QAGeneratorRuntimeDto = QAGeneratorRuntime;
 export type QAGeneratorSmokeProofDto = QAGeneratorSmokeProof;
+export type QAGeneratorQualityProofDto = QAGeneratorQualityProof;
 
 export interface ForgeSmokeProofRequest {
   runTraining: boolean;

@@ -210,6 +210,36 @@ export interface QAGeneratorSmokeProof {
   createdAt: string;
 }
 
+export interface QAGeneratorQualityProofResult {
+  label: string;
+  status: "passed" | "warning" | "failed" | string;
+  detail: string;
+  rows: QAGeneratorSmokeRow[];
+  quality: {
+    score: number;
+    confidence: number;
+    sourceOverlap: number;
+    answerLength: number;
+    questionFormed: boolean;
+    fallback: boolean;
+  };
+}
+
+export interface QAGeneratorQualityProof {
+  contractVersion: "foundry.qa-generator.quality-proof.v1";
+  runtime: QAGeneratorRuntime;
+  request: {
+    materialName: string;
+    materialKind: MaterialKind | string;
+    chunkId: string;
+    qaPairCount: number;
+  };
+  sourceText: string;
+  results: QAGeneratorQualityProofResult[];
+  recommendation: string;
+  createdAt: string;
+}
+
 export interface ForgeRun {
   id: string;
   workshopId: string;

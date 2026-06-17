@@ -48,6 +48,7 @@ import {
   ModelDownloadJobDto,
   MaterialChunkDto,
   QAPairDto,
+  QAGeneratorQualityProofDto,
   QAGeneratorRuntimeDto,
   QAGeneratorSmokeProofDto,
   PreflightConstructRuntimeRequest,
@@ -98,6 +99,7 @@ import {
   ModelSearchResult,
   NavigationSection,
   QAPair,
+  QAGeneratorQualityProof,
   QAGeneratorRuntime,
   QAGeneratorSmokeProof,
   SectionSummary,
@@ -293,6 +295,7 @@ export interface FoundryRepository {
     request: ConfigureQAGeneratorRuntimeRequest
   ) => Promise<QAGeneratorRuntime>;
   runQAGeneratorSmokeProof: () => Promise<QAGeneratorSmokeProof>;
+  runQAGeneratorQualityProof: () => Promise<QAGeneratorQualityProof>;
   startAssemblyLine: (
     workshopId: string,
     request: StartAssemblyLineRequest
@@ -970,6 +973,67 @@ export const mockFoundryRepository: FoundryRepository = {
         status === "passed"
           ? "QA generator produced a draft row."
           : "QA generator produced a mock fallback row because Transformers is unavailable.",
+      createdAt: new Date().toISOString(),
+    };
+  },
+  runQAGeneratorQualityProof: async () => {
+    const deterministic = {
+      id: `qa-proof-det-${Date.now()}`,
+      question: "What should a model learn about Marshall from the proof material?",
+      answer: "Marshall is a fire pup who helps during fire and medical emergencies.",
+      generatorModel: "deterministic-context-generator",
+      confidence: 0.68,
+      generationMetadata: {
+        contractVersion: "foundry.qa-generation.v1",
+        mode: "deterministic",
+        strategy: "context-sentence",
+      },
+      reviewStatus: "draft" as const,
+      reviewedAt: null,
+    };
+    return {
+      contractVersion: "foundry.qa-generator.quality-proof.v1",
+      runtime: mockQAGeneratorRuntime,
+      request: {
+        materialName: "Foundry QA Proof Material",
+        materialKind: "text",
+        chunkId: "chk-proof-mock",
+        qaPairCount: 1,
+      },
+      sourceText:
+        "Marshall is a Dalmatian fire pup from Adventure Bay who helps during emergencies.",
+      results: [
+        {
+          label: "Deterministic smoke",
+          status: "passed",
+          detail: "Generated a QA row with a 68% proof score.",
+          rows: [deterministic],
+          quality: {
+            score: 0.68,
+            confidence: 0.68,
+            sourceOverlap: 0.75,
+            answerLength: 12,
+            questionFormed: true,
+            fallback: false,
+          },
+        },
+        {
+          label: "Cached local model",
+          status: "warning",
+          detail: "Mock mode cannot load a cached Transformers model.",
+          rows: [],
+          quality: {
+            score: 0,
+            confidence: 0,
+            sourceOverlap: 0,
+            answerLength: 0,
+            questionFormed: false,
+            fallback: true,
+          },
+        },
+      ],
+      recommendation:
+        "Cache a tiny generator model first, then rerun the proof to compare model-aware QA against deterministic drafts.",
       createdAt: new Date().toISOString(),
     };
   },
@@ -2472,6 +2536,12 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.post<ApiEnvelope<QAGeneratorSmokeProofDto>>(
         foundryApiRoutes.runQAGeneratorSmokeProof
+      )
+    ),
+  runQAGeneratorQualityProof: async () =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<QAGeneratorQualityProofDto>>(
+        foundryApiRoutes.runQAGeneratorQualityProof
       )
     ),
   startAssemblyLine: async (workshopId, request) =>

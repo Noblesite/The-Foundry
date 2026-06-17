@@ -878,6 +878,11 @@ async def smoke_proof_foundry_qa_generator_endpoint():
     return api_envelope(await asyncio.to_thread(foundry_catalog_service.qa_generator.smoke_proof))
 
 
+@app.post("/api/v1/assembly-line/qa-generator/quality-proof")
+async def quality_proof_foundry_qa_generator_endpoint():
+    return api_envelope(await asyncio.to_thread(foundry_catalog_service.qa_generator.quality_proof))
+
+
 @app.post("/api/v1/workshops/{workshop_id}/assembly-lines")
 async def start_foundry_assembly_line_endpoint(workshop_id: str, data: StartAssemblyLineInput):
     material_source_ids = [source_id.strip() for source_id in data.materialSourceIds if source_id.strip()]

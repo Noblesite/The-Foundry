@@ -3361,6 +3361,52 @@ input[type="checkbox"] {
   box-shadow: var(--shadow-orange);
 }
 
+.qa-quality-proof {
+  display: grid;
+  gap: 0.62rem;
+}
+
+.qa-quality-proof > p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.qa-quality-proof-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+
+.qa-quality-proof-card {
+  display: grid;
+  gap: 0.52rem;
+  border: 1px solid rgba(119, 140, 152, 0.2);
+  border-radius: 8px;
+  padding: 0.68rem;
+  background: rgba(13, 17, 23, 0.54);
+}
+
+.qa-quality-proof-card p,
+.qa-quality-proof-card blockquote {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.qa-quality-proof-card blockquote {
+  display: grid;
+  gap: 0.3rem;
+  border-left: 2px solid rgba(0, 212, 255, 0.46);
+  padding-left: 0.55rem;
+}
+
+.qa-quality-proof-card blockquote strong {
+  color: var(--text-primary);
+}
+
 .material-form h2,
 .materials-catalog h2,
 .assembly-panel h2,

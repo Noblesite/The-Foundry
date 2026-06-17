@@ -12,6 +12,7 @@ import {
   MaterialKind,
   MaterialSource,
   QAPair,
+  QAGeneratorQualityProof,
   QAGeneratorRuntime,
   QAGeneratorSmokeProof,
   SectionSummary,
@@ -115,8 +116,11 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   });
   const [qaGeneratorSmokeProof, setQAGeneratorSmokeProof] =
     useState<QAGeneratorSmokeProof | null>(null);
+  const [qaGeneratorQualityProof, setQAGeneratorQualityProof] =
+    useState<QAGeneratorQualityProof | null>(null);
   const [isConfiguringGenerator, setIsConfiguringGenerator] = useState(false);
   const [isRunningGeneratorSmoke, setIsRunningGeneratorSmoke] = useState(false);
+  const [isRunningGeneratorQualityProof, setIsRunningGeneratorQualityProof] = useState(false);
 
   useEffect(() => {
     let isCurrent = true;
@@ -329,6 +333,7 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
         temperature: runtime.temperature,
       });
       setQAGeneratorSmokeProof(null);
+      setQAGeneratorQualityProof(null);
     } catch (runtimeError: unknown) {
       setError(runtimeError instanceof Error ? runtimeError.message : "Could not configure QA generator.");
     } finally {
@@ -347,6 +352,20 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
       setError(smokeError instanceof Error ? smokeError.message : "Could not run QA generator smoke proof.");
     } finally {
       setIsRunningGeneratorSmoke(false);
+    }
+  };
+
+  const runQAGeneratorQualityProof = async () => {
+    setIsRunningGeneratorQualityProof(true);
+    setError(null);
+    try {
+      const qualityProof = await repository.runQAGeneratorQualityProof();
+      setQAGeneratorQualityProof(qualityProof);
+      setQAGeneratorRuntime(qualityProof.runtime);
+    } catch (proofError: unknown) {
+      setError(proofError instanceof Error ? proofError.message : "Could not run QA quality proof.");
+    } finally {
+      setIsRunningGeneratorQualityProof(false);
     }
   };
 
@@ -582,6 +601,14 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                 >
                   {isRunningGeneratorSmoke ? "Testing" : "Smoke proof"}
                 </button>
+                <button
+                  className="button-secondary button-compact"
+                  type="button"
+                  disabled={isRunningGeneratorQualityProof}
+                  onClick={runQAGeneratorQualityProof}
+                >
+                  {isRunningGeneratorQualityProof ? "Comparing" : "Quality proof"}
+                </button>
               </div>
 
               {qaGeneratorSmokeProof && (
@@ -594,6 +621,41 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                       {Math.round((qaGeneratorSmokeProof.rows[0].confidence || 0) * 100)}%
                     </span>
                   )}
+                </div>
+              )}
+
+              {qaGeneratorQualityProof && (
+                <div className="qa-quality-proof">
+                  <p>{qaGeneratorQualityProof.recommendation}</p>
+                  <div className="qa-quality-proof-grid">
+                    {qaGeneratorQualityProof.results.map((result) => (
+                      <article className="qa-quality-proof-card" key={result.label}>
+                        <div className="runtime-readiness-header">
+                          <div>
+                            <span className="panel-kicker">{result.label}</span>
+                            <strong>{Math.round(result.quality.score * 100)}% proof</strong>
+                          </div>
+                          <span className={`status-badge ${result.status === "passed" ? "is-active" : "quality-blocked"}`}>
+                            {result.status}
+                          </span>
+                        </div>
+                        <p>{result.detail}</p>
+                        {result.rows[0] ? (
+                          <blockquote>
+                            <strong>{result.rows[0].question}</strong>
+                            <span>{result.rows[0].answer}</span>
+                          </blockquote>
+                        ) : (
+                          <span className="empty-state">No cached model row generated.</span>
+                        )}
+                        <div className="material-meta">
+                          <span>{Math.round(result.quality.confidence * 100)}% confidence</span>
+                          <span>{Math.round(result.quality.sourceOverlap * 100)}% overlap</span>
+                          <span>{result.quality.answerLength} words</span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
