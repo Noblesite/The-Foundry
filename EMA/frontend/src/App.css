@@ -1757,11 +1757,13 @@ input[type="checkbox"] {
     rgba(13, 17, 23, 0.54);
 }
 
-.runtime-readiness-card.readiness-ready {
+.runtime-readiness-card.readiness-ready,
+.runtime-readiness-card.readiness-verified {
   border-color: rgba(0, 212, 255, 0.32);
 }
 
-.runtime-readiness-card.readiness-caution {
+.runtime-readiness-card.readiness-caution,
+.runtime-readiness-card.readiness-simulated {
   border-color: rgba(212, 160, 23, 0.42);
 }
 
@@ -1795,12 +1797,14 @@ input[type="checkbox"] {
   line-height: 1.45;
 }
 
-.status-badge.readiness-ready {
+.status-badge.readiness-ready,
+.status-badge.readiness-verified {
   border-color: rgba(0, 212, 255, 0.56);
   color: var(--arc-blue);
 }
 
-.status-badge.readiness-caution {
+.status-badge.readiness-caution,
+.status-badge.readiness-simulated {
   border-color: rgba(212, 160, 23, 0.56);
   color: var(--brass);
 }

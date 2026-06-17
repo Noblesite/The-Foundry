@@ -169,6 +169,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     () => artifacts.find((artifact) => artifact.id === selectedArtifactId),
     [artifacts, selectedArtifactId]
   );
+  const selectedArtifactReadiness = selectedArtifact?.readiness;
 
   const selectedModel = useMemo(
     () => modelResults.find((model) => model.repoId === selectedModelId) || modelResults[0],
@@ -597,6 +598,10 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     if (!selectedArtifact) {
       return;
     }
+    if (selectedArtifact.readiness && !selectedArtifact.readiness.canLoad) {
+      setError(selectedArtifact.readiness.message);
+      return;
+    }
 
     setIsLoadingConstruct(true);
     setStatusText(null);
@@ -655,6 +660,11 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                     <span>{artifact.version}</span>
                     <span>{artifact.trainingMethod}</span>
                     <span>{artifact.status}</span>
+                    {artifact.readiness && (
+                      <span className={`status-badge readiness-${artifact.readiness.status}`}>
+                        {artifact.readiness.status}
+                      </span>
+                    )}
                   </div>
                 </button>
               ))
@@ -679,9 +689,49 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                 {selectedArtifact.forgeRunId && <span>Forge {selectedArtifact.forgeRunId}</span>}
                 <span>{selectedArtifact.trialScore}% trial</span>
               </div>
+              {selectedArtifactReadiness && (
+                <div className={`runtime-readiness-card readiness-${selectedArtifactReadiness.status}`}>
+                  <div className="runtime-readiness-header">
+                    <div>
+                      <strong>Artifact readiness</strong>
+                      <span>{selectedArtifactReadiness.message}</span>
+                    </div>
+                    <span className={`status-badge readiness-${selectedArtifactReadiness.status}`}>
+                      {selectedArtifactReadiness.status}
+                    </span>
+                  </div>
+                  <div className="runtime-readiness-items">
+                    <div className={`readiness-item is-${selectedArtifactReadiness.canLoad ? "pass" : "fail"}`}>
+                      <i
+                        className={`fas ${selectedArtifactReadiness.canLoad ? "fa-check" : "fa-triangle-exclamation"}`}
+                        aria-hidden="true"
+                      />
+                      <div>
+                        <span>Construct load</span>
+                        <strong>{selectedArtifactReadiness.canLoad ? "Allowed" : "Blocked"}</strong>
+                      </div>
+                    </div>
+                    <div className="readiness-item is-pass">
+                      <i className="fas fa-file-circle-check" aria-hidden="true" />
+                      <div>
+                        <span>Output files</span>
+                        <strong>{selectedArtifactReadiness.presentFiles.length}</strong>
+                      </div>
+                    </div>
+                  </div>
+                  {selectedArtifactReadiness.presentFiles.length > 0 && (
+                    <div className="runtime-readiness-warnings">
+                      <span>{selectedArtifactReadiness.presentFiles.slice(0, 3).join(", ")}</span>
+                    </div>
+                  )}
+                </div>
+              )}
               <button
                 className="button-primary"
-                disabled={isLoadingConstruct}
+                disabled={
+                  isLoadingConstruct ||
+                  (selectedArtifactReadiness ? !selectedArtifactReadiness.canLoad : false)
+                }
                 onClick={loadIntoConstruct}
                 type="button"
               >

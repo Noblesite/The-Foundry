@@ -1100,6 +1100,9 @@ class FoundryCatalogService:
                 raise ValueError("Artifact was not found for this Workshop.")
             if artifact["status"] == "archived":
                 raise ValueError("Archived Artifacts cannot be loaded into a Construct.")
+            readiness = self._artifact_readiness(artifact)
+            if not readiness["canLoad"]:
+                raise ValueError(readiness["message"])
 
             construct = connection.execute(
                 "SELECT * FROM constructs WHERE id = ?",
@@ -3190,6 +3193,7 @@ class FoundryCatalogService:
         return await self._run_query(query)
 
     def _artifact_from_row(self, row: sqlite3.Row) -> Dict[str, Any]:
+        readiness = self._artifact_readiness(row)
         return {
             "id": row["id"],
             "workshopId": row["workshop_id"],
@@ -3201,7 +3205,94 @@ class FoundryCatalogService:
             "status": row["status"],
             "trainingMethod": row["training_method"],
             "trialScore": row["trial_score"] or 0,
+            "readiness": readiness,
+            "createdAt": row["created_at"],
         }
+
+    def _artifact_readiness(self, row: sqlite3.Row) -> Dict[str, Any]:
+        adapter_path = row["adapter_path"] or ""
+        if row["status"] == "archived":
+            return {
+                "status": "blocked",
+                "canLoad": False,
+                "message": "Archived Artifacts cannot be loaded into a Construct.",
+                "checkedPath": adapter_path,
+                "requiredFiles": [],
+                "presentFiles": [],
+            }
+        if not adapter_path:
+            return {
+                "status": "blocked",
+                "canLoad": False,
+                "message": "Artifact has no adapter or checkpoint path registered.",
+                "checkedPath": "",
+                "requiredFiles": [],
+                "presentFiles": [],
+            }
+
+        artifact_path = self._resolve_catalog_runtime_path(adapter_path)
+        present_files = self._artifact_present_files(artifact_path)
+        required_files = [
+            "trainer-result.json",
+            "adapter_model.safetensors",
+            "adapter_model.bin",
+            "adapter_config.json",
+            "config.json",
+        ]
+        has_output_file = any(file_name in present_files for file_name in required_files)
+        if artifact_path.exists() and has_output_file:
+            return {
+                "status": "verified",
+                "canLoad": True,
+                "message": "Artifact output files are present.",
+                "checkedPath": str(artifact_path),
+                "requiredFiles": required_files,
+                "presentFiles": present_files,
+            }
+        if artifact_path.exists() and present_files:
+            return {
+                "status": "caution",
+                "canLoad": True,
+                "message": "Artifact path exists, but no standard adapter marker was found.",
+                "checkedPath": str(artifact_path),
+                "requiredFiles": required_files,
+                "presentFiles": present_files,
+            }
+        if adapter_path.startswith("runtime/artifacts/pending/"):
+            return {
+                "status": "blocked",
+                "canLoad": False,
+                "message": "Real Forge output is missing adapter files.",
+                "checkedPath": str(artifact_path),
+                "requiredFiles": required_files,
+                "presentFiles": present_files,
+            }
+        return {
+            "status": "simulated",
+            "canLoad": True,
+            "message": "Metadata-only Artifact from a simulated Forge; Construct load will stay simulated until real adapter files exist.",
+            "checkedPath": str(artifact_path),
+            "requiredFiles": required_files,
+            "presentFiles": present_files,
+        }
+
+    def _artifact_present_files(self, path: Path) -> List[str]:
+        if not path.exists():
+            return []
+        if path.is_file():
+            return [path.name]
+        names: List[str] = []
+        for file_path in path.rglob("*"):
+            if file_path.is_file():
+                try:
+                    names.append(str(file_path.relative_to(path)))
+                except ValueError:
+                    names.append(file_path.name)
+        return sorted(names)
+
+    def _resolve_catalog_runtime_path(self, value: str) -> Path:
+        path = Path(value)
+        return path if path.is_absolute() else BASE_DIR / path
 
     def _construct_from_row(self, row: sqlite3.Row) -> Dict[str, Any]:
         return {

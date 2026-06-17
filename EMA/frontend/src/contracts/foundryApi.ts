@@ -24,6 +24,7 @@ import {
   ForgeWorkerReconcileResult,
   ForgeWorkerState,
   ForgeRunStatus,
+  ArtifactReadiness,
   MaterialSource,
   MaterialKind,
   MaterialStatus,
@@ -306,6 +307,7 @@ export interface ArtifactDto {
   status: ArtifactStatus;
   trainingMethod: TrainingMethod;
   trialScore: number;
+  readiness?: ArtifactReadiness;
   createdAt: string;
 }
 

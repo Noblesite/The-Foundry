@@ -49,6 +49,7 @@ export type ModelFitStatus = "fits" | "tight" | "too-large" | "unknown";
 export type TrialStatus = "not-started" | "running" | "passed" | "failed";
 export type TrialVerdict = "pass" | "needs-work" | "fail";
 export type LearningDifficulty = "starter" | "builder" | "advanced";
+export type ArtifactReadinessStatus = "verified" | "caution" | "simulated" | "blocked";
 
 export interface WorkspaceSettings {
   huggingFaceUsername: string;
@@ -444,6 +445,17 @@ export interface Artifact {
   status: ArtifactStatus;
   trainingMethod: TrainingMethod;
   trialScore: number;
+  readiness?: ArtifactReadiness;
+  createdAt?: string;
+}
+
+export interface ArtifactReadiness {
+  status: ArtifactReadinessStatus;
+  canLoad: boolean;
+  message: string;
+  checkedPath: string;
+  requiredFiles: string[];
+  presentFiles: string[];
 }
 
 export interface LibraryIndex {

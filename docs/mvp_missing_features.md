@@ -26,7 +26,7 @@ This is the short steering list. If a task does not support one of these items, 
 - [x] Prove real local file ingestion for text, markdown, CSV, JSONL, and one non-scanned PDF path.
 - [x] Prove model-backed QA generation with source-aware prompt templates and visible quality metadata.
 - [x] Implement one tiny local LoRA trainer adapter behind the existing Forge runtime boundary.
-- [ ] Make real Forge completion create a verified Artifact backed by output files.
+- [x] Make real Forge completion create a verified Artifact backed by output files.
 - [ ] Prove one cached small-model Construct streaming path without silent fallback.
 - [ ] Add one end-to-end readiness gate for Archive download, Construct load, and Forge start.
 - [ ] Run a clean manual MVP rehearsal from empty Workshop to saved Trial.
@@ -44,7 +44,7 @@ This is the short steering list. If a task does not support one of these items, 
 - [x] Foundry-branded workbenches and navigation.
 - [x] SQLite catalog persistence for the main workflow.
 - [x] QA review/export to JSONL Materials.
-- [x] Forge contract, worker-event, simulation, and Artifact metadata paths.
+- [x] Forge contract, worker-event, simulation, Artifact readiness, and Artifact metadata paths.
 - [x] Archive/Hugging Face search, auth, preflight, register, cache, evict, and download-job API contracts with mocked external calls.
 - [x] Construct runtime events, validation history, diagnostics bundle, and memory cleanup contracts.
 - [x] Service-level and FastAPI-level MVP workflow rehearsals that run in isolated storage.
@@ -59,7 +59,7 @@ The project already has a strong product shell:
 - QA review/export paths that create JSONL Materials.
 - Model-backed QA generation contract proof with explicit prompt-template metadata, source fingerprints, visible quality metrics, and deterministic fallback.
 - Real local file extraction for text/markdown, CSV, JSONL/NDJSON, and text-based PDFs through service-level and FastAPI workflow rehearsals.
-- Forge contracts, runtime event files, worker reconciliation, simulated progress, local trainer adapter contracts, and automatic Artifact metadata for completed training runs.
+- Forge contracts, runtime event files, worker reconciliation, simulated progress, local trainer adapter contracts, verified Artifact readiness, and automatic Artifact metadata for completed training runs.
 - Hugging Face search, auth test, model preflight, download jobs, Archive cataloging, and local cache tracking.
 - Construct runtime controls, local model preflight/load/probe, streaming chat endpoint, runtime history, validation history, memory release, and diagnostics bundle preview/export.
 - An isolated MVP rehearsal test that proves Material -> reviewed QA -> JSONL -> Forge simulation -> Artifact -> Construct reply -> Trial scoring.
@@ -163,16 +163,16 @@ MVP can defer:
 
 ### 4. Artifact Integrity
 
-Status: partial.
+Status: covered for MVP contract rehearsal.
 
-Artifacts are cataloged and can be created when a simulated Forge completes. They are not yet guaranteed to point to real adapter/model output files.
+Artifacts are cataloged and can be created when simulated or local worker-backed Forges complete. Artifact DTOs now include live readiness checks that distinguish verified output files, caution paths, simulated metadata-only Artifacts, and blocked real-output paths with missing files. Construct load is blocked when a real Forge output path lacks adapter/checkpoint files.
 
 MVP needs:
 
-- Artifact records must include output path, base model, adapter path or checkpoint path, training config, source Material id, Forge id, and creation status.
-- Artifact readiness checks before Construct can load them.
-- UI should distinguish simulated Artifact metadata from real trained output.
-- Failed or incomplete Forge runs must not produce ready Artifacts.
+- Keep Artifact records tied to output path, base model, adapter path or checkpoint path, source Material, Forge id, and creation status.
+- Keep Artifact readiness checks before Construct can load real worker output.
+- Keep UI distinction between verified, simulated, caution, and blocked Artifact states.
+- Keep failed or incomplete Forge runs from producing ready Artifacts.
 
 MVP can defer:
 
@@ -311,11 +311,10 @@ These are valid Foundry goals, but they are scope creep before the core loop is 
 
 ## Recommended MVP Sequence
 
-1. Make completed real Forge output create a verified Artifact with output-file readiness checks.
-2. Prove one cached small-model Construct streaming path and prevent silent simulated fallback during MVP validation.
-3. Add one readiness gate that blocks unsafe download, load, and train actions with clear recovery steps.
-4. Tighten first-run setup docs around baseline app dependencies versus optional ML runtime dependencies.
-5. Run a full manual MVP rehearsal from empty Workshop to Construct Trial.
+1. Prove one cached small-model Construct streaming path and prevent silent simulated fallback during MVP validation.
+2. Add one readiness gate that blocks unsafe download, load, and train actions with clear recovery steps.
+3. Tighten first-run setup docs around baseline app dependencies versus optional ML runtime dependencies.
+4. Run a full manual MVP rehearsal from empty Workshop to Construct Trial.
 
 ## MVP Definition Of Done
 

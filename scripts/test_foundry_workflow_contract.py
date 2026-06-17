@@ -407,9 +407,49 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     assert local_completed["status"] == "completed"
     assert local_artifact["status"] == "ready"
     assert local_artifact["adapterPath"] == local_contract["outputDir"]
+    assert local_artifact["readiness"]["status"] == "verified"
+    assert local_artifact["readiness"]["canLoad"] is True
+    assert "trainer-result.json" in local_artifact["readiness"]["presentFiles"]
     assert (
         catalog_module.BASE_DIR / local_artifact["adapterPath"] / "trainer-result.json"
     ).exists()
+    local_construct = await catalog.load_artifact_into_construct(
+        workshop_id=workshop["id"],
+        artifact_id=local_artifact["id"],
+    )
+    assert local_construct["artifactId"] == local_artifact["id"]
+
+    missing_output_forge = await catalog.start_forge(
+        workshop_id=workshop["id"],
+        material_id=exported["material"]["id"],
+        base_model=str(cached_model_dir),
+        method="LoRA",
+        purpose="training",
+        epochs=1,
+        learning_rate="0.0002",
+        load_in_4bit=False,
+    )
+    missing_output_path = f"runtime/artifacts/pending/{missing_output_forge['id']}"
+    missing_completed = await catalog.complete_forge_from_worker(
+        missing_output_forge["id"],
+        adapter_path=missing_output_path,
+    )
+    missing_artifact = next(
+        item
+        for item in await catalog.list_artifacts(workshop["id"])
+        if item["id"] == missing_completed["artifactId"]
+    )
+    assert missing_artifact["readiness"]["status"] == "blocked"
+    assert missing_artifact["readiness"]["canLoad"] is False
+    try:
+        await catalog.load_artifact_into_construct(
+            workshop_id=workshop["id"],
+            artifact_id=missing_artifact["id"],
+        )
+    except ValueError as error:
+        assert "missing adapter files" in str(error)
+    else:
+        raise AssertionError("Missing real Artifact output should block Construct load.")
     forge.set_local_trainer_backend(None)
     await forge.configure(mode="simulated")
 
@@ -438,6 +478,8 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     assert artifact["forgeRunId"] == forge_run["id"]
     assert artifact["baseModel"] == "sshleifer/tiny-gpt2"
     assert artifact["adapterPath"].startswith("runtime/artifacts/")
+    assert artifact["readiness"]["status"] == "simulated"
+    assert artifact["readiness"]["canLoad"] is True
 
     construct = await catalog.load_artifact_into_construct(
         workshop_id=workshop["id"],

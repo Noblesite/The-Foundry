@@ -256,6 +256,12 @@ def run_trial_contract_check() -> int:
         "foundry.evaluation.weak-sample.v1",
         "\"reviewed\": bool(reviewed_samples)",
         "_refresh_artifact_trial_score",
+        "_artifact_readiness",
+        "_artifact_present_files",
+        "\"readiness\": readiness",
+        "\"status\": \"verified\"",
+        "\"status\": \"simulated\"",
+        "\"canLoad\": False",
     )
     missing_service = [
         pattern for pattern in required_service_patterns if pattern not in service_source

@@ -441,9 +441,19 @@ def run_api_workflow(tmp_path: Path) -> None:
                 if item["id"] == local_state["forgeRun"]["artifactId"]
             )
             assert local_artifact["adapterPath"] == local_state["metrics"]["adapterPath"]
+            assert local_artifact["readiness"]["status"] == "verified"
+            assert local_artifact["readiness"]["canLoad"] is True
+            assert "trainer-result.json" in local_artifact["readiness"]["presentFiles"]
             assert (
                 catalog_module.BASE_DIR / local_artifact["adapterPath"] / "trainer-result.json"
             ).exists()
+            local_construct = assert_response(
+                client.post(
+                    f"/api/v1/workshops/{workshop['id']}/constructs/load-artifact",
+                    json={"artifactId": local_artifact["id"]},
+                )
+            )
+            assert local_construct["artifactId"] == local_artifact["id"]
             isolated_forge.set_local_trainer_backend(None)
             isolated_forge.mode = "simulated"
 
@@ -468,6 +478,8 @@ def run_api_workflow(tmp_path: Path) -> None:
             )
             assert artifact["status"] == "ready"
             assert artifact["forgeRunId"] == forge["id"]
+            assert artifact["readiness"]["status"] == "simulated"
+            assert artifact["readiness"]["canLoad"] is True
 
             construct = assert_response(
                 client.post(
