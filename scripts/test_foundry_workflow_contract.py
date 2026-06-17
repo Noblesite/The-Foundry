@@ -89,6 +89,8 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     assert qa_pairs[0]["confidence"] > 0
     assert qa_pairs[0]["generationMetadata"]["contractVersion"] == "foundry.qa-generation.v1"
     assert qa_pairs[0]["qualityGate"]["status"] == "blocked"
+    assert qa_pairs[0]["qualityGate"]["metrics"]["score"] > 0
+    assert qa_pairs[0]["qualityGate"]["metrics"]["sourceOverlap"] > 0
 
     try:
         await catalog.export_qa_pairs_to_material(workshop["id"], assembly["id"])
@@ -138,6 +140,7 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     assert rows[0]["metadata"]["generation"]["contractVersion"] == "foundry.qa-generation.v1"
     assert rows[0]["metadata"]["lowQualityOverride"] is True
     assert rows[0]["metadata"]["qualityGate"]["status"] == "blocked"
+    assert rows[0]["metadata"]["qualityGate"]["metrics"]["score"] > 0
     assert exported["qualityGate"]["status"] == "override"
 
     forge_run = await catalog.start_forge(

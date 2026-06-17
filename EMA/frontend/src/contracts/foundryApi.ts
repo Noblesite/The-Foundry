@@ -214,6 +214,14 @@ export interface QAPairDto {
     status: "passed" | "blocked" | string;
     reasons: string[];
     confidenceThreshold: number;
+    metrics?: {
+      score: number;
+      confidence: number;
+      sourceOverlap: number;
+      answerLength: number;
+      questionFormed: boolean;
+      fallback: boolean;
+    };
   };
   reviewStatus: QAReviewStatus;
   reviewedAt?: string | null;

@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from .qa_generation_service import QAGenerationRequest, QAGenerationService
+from .qa_quality_service import QA_QUALITY_CONFIDENCE_THRESHOLD, QAQualityEvaluator
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -28,7 +29,6 @@ SUPPORTED_IMPORT_EXTENSIONS = {
     "transcript": {".txt", ".md", ".text", ".transcript", ".srt", ".vtt"},
     "video-transcript": {".txt", ".md", ".text", ".transcript", ".srt", ".vtt"},
 }
-QA_QUALITY_CONFIDENCE_THRESHOLD = 0.6
 
 
 class FoundryCatalogService:
@@ -46,6 +46,7 @@ class FoundryCatalogService:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._write_lock = asyncio.Lock()
         self.qa_generator = QAGenerationService()
+        self.qa_quality_evaluator = QAQualityEvaluator()
         self._initialize_database()
 
     def _connect(self) -> sqlite3.Connection:
@@ -2005,18 +2006,22 @@ class FoundryCatalogService:
                 if assembly_line_run_id:
                     rows = connection.execute(
                         """
-                        SELECT * FROM qa_pairs
-                        WHERE workshop_id = ? AND assembly_line_run_id = ?
-                        ORDER BY material_id ASC, created_at ASC
+                        SELECT qa_pairs.*, material_chunks.text AS source_text
+                        FROM qa_pairs
+                        LEFT JOIN material_chunks ON material_chunks.id = qa_pairs.chunk_id
+                        WHERE qa_pairs.workshop_id = ? AND qa_pairs.assembly_line_run_id = ?
+                        ORDER BY qa_pairs.material_id ASC, qa_pairs.created_at ASC
                         """,
                         (workshop_id, assembly_line_run_id),
                     ).fetchall()
                 else:
                     rows = connection.execute(
                         """
-                        SELECT * FROM qa_pairs
-                        WHERE workshop_id = ?
-                        ORDER BY datetime(created_at) DESC
+                        SELECT qa_pairs.*, material_chunks.text AS source_text
+                        FROM qa_pairs
+                        LEFT JOIN material_chunks ON material_chunks.id = qa_pairs.chunk_id
+                        WHERE qa_pairs.workshop_id = ?
+                        ORDER BY datetime(qa_pairs.created_at) DESC
                         LIMIT 200
                         """,
                         (workshop_id,),
@@ -2094,7 +2099,12 @@ class FoundryCatalogService:
                 ),
             )
             row = connection.execute(
-                "SELECT * FROM qa_pairs WHERE id = ? AND workshop_id = ?",
+                """
+                SELECT qa_pairs.*, material_chunks.text AS source_text
+                FROM qa_pairs
+                LEFT JOIN material_chunks ON material_chunks.id = qa_pairs.chunk_id
+                WHERE qa_pairs.id = ? AND qa_pairs.workshop_id = ?
+                """,
                 (qa_pair_id, workshop_id),
             ).fetchone()
             return self._qa_pair_from_row(row)
@@ -2285,6 +2295,14 @@ class FoundryCatalogService:
         confidence = float(row["confidence"] or 0)
         review_status = row["review_status"] or "draft"
         generator_model = row["generator_model"] or "legacy-summary"
+        source_text = row["source_text"] if "source_text" in row.keys() else ""
+        metrics = self.qa_quality_evaluator.evaluate(
+            question=row["question"],
+            answer=row["answer"],
+            source_text=source_text or "",
+            confidence=confidence,
+            generation_metadata=generation_metadata,
+        )
         if review_status not in {"accepted", "edited"}:
             reasons.append("row has not been accepted by review")
         if confidence < QA_QUALITY_CONFIDENCE_THRESHOLD:
@@ -2299,6 +2317,7 @@ class FoundryCatalogService:
             "status": "passed" if not reasons else "blocked",
             "reasons": reasons,
             "confidenceThreshold": QA_QUALITY_CONFIDENCE_THRESHOLD,
+            "metrics": metrics,
         }
 
     async def list_forge_runs(self, workshop_id: str) -> List[Dict[str, Any]]:

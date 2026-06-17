@@ -9,6 +9,8 @@ from importlib.util import find_spec
 from typing import Any, Dict, List
 from uuid import uuid4
 
+from .qa_quality_service import QAQualityEvaluator
+
 
 @dataclass(frozen=True)
 class QAGenerationRequest:
@@ -27,6 +29,7 @@ class QAGenerationService:
         self.model_id = os.getenv("FOUNDRY_QA_GENERATOR_MODEL", "sshleifer/tiny-gpt2").strip()
         self.max_new_tokens = int(os.getenv("FOUNDRY_QA_GENERATOR_MAX_NEW_TOKENS", "320"))
         self.temperature = float(os.getenv("FOUNDRY_QA_GENERATOR_TEMPERATURE", "0.2"))
+        self.quality_evaluator = QAQualityEvaluator()
 
     def runtime_payload(self) -> Dict[str, Any]:
         transformers_available = find_spec("transformers") is not None
@@ -384,7 +387,7 @@ class QAGenerationService:
         detail: str | None = None,
     ) -> Dict[str, Any]:
         public_rows = [self._public_row(row) for row in rows]
-        quality = self._score_quality(rows[0], source_text) if rows else self._empty_quality()
+        quality = self._score_quality(rows[0], source_text) if rows else self.quality_evaluator.empty()
         return {
             "label": label,
             "status": status,
@@ -396,44 +399,15 @@ class QAGenerationService:
     def _score_quality(self, row: Dict[str, Any], source_text: str) -> Dict[str, Any]:
         question = str(row.get("question", ""))
         answer = str(row.get("answer", ""))
-        source_terms = set(self._key_terms(source_text.lower()))
-        answer_terms = set(self._key_terms(answer.lower()))
-        overlap = len(source_terms.intersection(answer_terms))
-        overlap_score = min(1.0, overlap / max(1, min(5, len(source_terms))))
-        answer_length_score = min(1.0, max(0.0, len(answer.split()) / 18))
-        question_score = 1.0 if question.strip().endswith("?") else 0.55
         confidence = float(row.get("confidence", 0) or 0)
         metadata = row.get("generation_metadata", {})
-        fallback_penalty = 0.18 if isinstance(metadata, dict) and metadata.get("fallbackReason") else 0
-        score = max(
-            0.0,
-            min(
-                1.0,
-                confidence * 0.35
-                + overlap_score * 0.3
-                + answer_length_score * 0.2
-                + question_score * 0.15
-                - fallback_penalty,
-            ),
+        return self.quality_evaluator.evaluate(
+            question=question,
+            answer=answer,
+            source_text=source_text,
+            confidence=confidence,
+            generation_metadata=metadata if isinstance(metadata, dict) else {},
         )
-        return {
-            "score": round(score, 2),
-            "confidence": round(confidence, 2),
-            "sourceOverlap": round(overlap_score, 2),
-            "answerLength": len(answer.split()),
-            "questionFormed": question_score == 1.0,
-            "fallback": fallback_penalty > 0,
-        }
-
-    def _empty_quality(self) -> Dict[str, Any]:
-        return {
-            "score": 0,
-            "confidence": 0,
-            "sourceOverlap": 0,
-            "answerLength": 0,
-            "questionFormed": False,
-            "fallback": True,
-        }
 
     def _quality_detail(self, status: str, quality: Dict[str, Any]) -> str:
         if status == "passed":

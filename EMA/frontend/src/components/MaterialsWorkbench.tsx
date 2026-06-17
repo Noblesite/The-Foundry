@@ -881,6 +881,13 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                     {qaPair.qualityGate?.status === "blocked" && (
                       <p className="qa-quality-note">
                         {qaPair.qualityGate.reasons.join("; ")}
+                        {qaPair.qualityGate.metrics && (
+                          <>
+                            {" "}
+                            Score {Math.round(qaPair.qualityGate.metrics.score * 100)}%,
+                            overlap {Math.round(qaPair.qualityGate.metrics.sourceOverlap * 100)}%.
+                          </>
+                        )}
                       </p>
                     )}
                     <label className="field-label" htmlFor={`qa-question-${qaPair.id}`}>
