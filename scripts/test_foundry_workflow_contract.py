@@ -174,11 +174,88 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     else:
         raise AssertionError("Local trainer should be gated behind local runtime mode.")
 
+    completed_forge = forge_run
+    worker_state = state
+    for _ in range(10):
+        completed_forge = await catalog.advance_forge_simulation(forge_run["id"])
+        worker_state = forge.reconcile_worker_state(
+            forge_run=completed_forge,
+            material=exported["material"],
+        )
+        if completed_forge["status"] == "completed":
+            break
+
+    assert completed_forge["status"] == "completed"
+    assert completed_forge["progress"] == 100
+    assert completed_forge["artifactId"]
+    assert worker_state["metrics"]["status"] == "completed"
+    assert worker_state["metrics"]["lastEvent"] == "completed"
+
+    artifacts = await catalog.list_artifacts(workshop["id"])
+    artifact = next(
+        item for item in artifacts if item["id"] == completed_forge["artifactId"]
+    )
+    assert artifact["status"] == "ready"
+    assert artifact["forgeRunId"] == forge_run["id"]
+    assert artifact["baseModel"] == "sshleifer/tiny-gpt2"
+    assert artifact["adapterPath"].startswith("runtime/artifacts/")
+
+    construct = await catalog.load_artifact_into_construct(
+        workshop_id=workshop["id"],
+        artifact_id=artifact["id"],
+    )
+    assert construct["artifactId"] == artifact["id"]
+    assert construct["status"] == "warming"
+    assert construct["streamingEnabled"] is True
+
+    prompt = "What should a new engineer learn from this Forge?"
+    chat = await catalog.chat_with_construct(
+        construct_id=construct["id"],
+        conversation_id="mvp-rehearsal",
+        message=prompt,
+        include_library_context=False,
+        max_new_tokens=64,
+        temperature=0.2,
+    )
+    assert chat["artifact"]["id"] == artifact["id"]
+    assert chat["message"]["sender"] == "assistant"
+    assert "Simulated response" in chat["message"]["text"]
+    assert artifact["name"] in chat["message"]["text"]
+    assert chat["generation"]["maxNewTokens"] == 64
+    assert chat["generation"]["temperature"] == 0.2
+
+    trial = await catalog.create_trial(
+        workshop_id=workshop["id"],
+        artifact_id=artifact["id"],
+        construct_id=construct["id"],
+        message_id=chat["message"]["id"],
+        prompt=prompt,
+        response=chat["message"]["text"],
+        verdict="pass",
+        runtime_mode="simulated",
+        token_count=chat["message"]["tokenCount"],
+        generation_settings=chat["generation"],
+    )
+    assert trial["artifactId"] == artifact["id"]
+    assert trial["constructId"] == construct["id"]
+    assert trial["messageId"] == chat["message"]["id"]
+    assert trial["runtimeMode"] == "simulated"
+    assert trial["verdict"] == "pass"
+
+    trials = await catalog.list_trials(workshop["id"])
+    assert len(trials) == 1
+    assert trials[0]["id"] == trial["id"]
+    scored_artifact = next(
+        item for item in await catalog.list_artifacts(workshop["id"])
+        if item["id"] == artifact["id"]
+    )
+    assert scored_artifact["trialScore"] == 100
+
 
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp_dir:
         asyncio.run(exercise_workflow(Path(tmp_dir)))
-    print("OK: Foundry MVP workflow contract test passed.")
+    print("OK: Foundry MVP workflow rehearsal passed.")
     return 0
 
 

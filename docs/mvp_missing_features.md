@@ -28,6 +28,7 @@ The project already has a strong product shell:
 - Forge contracts, runtime event files, worker reconciliation, simulated progress, and automatic Artifact metadata for completed training simulations.
 - Hugging Face search, auth test, model preflight, download jobs, Archive cataloging, and local cache tracking.
 - Construct runtime controls, local model preflight/load/probe, streaming chat endpoint, runtime history, validation history, memory release, and diagnostics bundle preview/export.
+- An isolated MVP rehearsal test that proves Material -> reviewed QA -> JSONL -> Forge simulation -> Artifact -> Construct reply -> Trial scoring.
 - Contextual Academy/tooltip components across major workflow stations.
 
 The central risk is that several core actions still look product-complete while using simulated, metadata-derived, or thin local paths underneath.
@@ -185,16 +186,16 @@ MVP can defer:
 
 ### 7. Backend Contract Tests
 
-Status: thin.
+Status: partial.
 
-The current public checks compile Python, run frontend sentinel tests, lint, and build. They do not yet exercise the full `/api/v1` workflow with isolated test data.
+The current public checks compile Python, run frontend sentinel tests, lint, build, and run an isolated MVP rehearsal through the catalog services. That rehearsal proves the product handoffs from Material ingestion to Trial scoring without touching the developer's main runtime catalog. The remaining gap is API-level coverage around the same flow and mocked external service contracts.
 
 MVP needs:
 
-- Backend tests for Workshop -> Material -> Assembly Line -> JSONL export -> Forge -> Artifact.
+- API-level backend tests for Workshop -> Material -> Assembly Line -> JSONL export -> Forge -> Artifact.
 - Backend tests for Construct runtime events, diagnostics bundle, and validation export.
 - Backend tests for Archive preflight/download-job contracts using mocked Hugging Face calls.
-- A temporary test database fixture so tests do not depend on the developer's local runtime catalog.
+- Continued use of temporary test database fixtures so tests do not depend on the developer's local runtime catalog.
 
 MVP can defer:
 
