@@ -4,6 +4,7 @@ import {
   AcademyAction,
   Artifact,
   Construct,
+  ForgeLocalTrainerPreflightResult,
   ForgeRun,
   ForgePurpose,
   ForgeRuntime,
@@ -28,6 +29,16 @@ import {
 const FORGE_WORKER_POLL_MS = 3000;
 
 type ForgeDetailTab = "events" | "contract" | "trial" | "metrics";
+
+const formatBytes = (bytes: number) => {
+  if (!bytes) {
+    return "0 MB";
+  }
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** index;
+  return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+};
 
 const inferForgePurpose = (material?: MaterialSource): ForgePurpose => {
   if (!material) {
@@ -84,6 +95,10 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   const [isLoadingForgeDetail, setIsLoadingForgeDetail] = useState(false);
   const [isReconcilingForgeDetail, setIsReconcilingForgeDetail] = useState(false);
   const [localTrainingRunId, setLocalTrainingRunId] = useState<string | null>(null);
+  const [localPreflightRunId, setLocalPreflightRunId] = useState<string | null>(null);
+  const [localTrainerPreflights, setLocalTrainerPreflights] = useState<
+    Record<string, ForgeLocalTrainerPreflightResult>
+  >({});
   const [forgeDetailError, setForgeDetailError] = useState<string | null>(null);
   const [forgeRuntime, setForgeRuntime] = useState<ForgeRuntime | null>(null);
   const [runtimeModeDraft, setRuntimeModeDraft] = useState<ForgeRuntimeMode>("simulated");
@@ -257,13 +272,17 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     ? workerStates[selectedForgeDetailId]
     : undefined;
   const selectedEvaluationReport = selectedForgeWorkerState?.metrics.evaluationReport;
+  const selectedLocalTrainerPreflight = selectedForgeDetailId
+    ? localTrainerPreflights[selectedForgeDetailId]
+    : undefined;
   const canRunSelectedLocalTrainer =
     Boolean(selectedForgeRun) &&
     selectedForgeRun?.purpose === "training" &&
     selectedForgeRun?.status !== "completed" &&
     selectedForgeRun?.status !== "failed" &&
     forgeRuntime?.mode === "local" &&
-    Boolean(forgeRuntime.ready);
+    Boolean(forgeRuntime.ready) &&
+    Boolean(selectedLocalTrainerPreflight?.ok);
 
   useEffect(() => {
     if (!hasActiveForgeRuns) {
@@ -400,8 +419,44 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     }
   };
 
+  const preflightLocalForgeWorker = async () => {
+    if (!selectedForgeRun) {
+      return;
+    }
+    setForgeDetailError(null);
+    setError(null);
+    setStatusText(null);
+    setLocalPreflightRunId(selectedForgeRun.id);
+
+    try {
+      const preflight = await repository.preflightLocalForgeWorker(selectedForgeRun.id);
+      setSelectedForgeContract(preflight.contract);
+      setLocalTrainerPreflights((current) => ({
+        ...current,
+        [selectedForgeRun.id]: preflight,
+      }));
+      setStatusText(
+        preflight.ok
+          ? "Local trainer preflight passed."
+          : "Local trainer preflight found blocked checks."
+      );
+    } catch (preflightError: unknown) {
+      setForgeDetailError(
+        preflightError instanceof Error
+          ? preflightError.message
+          : "Could not preflight local Forge trainer."
+      );
+    } finally {
+      setLocalPreflightRunId(null);
+    }
+  };
+
   const runLocalForgeWorker = async () => {
     if (!selectedForgeRun) {
+      return;
+    }
+    if (!selectedLocalTrainerPreflight?.ok) {
+      setForgeDetailError("Run and pass local trainer preflight before starting training.");
       return;
     }
     setForgeDetailError(null);
@@ -1014,6 +1069,16 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                   {isReconcilingForgeDetail ? "Reconciling" : "Reconcile"}
                 </button>
                 <button
+                  className="button-secondary button-compact"
+                  type="button"
+                  onClick={() => void preflightLocalForgeWorker()}
+                  disabled={localPreflightRunId === selectedForgeRun.id}
+                  title="Check whether this Forge can run the local LoRA trainer"
+                >
+                  <i className="fas fa-list-check" aria-hidden="true" />
+                  {localPreflightRunId === selectedForgeRun.id ? "Checking" : "Preflight Local"}
+                </button>
+                <button
                   className="button-primary button-compact"
                   type="button"
                   onClick={() => void runLocalForgeWorker()}
@@ -1021,7 +1086,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                   title={
                     canRunSelectedLocalTrainer
                       ? "Run the local LoRA trainer from this Forge contract"
-                      : "Configure a ready local Forge runtime and select a queued training Forge"
+                      : "Pass local trainer preflight before running this Forge"
                   }
                 >
                   <i className="fas fa-microchip" aria-hidden="true" />
@@ -1055,6 +1120,57 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
             </div>
 
             {forgeDetailError && <p className="save-state error-state">{forgeDetailError}</p>}
+
+            {selectedLocalTrainerPreflight && (
+              <article
+                className={`forge-preflight-card readiness-${selectedLocalTrainerPreflight.status}`}
+              >
+                <div className="runtime-readiness-header">
+                  <div>
+                    <p className="panel-kicker">Local Trainer Preflight</p>
+                    <strong>{selectedLocalTrainerPreflight.title}</strong>
+                    <span>{selectedLocalTrainerPreflight.summary}</span>
+                  </div>
+                  <span className={`status-badge readiness-${selectedLocalTrainerPreflight.status}`}>
+                    {selectedLocalTrainerPreflight.status}
+                  </span>
+                </div>
+                <div className="runtime-preflight-stats">
+                  <div>
+                    <span>Estimated</span>
+                    <strong>
+                      {formatBytes(selectedLocalTrainerPreflight.memory.estimatedLoadBytes)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Available</span>
+                    <strong>{formatBytes(selectedLocalTrainerPreflight.memory.availableBytes)}</strong>
+                  </div>
+                  <div>
+                    <span>Rows</span>
+                    <strong>
+                      {Number(selectedLocalTrainerPreflight.validation.rowCount || 0).toLocaleString()}
+                      {" / "}
+                      {selectedLocalTrainerPreflight.limits.maxRows}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Model</span>
+                    <strong>{selectedLocalTrainerPreflight.model.cached ? "cached" : "missing"}</strong>
+                  </div>
+                </div>
+                <div className="runtime-preflight-checks">
+                  {selectedLocalTrainerPreflight.checks.map((check) => (
+                    <div className={`preflight-check is-${check.status}`} key={check.id}>
+                      <strong>{check.label}</strong>
+                      <span>{check.status}</span>
+                      <p>{check.detail}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="runtime-readiness-gate">{selectedLocalTrainerPreflight.nextAction}</p>
+              </article>
+            )}
 
             <div className="forge-detail-body">
               {forgeDetailTab === "events" && (

@@ -1013,6 +1013,27 @@ async def reconcile_foundry_forge_worker_endpoint(forge_run_id: str):
         raise HTTPException(status_code=404, detail=str(error))
 
 
+@app.post("/api/v1/forges/{forge_run_id}/worker/preflight-local")
+async def preflight_local_foundry_forge_worker_endpoint(forge_run_id: str):
+    try:
+        forge = await foundry_catalog_service.get_forge_run(forge_run_id)
+        material_id = forge.get("materialSetId")
+        if not material_id:
+            raise ValueError("Forge has no training Material to preflight.")
+        material = await foundry_catalog_service.get_material(forge["workshopId"], material_id)
+        contract = (
+            forge_training_service.get_contract(forge_run_id)
+            or forge_training_service.build_training_contract(
+                forge_run=forge,
+                material=material,
+            )
+        )
+        readiness = forge_training_service.preflight_local_training(contract)
+        return api_envelope(readiness)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
 @app.post("/api/v1/forges/{forge_run_id}/worker/run-local")
 async def run_local_foundry_forge_worker_endpoint(forge_run_id: str):
     try:

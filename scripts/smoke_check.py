@@ -128,6 +128,7 @@ def run_forge_adapter_boundary_check() -> int:
         "purpose: Literal[\"training\", \"evaluation\"]",
         "build_training_contract",
         "worker/reconcile",
+        "worker/preflight-local",
         "worker/run-local",
         "complete_forge_from_worker",
     )
@@ -147,6 +148,9 @@ def run_forge_adapter_boundary_check() -> int:
         "contract.json",
         "metrics.json",
         "reconcile_worker_state",
+        "preflight_local_training",
+        "model-cache",
+        "memory-fit",
         "execute_local_training",
         "local_training_started",
         "local_training_completed",

@@ -15,6 +15,7 @@ import {
   ConstructRuntimeValidation,
   ConstructRuntimePreflightResult,
   ForgeTrainingContract,
+  ForgeLocalTrainerPreflightResult,
   ForgePurpose,
   ForgeWorkerReconcileResult,
   ForgeWorkerState,
@@ -65,6 +66,8 @@ export const foundryApiRoutes = {
   forgeEvents: (forgeRunId: string) => `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/events`,
   reconcileForgeWorker: (forgeRunId: string) =>
     `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/worker/reconcile`,
+  preflightLocalForgeWorker: (forgeRunId: string) =>
+    `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/worker/preflight-local`,
   runLocalForgeWorker: (forgeRunId: string) =>
     `${FOUNDRY_API_VERSION}/forges/${forgeRunId}/worker/run-local`,
   simulateForgeRun: (forgeRunId: string) =>
@@ -250,6 +253,7 @@ export interface ForgeRunDto {
 }
 
 export type ForgeWorkerReconcileDto = ForgeWorkerReconcileResult;
+export type ForgeLocalTrainerPreflightDto = ForgeLocalTrainerPreflightResult;
 
 export interface ArtifactDto {
   id: string;

@@ -32,6 +32,7 @@ import {
   ExportQAPairsRequest,
   ExportTrialsDto,
   ExportTrialsRequest,
+  ForgeLocalTrainerPreflightDto,
   ForgeRunDto,
   ForgeWorkerReconcileDto,
   foundryApiRoutes,
@@ -76,6 +77,7 @@ import {
   DashboardSummary,
   FoundryNavigationItem,
   ForgeEvaluationReport,
+  ForgeLocalTrainerPreflightResult,
   ForgeTrainingContract,
   ForgeWorkerReconcileResult,
   ForgeWorkerState,
@@ -299,6 +301,7 @@ export interface FoundryRepository {
   getForgeContract: (forgeRunId: string) => Promise<ForgeTrainingContract>;
   getForgeWorkerState: (forgeRunId: string) => Promise<ForgeWorkerState>;
   reconcileForgeWorkerState: (forgeRunId: string) => Promise<ForgeWorkerReconcileResult>;
+  preflightLocalForgeWorker: (forgeRunId: string) => Promise<ForgeLocalTrainerPreflightResult>;
   runLocalForgeWorker: (forgeRunId: string) => Promise<ForgeWorkerReconcileResult>;
   getForgeRuntime: () => Promise<ForgeRuntime>;
   configureForgeRuntime: (request: ConfigureForgeRuntimeRequest) => Promise<ForgeRuntime>;
@@ -1289,6 +1292,127 @@ export const mockFoundryRepository: FoundryRepository = {
       validation: { valid: true, message: "Mock worker state reconciled." },
     };
   },
+  preflightLocalForgeWorker: async (forgeRunId) => {
+    const forgeRun = mockForgeRuns.find((run) => run.id === forgeRunId);
+    if (!forgeRun) {
+      throw new Error("Forge job was not found.");
+    }
+    if (!forgeRun.trainingContract) {
+      await mockFoundryRepository.reconcileForgeWorkerState(forgeRunId);
+    }
+    if (!forgeRun.trainingContract) {
+      throw new Error("Forge contract has not been written yet.");
+    }
+    const material = mockMaterialSources.find((source) => source.id === forgeRun.materialSetId);
+    const archiveEntry = mockModelArchiveEntries.find(
+      (entry) => entry.repoId === forgeRun.trainingContract?.baseModel && entry.status !== "remote"
+    );
+    const estimatedLoadBytes = Math.max(
+      512 * 1024 * 1024,
+      Math.round((archiveEntry?.sizeOnDiskBytes || 0) * 2.2)
+    );
+    const availableBytes = 16 * 1024 * 1024 * 1024;
+    const checks: ForgeLocalTrainerPreflightResult["checks"] = [
+      {
+        id: "runtime-mode",
+        label: "Local runtime",
+        status: mockForgeRuntime.mode === "local" ? "pass" : "fail",
+        detail:
+          mockForgeRuntime.mode === "local"
+            ? mockForgeRuntime.detail
+            : "Configure Forge runtime to local before running the trainer.",
+      },
+      {
+        id: "dependencies",
+        label: "Trainer dependencies",
+        status: mockForgeRuntime.ready ? "pass" : "fail",
+        detail: mockForgeRuntime.detail,
+      },
+      {
+        id: "forge-purpose",
+        label: "Training Forge",
+        status: forgeRun.purpose === "training" ? "pass" : "fail",
+        detail: "Local trainer runs training Forges; evaluation Forges produce Trial Reports.",
+      },
+      {
+        id: "training-method",
+        label: "LoRA settings",
+        status: forgeRun.method === "LoRA" && !forgeRun.loadIn4Bit ? "pass" : "fail",
+        detail: "MVP local trainer supports LoRA with 4-bit loading disabled.",
+      },
+      {
+        id: "dataset",
+        label: "JSONL Material",
+        status: material && material.qaPairCount > 0 ? "pass" : "fail",
+        detail: material
+          ? `Dataset validated with ${material.qaPairCount} training rows.`
+          : "Training Material was not found.",
+      },
+      {
+        id: "dataset-size",
+        label: "Tiny proof size",
+        status: material && material.qaPairCount <= 8 ? "pass" : "warn",
+        detail: `${material?.qaPairCount || 0} usable rows. The local proof run will train on the first 8 rows.`,
+      },
+      {
+        id: "model-cache",
+        label: "Cached base model",
+        status: archiveEntry ? "pass" : "fail",
+        detail: archiveEntry
+          ? "Base model is cached in the Archive."
+          : "Base model is not cached. Download it into the Archive first.",
+      },
+      {
+        id: "memory-fit",
+        label: "Memory estimate",
+        status: estimatedLoadBytes <= availableBytes * 0.75 ? "pass" : "warn",
+        detail: "Estimated local training memory fits the conservative mock budget.",
+      },
+    ];
+    const warnings = checks.filter((check) => check.status === "warn").map((check) => check.detail);
+    const ok = checks.every((check) => check.status !== "fail");
+    const status = ok && warnings.length === 0 ? "ready" : ok ? "caution" : "blocked";
+    return {
+      ok,
+      status,
+      title: ok ? "Local trainer ready" : "Local trainer blocked",
+      summary: ok
+        ? "This Forge can run the tiny local LoRA trainer."
+        : "Resolve failed checks before running the local trainer.",
+      nextAction: ok ? "Run Local Trainer" : "Fix the blocked checks, then preflight again.",
+      contract: forgeRun.trainingContract,
+      validation: {
+        valid: Boolean(material && material.qaPairCount > 0),
+        rowCount: material?.qaPairCount || 0,
+        message: material ? "Dataset is training-contract ready." : "Training Material was not found.",
+      },
+      runtime: mockForgeRuntime,
+      model: {
+        baseModel: forgeRun.trainingContract.baseModel,
+        path: archiveEntry?.localPath || null,
+        cached: Boolean(archiveEntry),
+        remoteAllowed: false,
+        sizeOnDiskBytes: archiveEntry?.sizeOnDiskBytes || 0,
+        message: archiveEntry
+          ? "Base model is cached in the Archive."
+          : "Base model is not cached. Download it into the Archive first.",
+      },
+      memory: {
+        fitStatus: estimatedLoadBytes <= availableBytes * 0.75 ? "fits" : "tight",
+        checkStatus: estimatedLoadBytes <= availableBytes * 0.75 ? "pass" : "warn",
+        estimatedLoadBytes,
+        availableBytes,
+        message: "Estimated local training memory fits the conservative mock budget.",
+      },
+      checks,
+      warnings,
+      limits: {
+        maxRows: 8,
+        maxLength: 256,
+      },
+      createdAt: new Date().toISOString(),
+    };
+  },
   runLocalForgeWorker: async (forgeRunId) => {
     const forgeRun = mockForgeRuns.find((run) => run.id === forgeRunId);
     if (!forgeRun) {
@@ -2226,6 +2350,12 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.post<ApiEnvelope<ForgeWorkerReconcileDto>>(
         foundryApiRoutes.reconcileForgeWorker(forgeRunId)
+      )
+    ),
+  preflightLocalForgeWorker: async (forgeRunId) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ForgeLocalTrainerPreflightDto>>(
+        foundryApiRoutes.preflightLocalForgeWorker(forgeRunId)
       )
     ),
   runLocalForgeWorker: async (forgeRunId) =>

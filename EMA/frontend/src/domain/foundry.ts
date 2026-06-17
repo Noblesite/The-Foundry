@@ -285,6 +285,46 @@ export interface ForgeWorkerReconcileResult extends ForgeWorkerState {
   validation?: Record<string, unknown>;
 }
 
+export interface ForgeLocalTrainerPreflightCheck {
+  id: string;
+  label: string;
+  status: "pass" | "warn" | "fail";
+  detail: string;
+}
+
+export interface ForgeLocalTrainerPreflightResult {
+  ok: boolean;
+  status: "ready" | "caution" | "blocked";
+  title: string;
+  summary: string;
+  nextAction: string;
+  contract: ForgeTrainingContract;
+  validation: Record<string, unknown>;
+  runtime: ForgeRuntime;
+  model: {
+    baseModel: string;
+    path?: string | null;
+    cached: boolean;
+    remoteAllowed: boolean;
+    sizeOnDiskBytes: number;
+    message: string;
+  };
+  memory: {
+    fitStatus: ModelFitStatus;
+    checkStatus: "pass" | "warn" | "fail";
+    estimatedLoadBytes: number;
+    availableBytes: number;
+    message: string;
+  };
+  checks: ForgeLocalTrainerPreflightCheck[];
+  warnings: string[];
+  limits: {
+    maxRows: number;
+    maxLength: number;
+  };
+  createdAt: string;
+}
+
 export interface Artifact {
   id: string;
   workshopId: string;

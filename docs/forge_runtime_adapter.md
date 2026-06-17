@@ -60,6 +60,11 @@ the Forge runtime is configured to `local` and dependencies are ready. This is
 an opt-in operator action because it can load models and use CPU, GPU, or Apple
 Metal memory.
 
+Before that action is enabled, the drawer can run a local trainer preflight.
+The preflight checks runtime mode, dependency availability, LoRA-only settings,
+JSONL Material validity, tiny proof row count, cached Archive model path, and a
+conservative memory estimate.
+
 For older rows or interrupted local development runs, the drawer can reconcile
 worker state. Reconciliation rebuilds the training contract from catalog data,
 validates the JSONL Material, and restores worker metrics/events without
@@ -98,6 +103,7 @@ POST /api/v1/forges/runtime/configure
 GET  /api/v1/forges/{forge_run_id}/contract
 GET  /api/v1/forges/{forge_run_id}/events
 POST /api/v1/forges/{forge_run_id}/worker/reconcile
+POST /api/v1/forges/{forge_run_id}/worker/preflight-local
 POST /api/v1/forges/{forge_run_id}/worker/run-local
 POST /api/v1/workshops/{workshop_id}/forges
 POST /api/v1/forges/{forge_run_id}/simulate

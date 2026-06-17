@@ -118,11 +118,15 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     assert state["validation"]["valid"] is True
     assert state["validation"]["rowCount"] == 1
     assert (forge_module.DEFAULT_FORGE_RUNTIME_DIR / forge_run["id"] / "contract.json").exists()
+    readiness = forge.preflight_local_training(contract)
+    assert readiness["ok"] is False
+    assert any(check["id"] == "runtime-mode" for check in readiness["checks"])
+    assert any(check["id"] == "model-cache" for check in readiness["checks"])
 
     try:
         forge.execute_local_training(contract)
     except ValueError as error:
-        assert "runtime to local" in str(error)
+        assert "Local trainer preflight failed" in str(error)
     else:
         raise AssertionError("Local trainer should be gated behind local runtime mode.")
 

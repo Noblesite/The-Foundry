@@ -200,8 +200,113 @@ class ForgeTrainingService:
             state["metrics"] = metrics
         return state
 
+    def preflight_local_training(self, contract: Dict[str, Any]) -> Dict[str, Any]:
+        runtime = self.describe_runtime()
+        validation = self.validate_dataset(contract)
+        max_rows = int(os.getenv("FOUNDRY_FORGE_TRAIN_MAX_ROWS", "8"))
+        max_length = int(os.getenv("FOUNDRY_FORGE_TRAIN_MAX_LENGTH", "256"))
+        remote_allowed = os.getenv("FOUNDRY_FORGE_ALLOW_REMOTE_MODEL_DOWNLOAD", "0") == "1"
+        model_probe = self._probe_model_reference(contract.get("baseModel", ""))
+        memory = self._training_memory_estimate(model_probe["path"])
+
+        checks = [
+            self._preflight_check(
+                "runtime-mode",
+                "Local runtime",
+                "pass" if runtime.mode == "local" else "fail",
+                runtime.detail
+                if runtime.mode == "local"
+                else "Configure Forge runtime to local before running the trainer.",
+            ),
+            self._preflight_check(
+                "dependencies",
+                "Trainer dependencies",
+                "pass" if runtime.ready else "fail",
+                runtime.detail,
+            ),
+            self._preflight_check(
+                "forge-purpose",
+                "Training Forge",
+                "pass" if contract.get("purpose", "training") == "training" else "fail",
+                "Local trainer runs training Forges; evaluation Forges produce Trial Reports.",
+            ),
+            self._preflight_check(
+                "training-method",
+                "LoRA settings",
+                "pass"
+                if contract.get("method") == "LoRA" and not contract.get("loadIn4Bit")
+                else "fail",
+                "MVP local trainer supports LoRA with 4-bit loading disabled.",
+            ),
+            self._preflight_check(
+                "dataset",
+                "JSONL Material",
+                "pass" if validation["valid"] else "fail",
+                validation["message"],
+            ),
+            self._preflight_check(
+                "dataset-size",
+                "Tiny proof size",
+                "pass" if 0 < validation.get("rowCount", 0) <= max_rows else "warn",
+                (
+                    f"{validation.get('rowCount', 0)} usable rows. "
+                    f"The local proof run will train on the first {max_rows} rows."
+                ),
+            ),
+            self._preflight_check(
+                "model-cache",
+                "Cached base model",
+                "pass" if model_probe["cached"] else ("warn" if remote_allowed else "fail"),
+                model_probe["message"],
+            ),
+            self._preflight_check(
+                "memory-fit",
+                "Memory estimate",
+                memory["checkStatus"],
+                memory["message"],
+            ),
+        ]
+        warnings = [check["detail"] for check in checks if check["status"] == "warn"]
+        failed = [check for check in checks if check["status"] == "fail"]
+        ok = not failed
+        status = "ready" if ok and not warnings else "caution" if ok else "blocked"
+
+        return {
+            "ok": ok,
+            "status": status,
+            "title": "Local trainer ready" if ok else "Local trainer blocked",
+            "summary": (
+                "This Forge can run the tiny local LoRA trainer."
+                if ok
+                else "Resolve failed checks before running the local trainer."
+            ),
+            "nextAction": (
+                "Run Local Trainer"
+                if ok
+                else "Fix the blocked checks, then preflight again."
+            ),
+            "contract": contract,
+            "validation": validation,
+            "runtime": self.runtime_payload(),
+            "model": model_probe,
+            "memory": memory,
+            "checks": checks,
+            "warnings": warnings,
+            "limits": {
+                "maxRows": max_rows,
+                "maxLength": max_length,
+            },
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        }
+
     def execute_local_training(self, contract: Dict[str, Any]) -> Dict[str, Any]:
         forge_run_id = contract["forgeRunId"]
+        readiness = self.preflight_local_training(contract)
+        if not readiness["ok"]:
+            failed = ", ".join(
+                check["label"] for check in readiness["checks"] if check["status"] == "fail"
+            )
+            raise ValueError(f"Local trainer preflight failed: {failed}.")
         runtime = self.describe_runtime()
         if runtime.mode != "local":
             raise ValueError("Set the Forge runtime to local before running the local trainer.")
@@ -698,7 +803,7 @@ class ForgeTrainingService:
         if model_path.exists():
             return str(model_path)
 
-        archived_model = BASE_DIR / "runtime" / "models" / "huggingface" / self._safe_archive_slug(model_ref)
+        archived_model = self._archive_model_path(model_ref)
         if archived_model.exists():
             return str(archived_model)
 
@@ -711,7 +816,125 @@ class ForgeTrainingService:
         )
 
     def _safe_archive_slug(self, model_ref: str) -> str:
-        return re.sub(r"[^a-zA-Z0-9._-]+", "--", model_ref.strip()).strip("-") or "model"
+        return re.sub(r"[^A-Za-z0-9_.-]+", "-", model_ref.strip()).strip("-") or "model"
+
+    def _archive_model_path(self, model_ref: str) -> Path:
+        return BASE_DIR / "runtime" / "models" / "huggingface" / self._safe_archive_slug(model_ref)
+
+    def _probe_model_reference(self, model_ref: str) -> Dict[str, Any]:
+        model_ref = model_ref.strip()
+        remote_allowed = os.getenv("FOUNDRY_FORGE_ALLOW_REMOTE_MODEL_DOWNLOAD", "0") == "1"
+        if not model_ref:
+            return {
+                "baseModel": model_ref,
+                "path": None,
+                "cached": False,
+                "remoteAllowed": remote_allowed,
+                "sizeOnDiskBytes": 0,
+                "message": "Forge contract base model is empty.",
+            }
+
+        direct_path = Path(model_ref)
+        if direct_path.exists():
+            return {
+                "baseModel": model_ref,
+                "path": str(direct_path),
+                "cached": True,
+                "remoteAllowed": remote_allowed,
+                "sizeOnDiskBytes": self._directory_size(direct_path),
+                "message": "Base model resolves to a local path.",
+            }
+
+        archive_path = self._archive_model_path(model_ref)
+        if archive_path.exists():
+            return {
+                "baseModel": model_ref,
+                "path": str(archive_path),
+                "cached": True,
+                "remoteAllowed": remote_allowed,
+                "sizeOnDiskBytes": self._directory_size(archive_path),
+                "message": "Base model is cached in the Archive.",
+            }
+
+        return {
+            "baseModel": model_ref,
+            "path": None,
+            "cached": False,
+            "remoteAllowed": remote_allowed,
+            "sizeOnDiskBytes": 0,
+            "message": (
+                "Base model is not cached. Download it into the Archive first."
+                if not remote_allowed
+                else "Base model is not cached; remote download is explicitly allowed."
+            ),
+        }
+
+    def _directory_size(self, path: Path) -> int:
+        if not path.exists():
+            return 0
+        if path.is_file():
+            return path.stat().st_size
+        total = 0
+        for file_path in path.rglob("*"):
+            if file_path.is_file():
+                try:
+                    total += file_path.stat().st_size
+                except OSError:
+                    continue
+        return total
+
+    def _available_memory_bytes(self) -> int:
+        try:
+            import psutil
+        except ModuleNotFoundError:
+            return 0
+        return int(psutil.virtual_memory().available)
+
+    def _training_memory_estimate(self, model_path: str | None) -> Dict[str, Any]:
+        model_size = self._directory_size(Path(model_path)) if model_path else 0
+        estimated = int(max(model_size * 2.2, model_size + 512 * 1024 * 1024)) if model_size else 0
+        available = self._available_memory_bytes()
+        if estimated == 0:
+            fit_status = "unknown"
+            check_status = "warn"
+            message = "Memory fit cannot be estimated until the base model is cached."
+        elif available == 0:
+            fit_status = "unknown"
+            check_status = "warn"
+            message = "System memory could not be measured; monitor memory during training."
+        elif estimated <= available * 0.75:
+            fit_status = "fits"
+            check_status = "pass"
+            message = "Estimated local training memory fits the conservative budget."
+        elif estimated <= available * 0.9:
+            fit_status = "tight"
+            check_status = "warn"
+            message = "Estimated local training memory is tight; close other workloads first."
+        else:
+            fit_status = "too-large"
+            check_status = "fail"
+            message = "Estimated local training memory exceeds the conservative budget."
+        return {
+            "fitStatus": fit_status,
+            "checkStatus": check_status,
+            "estimatedLoadBytes": estimated,
+            "availableBytes": available,
+            "message": message,
+        }
+
+    def _preflight_check(
+        self,
+        check_id: str,
+        label: str,
+        status: str,
+        detail: str,
+    ) -> Dict[str, Any]:
+        return {
+            "id": check_id,
+            "label": label,
+            "status": status,
+            "detail": detail,
+        }
 
     def _local_training_device(self, torch_module: Any) -> str:
         if torch_module.cuda.is_available():

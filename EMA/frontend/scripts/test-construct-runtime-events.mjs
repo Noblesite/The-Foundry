@@ -317,8 +317,18 @@ assertIncludes(
 );
 assertIncludes(
   files.contracts,
+  "preflightLocalForgeWorker:",
+  "Frontend contract exposes local Forge worker preflight route"
+);
+assertIncludes(
+  files.contracts,
   "runLocalForgeWorker:",
   "Frontend contract exposes local Forge worker route"
+);
+assertIncludes(
+  files.repository,
+  "preflightLocalForgeWorker:",
+  "Repository exposes local Forge worker preflight"
 );
 assertIncludes(
   files.repository,
@@ -327,8 +337,18 @@ assertIncludes(
 );
 assertIncludes(
   files.domain,
+  "export interface ForgeLocalTrainerPreflightResult",
+  "Forge local trainer preflight has a typed domain contract"
+);
+assertIncludes(
+  files.domain,
   "local_training_completed",
   "Forge event contract includes local training completion"
+);
+assertIncludes(
+  files.forge,
+  "Preflight Local",
+  "Forge workbench can preflight the local trainer adapter"
 );
 assertIncludes(
   files.forge,
