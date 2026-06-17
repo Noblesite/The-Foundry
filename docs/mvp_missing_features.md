@@ -32,6 +32,26 @@ The project already has a strong product shell:
 
 The central risk is that several core actions still look product-complete while using simulated, metadata-derived, or thin local paths underneath.
 
+## MVP Boundary Snapshot
+
+This is the current scope line after the recent QA and runtime slices.
+
+MVP-critical remaining work:
+
+- Prove one real, repeatable Material -> QA -> JSONL -> Forge -> Artifact -> Construct -> Trial path from a clean checkout.
+- Keep one tiny cached model path as the official validation path; larger or better models are post-MVP unless they are needed to prove the same path.
+- Keep the QA quality evaluator lightweight and deterministic enough for local tests; model-judge ensembles are post-MVP.
+- Make every simulated/fallback state unmistakable before a user can export, train, load, or evaluate.
+- Keep setup, health checks, and first-run docs strong enough that another developer can reproduce the demo without tribal knowledge.
+
+Do not add before MVP unless one of the items above is blocked:
+
+- New modalities beyond text/CSV/PDF/JSONL sources.
+- New agent/RAG orchestration surfaces.
+- More model marketplaces or publishing flows.
+- Multi-user, cloud, or enterprise control planes.
+- Advanced visualizations that do not directly unblock the core loop.
+
 ## MVP Blockers
 
 ### 1. Real Material Ingestion
