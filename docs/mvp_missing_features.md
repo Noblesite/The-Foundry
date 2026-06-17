@@ -62,19 +62,19 @@ MVP can defer:
 
 Status: partial.
 
-The Assembly Line can chunk simple text and generate QA pairs, but the QA pair content is currently first-sentence style summarization rather than model-assisted or rule-assisted question generation. QA pairs also do not have durable review states such as accepted/rejected/edited.
+The Assembly Line can chunk simple text and produce draft QA pairs with durable review/export states. The remaining MVP gap is generation quality: first-sentence or fuzzy-pattern QA is not enough for real training data. The pipeline needs a model-backed QA generator that can read chunk context, weigh what matters, produce instruction/output rows, score confidence, and keep humans in the review loop.
 
 MVP needs:
 
-- QA pair status fields: draft, accepted, rejected, edited, exported.
-- Edit/save endpoints for generated QA pairs.
+- Model-backed QA generation using a local or configured generator model.
+- Prompt templates that preserve source context, persona/subject, and answer constraints.
+- Confidence/quality metadata per QA row, including source chunk references.
 - Export only reviewed/accepted rows by default, with an explicit override for draft rows.
-- Basic deterministic QA generation that produces useful instruction/output rows from source chunks.
 - A visible quality gate before a Material can feed Forge.
 
 MVP can defer:
 
-- Multi-model synthetic QA generation.
+- Multi-model synthetic QA generation and judge ensembles.
 - Advanced deduplication/scoring.
 - Human review assignment workflows.
 

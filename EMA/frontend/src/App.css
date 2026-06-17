@@ -3499,6 +3499,29 @@ input[type="checkbox"] {
   border-color: rgba(255, 106, 106, 0.38);
 }
 
+.forge-smoke-response {
+  border: 1px solid rgba(0, 212, 255, 0.18);
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: rgba(0, 212, 255, 0.06);
+}
+
+.forge-smoke-response span {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--arc-blue);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.forge-smoke-response p {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 .forge-detail-body {
   min-height: 0;
   overflow: auto;

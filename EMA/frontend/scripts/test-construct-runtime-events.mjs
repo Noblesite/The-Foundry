@@ -372,6 +372,16 @@ assertIncludes(
 );
 assertIncludes(
   files.forge,
+  "chatWithConstruct",
+  "Forge smoke proof can run a tiny Construct response test"
+);
+assertIncludes(
+  files.forge,
+  "onConstructLoaded(construct, artifact)",
+  "Forge smoke proof hands the Artifact to Construct"
+);
+assertIncludes(
+  files.forge,
   "Run Local Trainer",
   "Forge workbench can launch the local trainer adapter"
 );

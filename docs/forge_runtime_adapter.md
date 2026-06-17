@@ -82,6 +82,10 @@ The Forge station exposes the same flow as `Preflight Tiny Proof` and
 an isolated worker process so native Torch/PEFT teardown cannot take down the
 API server after adapter files and metrics have been written.
 
+After the UI proof creates an Artifact, the Forge station loads it into
+Construct and sends a tiny response test. This validates the full local chain:
+Archive -> Material -> Forge -> Artifact -> Construct.
+
 For older rows or interrupted local development runs, the drawer can reconcile
 worker state. Reconciliation rebuilds the training contract from catalog data,
 validates the JSONL Material, and restores worker metrics/events without

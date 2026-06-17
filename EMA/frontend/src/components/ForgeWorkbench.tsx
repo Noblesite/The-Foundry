@@ -4,6 +4,7 @@ import {
   AcademyAction,
   Artifact,
   Construct,
+  ConstructChatResponse,
   ForgeLocalTrainerPreflightResult,
   ForgeRun,
   ForgePurpose,
@@ -101,6 +102,8 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     Record<string, ForgeLocalTrainerPreflightResult>
   >({});
   const [smokeProofResult, setSmokeProofResult] = useState<ForgeSmokeProofResult | null>(null);
+  const [smokeConstructResponse, setSmokeConstructResponse] =
+    useState<ConstructChatResponse | null>(null);
   const [smokeProofMode, setSmokeProofMode] = useState<"preflight" | "training" | null>(null);
   const [forgeDetailError, setForgeDetailError] = useState<string | null>(null);
   const [forgeRuntime, setForgeRuntime] = useState<ForgeRuntime | null>(null);
@@ -337,6 +340,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   const runForgeSmokeProof = async (runTraining: boolean) => {
     setError(null);
     setStatusText(null);
+    setSmokeConstructResponse(null);
     setSmokeProofMode(runTraining ? "training" : "preflight");
 
     try {
@@ -360,9 +364,35 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
       }));
       setForgeRuntime(result.preflight.runtime);
       setRuntimeModeDraft(result.preflight.runtime.mode);
+
+      let constructResponse: ConstructChatResponse | null = null;
+      if (result.ranTraining) {
+        const artifact =
+          result.artifact ||
+          (result.forgeRun.artifactId
+            ? (await repository.listArtifacts(result.workshop.id)).find(
+                (item) => item.id === result.forgeRun.artifactId
+              ) || null
+            : null);
+        if (!artifact) {
+          throw new Error("Tiny Forge proof completed, but Artifact metadata was not found.");
+        }
+        const construct = await repository.loadArtifactIntoConstruct(result.workshop.id, {
+          artifactId: artifact.id,
+        });
+        onConstructLoaded(construct, artifact);
+        constructResponse = await repository.chatWithConstruct(construct.id, {
+          conversationId: `smoke-${result.forgeRun.id}`,
+          message: "In one sentence, what did this tiny Forge proof validate?",
+          includeLibraryContext: false,
+          maxNewTokens: 48,
+          temperature: 0.2,
+        });
+        setSmokeConstructResponse(constructResponse);
+      }
       setStatusText(
         result.ranTraining
-          ? `Tiny Forge proof completed. Artifact ${result.artifact?.id || result.forgeRun.artifactId} is ready.`
+          ? `Tiny Forge proof completed and loaded into ${constructResponse?.construct.name || "Construct"}.`
           : result.preflight.ok
             ? "Tiny Forge proof preflight passed."
             : "Tiny Forge proof is blocked. Review the failed checks."
@@ -957,6 +987,12 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                   ? `Adapter saved at ${smokeProofResult.workerState.metrics.adapterPath || "runtime output"}.`
                   : smokeProofResult.preflight.nextAction}
               </p>
+              {smokeConstructResponse && (
+                <div className="forge-smoke-response">
+                  <span>{smokeConstructResponse.construct.name}</span>
+                  <p>{smokeConstructResponse.message.text}</p>
+                </div>
+              )}
             </article>
           )}
 
