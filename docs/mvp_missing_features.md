@@ -28,7 +28,7 @@ This is the short steering list. If a task does not support one of these items, 
 - [x] Implement one tiny local LoRA trainer adapter behind the existing Forge runtime boundary.
 - [x] Make real Forge completion create a verified Artifact backed by output files.
 - [x] Prove one cached small-model Construct streaming path without silent fallback.
-- [ ] Add one end-to-end readiness gate for Archive download, Construct load, and Forge start.
+- [x] Add one end-to-end readiness gate for Archive download, Construct load, and Forge start.
 - [ ] Run a clean manual MVP rehearsal from empty Workshop to saved Trial.
 
 ### Guardrails
@@ -61,6 +61,7 @@ The project already has a strong product shell:
 - Real local file extraction for text/markdown, CSV, JSONL/NDJSON, and text-based PDFs through service-level and FastAPI workflow rehearsals.
 - Forge contracts, runtime event files, worker reconciliation, simulated progress, local trainer adapter contracts, verified Artifact readiness, and automatic Artifact metadata for completed training runs.
 - Hugging Face search, auth test, model preflight, download jobs, Archive cataloging, and local cache tracking.
+- Unified Foundry readiness gate for Archive download, Construct load, and Forge start decisions.
 - Construct runtime controls, local model preflight/load/probe, cached-model streaming proof, no-silent-fallback stream errors, runtime history, validation history, memory release, and diagnostics bundle preview/export.
 - An isolated MVP rehearsal test that proves Material -> reviewed QA -> JSONL -> Forge simulation -> Artifact -> Construct reply -> Trial scoring.
 - An isolated FastAPI v1 contract rehearsal that proves the same MVP handoffs through public `/api/v1` endpoints.
@@ -203,17 +204,17 @@ MVP can defer:
 
 ### 6. End-to-End Runtime Health Gate
 
-Status: partial.
+Status: covered for MVP contract rehearsal.
 
-Runtime status, memory estimates, preflight checks, and diagnostics exist. The product still needs a single gate that tells users whether they can safely run the next step.
+Runtime status, memory estimates, preflight checks, diagnostics, and the unified `/api/v1/foundry/readiness` gate exist. The gate normalizes Archive download, Construct load, and Forge start into ready/caution/blocked decisions with checks, warnings, and recovery actions.
 
 MVP needs:
 
-- Readiness states per station: ready, warning, blocked.
-- One user-facing reason when blocked.
-- One recommended action when blocked.
-- Resource checks before model download, model load, and Forge start.
-- Consistent treatment of memory estimates across Archive, Construct, and Forge.
+- Keep readiness states per station: ready, caution, blocked.
+- Keep one user-facing reason when blocked.
+- Keep one recommended action when blocked.
+- Keep resource checks before model download, model load, and Forge start.
+- Keep consistent treatment of memory estimates across Archive, Construct, and Forge.
 
 MVP can defer:
 
@@ -311,9 +312,8 @@ These are valid Foundry goals, but they are scope creep before the core loop is 
 
 ## Recommended MVP Sequence
 
-1. Add one readiness gate that blocks unsafe download, load, and train actions with clear recovery steps.
-2. Tighten first-run setup docs around baseline app dependencies versus optional ML runtime dependencies.
-3. Run a full manual MVP rehearsal from empty Workshop to Construct Trial.
+1. Tighten first-run setup docs around baseline app dependencies versus optional ML runtime dependencies.
+2. Run a full manual MVP rehearsal from empty Workshop to Construct Trial.
 
 ## MVP Definition Of Done
 

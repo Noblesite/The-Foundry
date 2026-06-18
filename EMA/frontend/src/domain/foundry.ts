@@ -385,6 +385,32 @@ export interface ForgeLocalTrainerPreflightCheck {
   detail: string;
 }
 
+export type FoundryReadinessStatus = "ready" | "caution" | "blocked";
+
+export interface FoundryReadinessStation {
+  id: "archive-download" | "construct-load" | "forge-start" | string;
+  label: string;
+  status: FoundryReadinessStatus;
+  canProceed: boolean;
+  title: string;
+  detail: string;
+  nextAction: string;
+  checks: ForgeLocalTrainerPreflightCheck[];
+  warnings: string[];
+  source: Record<string, unknown>;
+}
+
+export interface FoundryReadinessGate {
+  contractVersion: "foundry.readiness-gate.v1";
+  status: FoundryReadinessStatus;
+  canProceed: boolean;
+  title: string;
+  summary: string;
+  nextAction: string;
+  stations: FoundryReadinessStation[];
+  createdAt: string;
+}
+
 export interface ForgeLocalTrainerPreflightResult {
   ok: boolean;
   status: "ready" | "caution" | "blocked";

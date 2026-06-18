@@ -466,6 +466,74 @@ def run_api_workflow(tmp_path: Path) -> None:
             )
             assert local_construct["artifactId"] == local_artifact["id"]
 
+            async def preflight_construct_stub(model_id: str, device: str):
+                if model_id == str(cached_model_dir):
+                    return {
+                        "ok": True,
+                        "modelId": model_id,
+                        "device": device,
+                        "localFilesOnly": True,
+                        "modelType": "gpt2",
+                        "architectures": ["GPT2LMHeadModel"],
+                        "contextWindow": 1024,
+                        "parameterCountEstimate": 125000,
+                        "estimatedLoadBytes": 1024,
+                        "availableBytes": 4096,
+                        "fitStatus": "fits",
+                        "checks": [
+                            {
+                                "id": "archive-cache",
+                                "label": "Archive cache",
+                                "status": "pass",
+                                "detail": "Cached tiny model is available.",
+                            }
+                        ],
+                        "warnings": [],
+                        "diagnostics": {},
+                    }
+                return {
+                    "ok": False,
+                    "modelId": model_id,
+                    "device": device,
+                    "localFilesOnly": True,
+                    "modelType": None,
+                    "architectures": [],
+                    "contextWindow": None,
+                    "parameterCountEstimate": None,
+                    "estimatedLoadBytes": 0,
+                    "availableBytes": 4096,
+                    "fitStatus": "unknown",
+                    "checks": [
+                        {
+                            "id": "archive-cache",
+                            "label": "Archive cache",
+                            "status": "fail",
+                            "detail": "Model is not cached.",
+                        }
+                    ],
+                    "warnings": ["Cache the model before Construct load."],
+                    "diagnostics": {},
+                }
+
+            isolated_construct.preflight_model = preflight_construct_stub
+            readiness_gate = assert_response(
+                client.post(
+                    "/api/v1/foundry/readiness",
+                    json={
+                        "constructModelId": str(cached_model_dir),
+                        "constructDevice": "cpu",
+                        "forgeRunId": local_forge["id"],
+                    },
+                )
+            )
+            assert readiness_gate["contractVersion"] == "foundry.readiness-gate.v1"
+            assert readiness_gate["status"] == "ready"
+            assert readiness_gate["canProceed"] is True
+            assert {station["id"] for station in readiness_gate["stations"]} == {
+                "construct-load",
+                "forge-start",
+            }
+
             stream_tokens = ["Marshall", " is", " ready", "."]
             isolated_construct.set_transformers_stream_backend(
                 lambda _prepared, _message, _system_prompt: stream_tokens
@@ -509,6 +577,22 @@ def run_api_workflow(tmp_path: Path) -> None:
                         "device": "cpu",
                     },
                 )
+            )
+            blocked_readiness_gate = assert_response(
+                client.post(
+                    "/api/v1/foundry/readiness",
+                    json={
+                        "constructModelId": "missing-local-construct-model",
+                        "constructDevice": "cpu",
+                        "forgeRunId": local_forge["id"],
+                    },
+                )
+            )
+            assert blocked_readiness_gate["status"] == "blocked"
+            assert blocked_readiness_gate["canProceed"] is False
+            assert any(
+                station["id"] == "construct-load" and station["status"] == "blocked"
+                for station in blocked_readiness_gate["stations"]
             )
             failed_stream = client.post(
                 f"/api/v1/constructs/{local_construct['id']}/chat/stream",

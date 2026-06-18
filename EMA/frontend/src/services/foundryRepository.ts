@@ -34,6 +34,8 @@ import {
   ExportTrialsDto,
   ExportTrialsRequest,
   ForgeLocalTrainerPreflightDto,
+  FoundryReadinessGateDto,
+  FoundryReadinessGateRequest,
   ForgeSmokeProofDto,
   ForgeSmokeProofRequest,
   ForgeRunDto,
@@ -90,6 +92,7 @@ import {
   ForgeWorkerState,
   ForgeRuntime,
   ForgeRun,
+  FoundryReadinessGate,
   FoundryRuntimeStatus,
   MaterialChunk,
   MaterialSource,
@@ -271,6 +274,7 @@ const constructDiagnosticsBundleExport = (
 
 export interface FoundryRepository {
   getFoundryStatus: () => Promise<FoundryRuntimeStatus>;
+  checkReadinessGate: (request: FoundryReadinessGateRequest) => Promise<FoundryReadinessGate>;
   createWorkshop: (request: CreateWorkshopRequest) => Promise<Workshop>;
   getDashboard: () => Promise<DashboardSummary>;
   getNavigationItems: () => Promise<FoundryNavigationItem[]>;
@@ -860,7 +864,112 @@ const buildApiUnavailableStatus = (detail: string): FoundryRuntimeStatus => {
   };
 };
 
+const mockReadinessGate = async (
+  request: FoundryReadinessGateRequest
+): Promise<FoundryReadinessGate> => {
+  const stations: FoundryReadinessGate["stations"] = [];
+  if (request.archiveRepoId) {
+    const preflight = await mockFoundryRepository.preflightArchiveModel({
+      repoId: request.archiveRepoId,
+      revision: request.archiveRevision || "",
+      username: request.archiveUsername || undefined,
+      token: request.archiveToken || undefined,
+    });
+    stations.push({
+      id: "archive-download",
+      label: "Archive download",
+      status: preflight.canDownload ? "ready" : "blocked",
+      canProceed: preflight.canDownload,
+      title: preflight.canDownload ? "Model download ready" : "Model download blocked",
+      detail: preflight.message,
+      nextAction: preflight.canDownload
+        ? "Download or register this model in the Archive."
+        : "Add required Hugging Face auth or choose a public model.",
+      checks: [
+        {
+          id: "download-permission",
+          label: "Download permission",
+          status: preflight.canDownload ? "pass" : "fail",
+          detail: preflight.message,
+        },
+      ],
+      warnings: preflight.canDownload ? [] : [preflight.message],
+      source: preflight as unknown as Record<string, unknown>,
+    });
+  }
+  if (request.constructModelId) {
+    const preflight = await mockFoundryRepository.preflightConstructRuntime({
+      modelId: request.constructModelId,
+      device: request.constructDevice || "auto",
+    });
+    const status = !preflight.ok
+      ? "blocked"
+      : preflight.fitStatus === "tight" || preflight.fitStatus === "unknown" || preflight.warnings.length
+        ? "caution"
+        : "ready";
+    stations.push({
+      id: "construct-load",
+      label: "Construct load",
+      status,
+      canProceed: status !== "blocked",
+      title: status === "ready" ? "Construct runtime ready" : "Construct runtime needs review",
+      detail: preflight.ok ? "Construct runtime preflight passed." : "Construct runtime preflight is blocked.",
+      nextAction:
+        status === "ready"
+          ? "Load the model into Construct."
+          : "Review failed checks, cache the model, or choose a smaller target.",
+      checks: preflight.checks,
+      warnings: preflight.warnings,
+      source: preflight as unknown as Record<string, unknown>,
+    });
+  }
+  if (request.forgeRunId) {
+    const preflight = await mockFoundryRepository.preflightLocalForgeWorker(request.forgeRunId);
+    stations.push({
+      id: "forge-start",
+      label: "Forge start",
+      status: preflight.status,
+      canProceed: preflight.status !== "blocked",
+      title: preflight.title,
+      detail: preflight.summary,
+      nextAction: preflight.nextAction,
+      checks: preflight.checks,
+      warnings: preflight.warnings,
+      source: preflight as unknown as Record<string, unknown>,
+    });
+  }
+
+  const status = stations.some((station) => station.status === "blocked")
+    ? "blocked"
+    : stations.some((station) => station.status === "caution")
+      ? "caution"
+      : stations.length
+        ? "ready"
+        : "blocked";
+  return {
+    contractVersion: "foundry.readiness-gate.v1",
+    status,
+    canProceed: status !== "blocked",
+    title: "Foundry readiness gate",
+    summary:
+      status === "ready"
+        ? "Archive, Construct, and Forge checks are ready for the requested path."
+        : status === "caution"
+          ? "The workflow can continue, but one or more stations need review."
+          : "One or more stations are blocked.",
+    nextAction:
+      status === "ready"
+        ? "Continue to the next workflow step."
+        : status === "caution"
+          ? "Review caution warnings before continuing."
+          : "Resolve blocked station checks before continuing.",
+    stations,
+    createdAt: new Date().toISOString(),
+  };
+};
+
 export const mockFoundryRepository: FoundryRepository = {
+  checkReadinessGate: mockReadinessGate,
   getFoundryStatus: async () => buildMockFoundryStatus(),
   createWorkshop: async (request) => ({
     id: `wrk-${request.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
@@ -2463,6 +2572,13 @@ export const mockFoundryRepository: FoundryRepository = {
 };
 
 export const apiFoundryRepository: FoundryRepository = {
+  checkReadinessGate: async (request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<FoundryReadinessGateDto>>(
+        foundryApiRoutes.readiness,
+        request
+      )
+    ),
   getFoundryStatus: async () => {
     try {
       return unwrap(

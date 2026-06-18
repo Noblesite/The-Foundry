@@ -120,6 +120,15 @@ class ConstructRuntimeProbeInput(BaseModel):
     maxNewTokens: int = 24
     device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
 
+class FoundryReadinessGateInput(BaseModel):
+    archiveRepoId: str | None = None
+    archiveRevision: str | None = None
+    archiveUsername: str | None = None
+    archiveToken: str | None = None
+    constructModelId: str | None = None
+    constructDevice: Literal["auto", "cpu", "cuda", "mps"] = "auto"
+    forgeRunId: str | None = None
+
 class ForgeSmokeProofInput(BaseModel):
     runTraining: bool = False
 
@@ -218,6 +227,63 @@ def sse_event(event_type: str, payload: dict[str, Any]) -> str:
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def readiness_station(
+    *,
+    station_id: str,
+    label: str,
+    status: str,
+    title: str,
+    detail: str,
+    next_action: str,
+    checks: list[dict[str, Any]] | None = None,
+    warnings: list[str] | None = None,
+    source: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    normalized_status = status if status in {"ready", "caution", "blocked"} else "blocked"
+    return {
+        "id": station_id,
+        "label": label,
+        "status": normalized_status,
+        "canProceed": normalized_status != "blocked",
+        "title": title,
+        "detail": detail,
+        "nextAction": next_action,
+        "checks": checks or [],
+        "warnings": warnings or [],
+        "source": source or {},
+    }
+
+
+def readiness_gate_payload(stations: list[dict[str, Any]]) -> dict[str, Any]:
+    if not stations:
+        overall_status = "blocked"
+        summary = "No readiness stations were requested."
+        next_action = "Choose an Archive model, Construct target, or Forge run to evaluate."
+    elif any(station["status"] == "blocked" for station in stations):
+        overall_status = "blocked"
+        summary = "One or more stations are blocked."
+        next_action = "Resolve blocked station checks before continuing."
+    elif any(station["status"] == "caution" for station in stations):
+        overall_status = "caution"
+        summary = "The workflow can continue, but one or more stations need review."
+        next_action = "Review caution warnings before continuing."
+    else:
+        overall_status = "ready"
+        summary = "Archive, Construct, and Forge checks are ready for the requested path."
+        next_action = "Continue to the next workflow step."
+
+    return {
+        "contractVersion": "foundry.readiness-gate.v1",
+        "status": overall_status,
+        "canProceed": overall_status != "blocked",
+        "title": "Foundry readiness gate",
+        "summary": summary,
+        "nextAction": next_action,
+        "stations": stations,
+        "createdAt": utc_now(),
+    }
 
 
 def build_foundry_runtime_status() -> dict[str, Any]:
@@ -367,6 +433,170 @@ async def build_construct_diagnostics_bundle(
 @app.get("/api/v1/foundry/status")
 async def foundry_runtime_status_endpoint():
     return api_envelope(build_foundry_runtime_status())
+
+
+@app.post("/api/v1/foundry/readiness")
+async def foundry_readiness_gate_endpoint(data: FoundryReadinessGateInput):
+    stations: list[dict[str, Any]] = []
+
+    archive_repo_id = (data.archiveRepoId or "").strip()
+    if archive_repo_id:
+        try:
+            archive = await huggingface_model_service.preflight_model(
+                repo_id=archive_repo_id,
+                revision=data.archiveRevision or "",
+                username=data.archiveUsername,
+                token=data.archiveToken,
+            )
+            archive_status = "ready" if archive.get("canDownload") else "blocked"
+            stations.append(
+                readiness_station(
+                    station_id="archive-download",
+                    label="Archive download",
+                    status=archive_status,
+                    title="Model download ready" if archive.get("canDownload") else "Model download blocked",
+                    detail=archive.get("message") or "Archive model preflight completed.",
+                    next_action=(
+                        "Download or register this model in the Archive."
+                        if archive.get("canDownload")
+                        else "Add required Hugging Face auth or choose a public model."
+                    ),
+                    checks=[
+                        {
+                            "id": "download-permission",
+                            "label": "Download permission",
+                            "status": "pass" if archive.get("canDownload") else "fail",
+                            "detail": archive.get("message") or "Archive preflight completed.",
+                        }
+                    ],
+                    warnings=[] if archive.get("canDownload") else [archive.get("message") or "Archive download is blocked."],
+                    source=archive,
+                )
+            )
+        except Exception as error:
+            stations.append(
+                readiness_station(
+                    station_id="archive-download",
+                    label="Archive download",
+                    status="blocked",
+                    title="Archive preflight failed",
+                    detail=str(error),
+                    next_action="Fix Archive model details or Hugging Face credentials, then retry.",
+                    checks=[
+                        {
+                            "id": "archive-preflight",
+                            "label": "Archive preflight",
+                            "status": "fail",
+                            "detail": str(error),
+                        }
+                    ],
+                )
+            )
+
+    construct_model_id = (data.constructModelId or "").strip()
+    if construct_model_id:
+        try:
+            construct = await construct_inference_service.preflight_model(
+                model_id=construct_model_id,
+                device=data.constructDevice,
+            )
+            if not construct.get("ok"):
+                construct_status = "blocked"
+            elif construct.get("fitStatus") in {"tight", "unknown"} or construct.get("warnings"):
+                construct_status = "caution"
+            else:
+                construct_status = "ready"
+            stations.append(
+                readiness_station(
+                    station_id="construct-load",
+                    label="Construct load",
+                    status=construct_status,
+                    title="Construct runtime ready" if construct_status == "ready" else "Construct runtime needs review",
+                    detail=(
+                        "Construct runtime preflight passed."
+                        if construct.get("ok")
+                        else "Construct runtime preflight is blocked."
+                    ),
+                    next_action=(
+                        "Load the model into Construct."
+                        if construct_status == "ready"
+                        else "Review failed checks, cache the model, or choose a smaller target."
+                    ),
+                    checks=construct.get("checks") or [],
+                    warnings=construct.get("warnings") or [],
+                    source=construct,
+                )
+            )
+        except Exception as error:
+            stations.append(
+                readiness_station(
+                    station_id="construct-load",
+                    label="Construct load",
+                    status="blocked",
+                    title="Construct preflight failed",
+                    detail=str(error),
+                    next_action="Fix the Construct runtime target, then preflight again.",
+                    checks=[
+                        {
+                            "id": "construct-preflight",
+                            "label": "Construct preflight",
+                            "status": "fail",
+                            "detail": str(error),
+                        }
+                    ],
+                )
+            )
+
+    forge_run_id = (data.forgeRunId or "").strip()
+    if forge_run_id:
+        try:
+            forge = await foundry_catalog_service.get_forge_run(forge_run_id)
+            material_id = forge.get("materialSetId")
+            if not material_id:
+                raise ValueError("Forge has no training Material to preflight.")
+            material = await foundry_catalog_service.get_material(forge["workshopId"], material_id)
+            contract = (
+                forge_training_service.get_contract(forge_run_id)
+                or forge_training_service.build_training_contract(
+                    forge_run=forge,
+                    material=material,
+                )
+            )
+            forge_preflight = forge_training_service.preflight_local_training(contract)
+            stations.append(
+                readiness_station(
+                    station_id="forge-start",
+                    label="Forge start",
+                    status=forge_preflight.get("status") or ("ready" if forge_preflight.get("ok") else "blocked"),
+                    title=forge_preflight.get("title") or "Forge preflight completed",
+                    detail=forge_preflight.get("summary") or "Forge local trainer preflight completed.",
+                    next_action=forge_preflight.get("nextAction") or "Review Forge preflight checks.",
+                    checks=forge_preflight.get("checks") or [],
+                    warnings=forge_preflight.get("warnings") or [],
+                    source=forge_preflight,
+                )
+            )
+        except Exception as error:
+            stations.append(
+                readiness_station(
+                    station_id="forge-start",
+                    label="Forge start",
+                    status="blocked",
+                    title="Forge preflight failed",
+                    detail=str(error),
+                    next_action="Fix the Forge run or training Material, then retry.",
+                    checks=[
+                        {
+                            "id": "forge-preflight",
+                            "label": "Forge preflight",
+                            "status": "fail",
+                            "detail": str(error),
+                        }
+                    ],
+                )
+            )
+
+    return api_envelope(readiness_gate_payload(stations))
 
 
 @app.get("/api/v1/constructs/runtime")

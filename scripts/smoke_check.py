@@ -377,6 +377,10 @@ def run_construct_runtime_event_contract_check() -> int:
 
     required_api_patterns = (
         "ConstructRuntimeEventInput",
+        "FoundryReadinessGateInput",
+        "/api/v1/foundry/readiness",
+        "foundry.readiness-gate.v1",
+        "foundry_readiness_gate_endpoint",
         "metadata: dict[str, Any] | None = None",
         "/api/v1/constructs/runtime/events",
         "/api/v1/constructs/runtime/events/export",

@@ -25,6 +25,7 @@ import {
   ForgeWorkerState,
   ForgeRunStatus,
   ArtifactReadiness,
+  FoundryReadinessGate,
   MaterialSource,
   MaterialKind,
   MaterialStatus,
@@ -44,6 +45,7 @@ export const FOUNDRY_API_VERSION = "/api/v1";
 
 export const foundryApiRoutes = {
   status: `${FOUNDRY_API_VERSION}/foundry/status`,
+  readiness: `${FOUNDRY_API_VERSION}/foundry/readiness`,
   bootstrap: `${FOUNDRY_API_VERSION}/foundry/bootstrap`,
   dashboard: `${FOUNDRY_API_VERSION}/foundry/dashboard`,
   navigation: `${FOUNDRY_API_VERSION}/foundry/navigation`,
@@ -456,6 +458,18 @@ export interface ConfigureConstructRuntimeRequest {
 export interface LoadConstructRuntimeRequest {
   modelId?: string;
 }
+
+export interface FoundryReadinessGateRequest {
+  archiveRepoId?: string | null;
+  archiveRevision?: string | null;
+  archiveUsername?: string | null;
+  archiveToken?: string | null;
+  constructModelId?: string | null;
+  constructDevice?: "auto" | "cpu" | "cuda" | "mps";
+  forgeRunId?: string | null;
+}
+
+export type FoundryReadinessGateDto = FoundryReadinessGate;
 
 export interface PreflightConstructRuntimeRequest {
   modelId: string;

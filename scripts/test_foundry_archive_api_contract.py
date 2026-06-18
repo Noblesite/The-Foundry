@@ -235,12 +235,32 @@ def run_archive_contract(tmp_path: Path) -> None:
             assert preflight["canDownload"] is True
             assert preflight["visibility"] == "public"
             assert preflight["auth"]["tokenPresent"] is False
+            readiness = assert_response(
+                client.post(
+                    "/api/v1/foundry/readiness",
+                    json={"archiveRepoId": PUBLIC_REPO},
+                )
+            )
+            assert readiness["contractVersion"] == "foundry.readiness-gate.v1"
+            assert readiness["status"] == "ready"
+            assert readiness["canProceed"] is True
+            assert readiness["stations"][0]["id"] == "archive-download"
+            assert readiness["stations"][0]["status"] == "ready"
 
             gated_preflight = assert_response(
                 client.post("/api/v1/archive/models/preflight", json={"repoId": GATED_REPO})
             )
             assert gated_preflight["canDownload"] is False
             assert gated_preflight["visibility"] == "gated"
+            gated_readiness = assert_response(
+                client.post(
+                    "/api/v1/foundry/readiness",
+                    json={"archiveRepoId": GATED_REPO},
+                )
+            )
+            assert gated_readiness["status"] == "blocked"
+            assert gated_readiness["canProceed"] is False
+            assert gated_readiness["stations"][0]["checks"][0]["status"] == "fail"
 
             registered = assert_response(
                 client.post("/api/v1/archive/models/register", json={"repoId": PUBLIC_REPO})
