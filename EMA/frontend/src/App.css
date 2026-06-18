@@ -162,19 +162,61 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
 textarea {
   appearance: none;
   -webkit-appearance: none;
+  background-color: rgba(13, 17, 23, 0.92) !important;
+  box-shadow: inset 0 0 0 1000px rgba(13, 17, 23, 0.9);
+  color: var(--text-primary) !important;
+  -webkit-text-fill-color: var(--text-primary);
 }
 
 input[type="checkbox"],
 input[type="radio"] {
+  display: grid;
   width: 1rem;
   height: 1rem;
   min-width: 1rem;
+  appearance: none;
+  -webkit-appearance: none;
   border-color: rgba(0, 212, 255, 0.42);
   background: rgba(13, 17, 23, 0.92);
   color: var(--arc-blue);
   accent-color: var(--arc-blue);
   -webkit-text-fill-color: currentColor;
   padding: 0;
+  place-content: center;
+}
+
+input[type="checkbox"]::before,
+input[type="radio"]::before {
+  width: 0.54rem;
+  height: 0.54rem;
+  content: "";
+  transform: scale(0);
+  transition: transform 120ms ease;
+}
+
+input[type="checkbox"]::before {
+  clip-path: polygon(14% 44%, 0 58%, 38% 96%, 100% 18%, 86% 4%, 36% 66%);
+  background: var(--forge-black);
+}
+
+input[type="radio"]::before {
+  border-radius: 999px;
+  background: var(--arc-blue);
+}
+
+input[type="checkbox"]:checked {
+  border-color: var(--arc-blue);
+  background: var(--arc-blue);
+}
+
+input[type="radio"]:checked {
+  border-color: var(--arc-blue);
+  background: rgba(13, 17, 23, 0.92);
+}
+
+input[type="checkbox"]:checked::before,
+input[type="radio"]:checked::before {
+  transform: scale(1);
 }
 
 input[type="checkbox"] {
@@ -203,8 +245,17 @@ input:focus,
 textarea:focus,
 select:focus {
   border-color: var(--arc-blue);
-  box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.12);
+  box-shadow:
+    inset 0 0 0 1000px rgba(13, 17, 23, 0.9),
+    0 0 0 3px rgba(0, 212, 255, 0.12);
   outline: 0;
+}
+
+input[type="checkbox"]:focus,
+input[type="radio"]:focus,
+input[type="range"]:focus,
+select:focus {
+  box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.12);
 }
 
 input[type="range"] {
@@ -980,6 +1031,11 @@ input[type="checkbox"] {
   transition: opacity 140ms ease, transform 140ms ease;
 }
 
+.help-tooltip-content {
+  right: 0;
+  left: auto;
+}
+
 .concept-tooltip-card span,
 .help-tooltip-content {
   color: var(--text-secondary);
@@ -993,6 +1049,26 @@ input[type="checkbox"] {
 .help-tooltip:focus .help-tooltip-content {
   opacity: 1;
   transform: translateY(0);
+}
+
+@media (max-width: 1100px) {
+  .concept-tooltip-card {
+    right: 0;
+    left: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .concept-tooltip-card,
+  .help-tooltip-content {
+    position: fixed;
+    top: 4.5rem;
+    right: 1rem;
+    bottom: auto;
+    left: 1rem;
+    width: auto;
+    max-width: none;
+  }
 }
 
 .modal-backdrop {
