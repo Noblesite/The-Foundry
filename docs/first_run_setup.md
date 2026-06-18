@@ -182,3 +182,11 @@ After baseline and optional runtime setup:
 10. Stream a reply and save a Trial.
 
 The goal is not model quality yet. The goal is a clean, teachable, repeatable path from Material to Trial.
+
+To rehearse the live API handoffs without optional ML packages or model downloads:
+
+```bash
+FOUNDRY_API_BASE_URL=http://127.0.0.1:8000 .venv/bin/python scripts/run_mvp_manual_rehearsal.py
+```
+
+This creates a timestamped Workshop, imports a tiny text Material, exports reviewed QA to JSONL, runs the Forge simulator until it creates an Artifact, loads that Artifact into Construct, saves a Trial, and prints the created IDs.

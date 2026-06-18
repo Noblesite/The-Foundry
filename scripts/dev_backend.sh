@@ -17,7 +17,13 @@ if ! python3 -c "import uvicorn" >/dev/null 2>&1; then
   exit 1
 fi
 
+RELOAD="${FOUNDRY_API_RELOAD:-1}"
+RELOAD_ARGS=""
+if [ "$RELOAD" = "1" ] || [ "$RELOAD" = "true" ]; then
+  RELOAD_ARGS="--reload"
+fi
+
 exec python3 -m uvicorn backend.api_server:app \
-  --reload \
+  $RELOAD_ARGS \
   --host "${FOUNDRY_API_HOST:-127.0.0.1}" \
   --port "${FOUNDRY_API_PORT:-8000}"

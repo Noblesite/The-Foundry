@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from urllib.error import URLError
 from urllib.request import urlopen
 
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.getenv("FOUNDRY_API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 ENDPOINTS = (
     "/api/v1/foundry/status",
     "/api/v1/foundry/bootstrap",

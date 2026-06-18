@@ -29,14 +29,14 @@ This is the short steering list. If a task does not support one of these items, 
 - [x] Make real Forge completion create a verified Artifact backed by output files.
 - [x] Prove one cached small-model Construct streaming path without silent fallback.
 - [x] Add one end-to-end readiness gate for Archive download, Construct load, and Forge start.
-- [ ] Run a clean manual MVP rehearsal from empty Workshop to saved Trial.
+- [x] Run a clean manual MVP rehearsal from empty Workshop to saved Trial.
 
 ### Guardrails
 
 - [ ] Keep simulated/fallback states unmistakable anywhere a user can export, train, load, infer, or evaluate.
 - [ ] Keep the official proof path tiny and repeatable; larger models stay post-MVP.
-- [ ] Keep backend contract rehearsals green and isolated from local runtime data.
-- [ ] Keep setup and first-run docs strong enough for a new technical user to reproduce the demo.
+- [x] Keep backend contract rehearsals green and isolated from local runtime data.
+- [x] Keep setup and first-run docs strong enough for a new technical user to reproduce the demo.
 - [ ] Keep local data, token handling, diagnostics redaction, file limits, and path restrictions explicit.
 
 ### Already Covered
@@ -67,6 +67,7 @@ The project already has a strong product shell:
 - An isolated FastAPI v1 contract rehearsal that proves the same MVP handoffs through public `/api/v1` endpoints.
 - A mocked Archive/Hugging Face API contract rehearsal that proves auth, search, preflight, register, cache, evict, and download-job lifecycle without network calls.
 - A Construct diagnostics API contract rehearsal that proves runtime events, validation history, filtered exports, diagnostics bundle shape, and redaction policy metadata.
+- A live API MVP rehearsal script that proves Material -> reviewed QA -> JSONL -> Forge simulation -> Artifact -> Construct reply -> saved Trial against a running backend.
 - Contextual Academy/tooltip components across major workflow stations.
 
 The central risk is that several core actions still look product-complete while using simulated, metadata-derived, or thin local paths underneath.
@@ -312,7 +313,7 @@ These are valid Foundry goals, but they are scope creep before the core loop is 
 
 ## Recommended MVP Sequence
 
-1. Run a full manual MVP rehearsal from empty Workshop to Construct Trial.
+1. Perform one final browser pass against the running frontend to catch visual or wording friction before tagging the public MVP.
 
 ## MVP Definition Of Done
 
