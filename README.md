@@ -14,8 +14,9 @@ through a Construct.
 ## Current Status
 
 This repository is a public starting point cut from the original E.M.A.
-prototype. The product shell and workflow contracts are in place, while the
-heavy AI workers are intentionally still behind simulator/adapter boundaries.
+prototype. The product shell and MVP workflow contracts are in place. Heavy AI
+workers remain explicit opt-in runtime paths so a new user can run the app
+before installing local model packages.
 
 Working now:
 
@@ -24,13 +25,17 @@ Working now:
 - SQLite-backed local catalog under ignored runtime paths.
 - Workshop, Material, Assembly Line, Forge, Artifact, and Construct workflow.
 - QA pair review and JSONL export for training-ready Materials.
-- Simulated Forge progress and simulated Construct replies.
-- Construct runtime adapter boundary for future local model streaming.
+- Model-backed QA generation, Forge trainer, and Construct streaming contract
+  proofs with deterministic/offline fallbacks where appropriate.
+- Simulated Forge/Construct paths that are labeled as simulated.
+- Local runtime adapter boundaries for Transformers streaming and tiny LoRA
+  Forge proofs.
+- Unified readiness gate for Archive download, Construct load, and Forge start.
 - Public smoke checks that avoid downloading models.
 
 Still intentionally early:
 
-- Real LoRA/QLoRA training execution.
+- Full-quality LoRA/QLoRA training beyond the tiny local proof path.
 - Robust document/PDF/web/video ingestion workers.
 - Production authentication and user isolation.
 - Full migration from old E.M.A./Workspace ONE prototype modules.
@@ -51,7 +56,9 @@ Still intentionally early:
 ├── docs/                        # Product and architecture notes
 ├── scripts/                     # Developer helper scripts
 ├── Makefile                     # Common local commands
-└── requirements.txt             # Public baseline Python dependencies
+├── requirements.txt             # Public baseline Python dependencies
+├── requirements-app.txt         # Baseline app/API/test dependencies
+└── requirements-ml.txt          # Optional local ML/runtime dependencies
 ```
 
 ## Quick Start
@@ -68,6 +75,15 @@ Create a Python environment and install the baseline backend dependencies:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+That baseline is enough for the API, catalog, local file ingestion, mock/local
+workflow rehearsals, frontend integration, and `make check`. Install optional
+ML/runtime dependencies only when you are ready to download models, stream with
+Transformers, or run the local LoRA Forge proof:
+
+```bash
+pip install -r requirements-ml.txt
 ```
 
 Install frontend dependencies:
@@ -132,6 +148,8 @@ Useful variables:
 - `HF_TOKEN`: optional Hugging Face token for gated/private models.
 - `FOUNDRY_CATALOG_DB_PATH`: optional SQLite catalog path override.
 - `FOUNDRY_CONSTRUCT_INFERENCE_MODE`: `simulated` or `transformers`.
+- `FOUNDRY_FORGE_RUNTIME_MODE`: `simulated` or `local`.
+- `FOUNDRY_MODEL_ARCHIVE_DIR`: optional local model Archive path.
 - `VITE_BACKEND_URL`: frontend API base URL.
 - `VITE_FOUNDRY_DATA_SOURCE`: `mock`, `construct-api`, or `api`.
 
@@ -162,6 +180,7 @@ The Foundry uses domain terms that support the learn-by-building experience:
 ## Documentation
 
 - [Product Architecture](docs/the_foundry_product_architecture.md)
+- [First-Run Setup](docs/first_run_setup.md)
 - [Catalog Persistence](docs/the_foundry_catalog_persistence.md)
 - [Forge Runtime Adapter](docs/forge_runtime_adapter.md)
 - [MVP Missing Features](docs/mvp_missing_features.md)

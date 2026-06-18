@@ -1,0 +1,14 @@
+# Baseline app dependencies.
+#
+# Install these first for the public MVP shell, FastAPI contracts, SQLite
+# catalog, local file ingestion, diagnostics, and frontend/backend rehearsals.
+
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.34,<1.0
+pydantic>=2.10,<3.0
+PyYAML>=6.0,<7.0
+python-dotenv>=1.0,<2.0
+requests>=2.32,<3.0
+httpx>=0.27,<1.0
+pypdf>=5.0,<6.0
+psutil>=7.0,<8.0

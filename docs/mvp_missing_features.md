@@ -243,17 +243,17 @@ MVP can defer:
 
 ### 8. Setup Reliability
 
-Status: partial.
+Status: covered for MVP contract rehearsal.
 
-Local dev scripts exist, and `make check` works for the public baseline. The MVP still needs a first-run path that a new user can follow without tribal knowledge.
+Local dev scripts exist, `make check` works for the public baseline, and first-run docs now separate baseline app dependencies from optional ML runtime dependencies.
 
 MVP needs:
 
-- One setup command or clearly ordered setup commands for backend and frontend.
-- Explicit Python version guidance.
-- Dependency groups for baseline app versus optional ML runtime.
-- First-run health check that reports missing optional ML packages separately from app blockers.
-- Clear `.env` examples for mock, hybrid Construct API, and full API mode.
+- Keep clearly ordered setup commands for backend and frontend.
+- Keep explicit Python, Node, and npm version guidance.
+- Keep dependency groups for baseline app versus optional ML runtime.
+- Keep first-run checks clear that optional ML packages are not baseline app blockers.
+- Keep `.env` examples for mock, hybrid Construct API, and full API mode.
 
 MVP can defer:
 
@@ -312,8 +312,7 @@ These are valid Foundry goals, but they are scope creep before the core loop is 
 
 ## Recommended MVP Sequence
 
-1. Tighten first-run setup docs around baseline app dependencies versus optional ML runtime dependencies.
-2. Run a full manual MVP rehearsal from empty Workshop to Construct Trial.
+1. Run a full manual MVP rehearsal from empty Workshop to Construct Trial.
 
 ## MVP Definition Of Done
 

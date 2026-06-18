@@ -60,6 +60,17 @@ the Forge runtime is configured to `local` and dependencies are ready. This is
 an opt-in operator action because it can load models and use CPU, GPU, or Apple
 Metal memory.
 
+Install the optional ML/runtime dependency lane before running a real local
+trainer:
+
+```text
+pip install -r requirements-ml.txt
+```
+
+The baseline app dependency lane is enough for simulator demos and contract
+checks, but it intentionally does not install Torch, Transformers, PEFT, or
+Hugging Face download tooling.
+
 Before that action is enabled, the drawer can run a local trainer preflight.
 The preflight checks runtime mode, dependency availability, LoRA-only settings,
 JSONL Material validity, tiny proof row count, cached Archive model path, and a

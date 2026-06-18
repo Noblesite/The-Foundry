@@ -1,0 +1,36 @@
+# Optional ML/runtime dependencies.
+#
+# Install after requirements.txt only when you want Archive model downloads,
+# real Transformers Construct streaming, local LoRA training, retrieval, or
+# legacy prototype integrations.
+
+-r requirements-app.txt
+
+# Model discovery, inference, and adapter tuning
+huggingface-hub>=0.29,<1.0
+accelerate>=1.4,<2.0
+peft>=0.14,<1.0
+torch>=2.6,<3.0
+transformers>=4.49,<5.0
+
+# Data processing and retrieval experiments
+chromadb>=0.6,<1.0
+datasets>=3.3,<4.0
+numpy>=2.0,<3.0
+pandas>=2.2,<3.0
+scikit-learn>=1.6,<2.0
+sentence-transformers>=3.4,<4.0
+
+# Distributed jobs and observability
+prometheus-client>=0.21,<1.0
+ray>=2.43,<3.0
+rich>=13.9,<14.0
+tqdm>=4.67,<5.0
+wandb>=0.19,<1.0
+
+# Legacy Workspace ONE helper integrations
+cryptography>=44.0,<45.0
+paramiko>=3.5,<4.0
+
+# Optional workflow-specific packages to install only when needed:
+# bitsandbytes, deepspeed, selenium, py-spy, kubernetes

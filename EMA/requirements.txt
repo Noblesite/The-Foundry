@@ -1,37 +1,8 @@
-# Core API and configuration
-fastapi>=0.115,<1.0
-uvicorn[standard]>=0.34,<1.0
-pydantic>=2.10,<3.0
-PyYAML>=6.0,<7.0
-python-dotenv>=1.0,<2.0
-requests>=2.32,<3.0
+# Compatibility pointer for older E.M.A. setup commands.
+#
+# The public Foundry baseline lives at ../requirements.txt.
+# This file intentionally installs the optional ML/runtime stack because legacy
+# E.M.A. prototype modules imported Transformers, Torch, retrieval, and helper
+# integrations directly.
 
-# Data processing and retrieval
-chromadb>=0.6,<1.0
-datasets>=3.3,<4.0
-numpy>=2.0,<3.0
-pandas>=2.2,<3.0
-pypdf>=5.0,<6.0
-scikit-learn>=1.6,<2.0
-sentence-transformers>=3.4,<4.0
-
-# Model inference and adapter tuning
-accelerate>=1.4,<2.0
-peft>=0.14,<1.0
-torch>=2.6,<3.0
-transformers>=4.49,<5.0
-
-# Distributed jobs and observability
-prometheus-client>=0.21,<1.0
-psutil>=7.0,<8.0
-ray>=2.43,<3.0
-rich>=13.9,<14.0
-tqdm>=4.67,<5.0
-wandb>=0.19,<1.0
-
-# Workspace ONE helper integrations
-cryptography>=44.0,<45.0
-paramiko>=3.5,<4.0
-
-# Optional workflow-specific packages to split into extras later:
-# bitsandbytes, deepspeed, selenium, py-spy, kubernetes
+-r ../requirements-ml.txt

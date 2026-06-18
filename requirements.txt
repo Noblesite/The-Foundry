@@ -1,5 +1,9 @@
 # Public baseline dependencies for local development.
-# GPU-specific packages such as bitsandbytes, DeepSpeed, CUDA torch wheels, and
-# optional scraping tools should be installed only when those workflows are used.
+#
+# This installs the API, catalog, ingestion, diagnostics, and contract-test
+# surface without pulling local model training/inference packages.
+#
+# Optional model download, Transformers inference, LoRA training, retrieval,
+# and legacy Workspace ONE helper dependencies live in requirements-ml.txt.
 
--r EMA/requirements.txt
+-r requirements-app.txt
