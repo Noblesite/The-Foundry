@@ -3499,6 +3499,69 @@ input[type="checkbox"] {
   box-shadow: var(--shadow-orange);
 }
 
+.qa-generator-preflight {
+  display: grid;
+  gap: 0.62rem;
+  border: 1px solid rgba(119, 140, 152, 0.2);
+  border-radius: 8px;
+  padding: 0.72rem;
+  background:
+    linear-gradient(135deg, rgba(0, 212, 255, 0.06), rgba(13, 17, 23, 0.12)),
+    rgba(13, 17, 23, 0.58);
+}
+
+.qa-generator-preflight-ready {
+  border-color: rgba(0, 212, 255, 0.34);
+}
+
+.qa-generator-preflight-caution {
+  border-color: rgba(212, 160, 23, 0.42);
+}
+
+.qa-generator-preflight-blocked {
+  border-color: rgba(255, 138, 0, 0.42);
+  box-shadow: var(--shadow-orange);
+}
+
+.qa-preflight-checks {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.qa-preflight-check {
+  display: grid;
+  gap: 0.18rem;
+  border: 1px solid rgba(119, 140, 152, 0.18);
+  border-radius: 8px;
+  padding: 0.5rem;
+  background: rgba(13, 17, 23, 0.42);
+}
+
+.qa-preflight-check strong {
+  color: var(--text-primary);
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.qa-preflight-check span {
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.qa-preflight-check-pass {
+  border-color: rgba(0, 212, 255, 0.24);
+}
+
+.qa-preflight-check-warn {
+  border-color: rgba(212, 160, 23, 0.34);
+}
+
+.qa-preflight-check-fail {
+  border-color: rgba(255, 138, 0, 0.38);
+}
+
 .qa-quality-proof {
   display: grid;
   gap: 0.62rem;

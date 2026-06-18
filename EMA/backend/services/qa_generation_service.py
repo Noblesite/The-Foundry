@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 from hashlib import sha256
 from importlib.util import find_spec
+from pathlib import Path
 from typing import Any, Dict, List
 from uuid import uuid4
 
@@ -15,6 +16,8 @@ from .qa_quality_service import QAQualityEvaluator
 
 QA_GENERATION_CONTRACT_VERSION = "foundry.qa-generation.v1"
 QA_PROMPT_TEMPLATE_VERSION = "foundry.qa-prompt.source-context.v2"
+BASE_DIR = Path(__file__).resolve().parents[2]
+DEFAULT_QA_MODEL_ARCHIVE_DIR = BASE_DIR / "runtime" / "models" / "huggingface"
 QA_TYPE_SEQUENCE = (
     "factual",
     "behavior",
@@ -80,6 +83,118 @@ class QAGenerationService:
         self.max_new_tokens = max(24, min(2048, int(max_new_tokens)))
         self.temperature = max(0.0, min(1.5, float(temperature)))
         return self.runtime_payload()
+
+    def preflight(
+        self,
+        *,
+        mode: str | None = None,
+        model_id: str | None = None,
+        max_new_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> Dict[str, Any]:
+        normalized_mode = (mode or self.mode).strip().lower()
+        if normalized_mode == "local":
+            normalized_mode = "transformers"
+        target_model_id = (model_id or self.model_id or "sshleifer/tiny-gpt2").strip()
+        target_max_tokens = max(24, min(2048, int(max_new_tokens or self.max_new_tokens)))
+        target_temperature = max(0.0, min(1.5, float(self.temperature if temperature is None else temperature)))
+
+        if normalized_mode == "deterministic":
+            checks = [
+                self._preflight_check(
+                    "runtime-mode",
+                    "Runtime mode",
+                    "pass",
+                    "Deterministic mode is available without model dependencies.",
+                )
+            ]
+            return {
+                "ok": True,
+                "status": "ready",
+                "title": "Deterministic QA generator ready",
+                "summary": "Smoke-test QA generation can run offline.",
+                "nextAction": "Run Smoke proof or start the Assembly Line.",
+                "mode": "deterministic",
+                "modelId": target_model_id,
+                "maxNewTokens": target_max_tokens,
+                "temperature": target_temperature,
+                "checks": checks,
+                "warnings": [],
+                "memory": self._qa_memory_estimate(None),
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+                "contractVersion": "foundry.qa-generator.preflight.v1",
+            }
+
+        transformers_available = find_spec("transformers") is not None
+        model_probe = self._qa_model_probe(target_model_id)
+        memory = self._qa_memory_estimate(model_probe.get("path"))
+        checks = [
+            self._preflight_check(
+                "runtime-mode",
+                "Runtime mode",
+                "pass" if normalized_mode == "transformers" else "fail",
+                "Local Transformers mode selected."
+                if normalized_mode == "transformers"
+                else "Choose Deterministic smoke or Local Transformers.",
+            ),
+            self._preflight_check(
+                "dependencies",
+                "Transformers dependency",
+                "pass" if transformers_available else "fail",
+                "Transformers is importable."
+                if transformers_available
+                else "Install optional ML dependencies with requirements-ml.txt.",
+            ),
+            self._preflight_check(
+                "archive-cache",
+                "Local model cache",
+                "pass" if model_probe["cached"] else "fail",
+                model_probe["message"],
+            ),
+            self._preflight_check(
+                "memory-fit",
+                "Memory fit",
+                memory["checkStatus"],
+                memory["message"],
+            ),
+        ]
+        failed = [check for check in checks if check["status"] == "fail"]
+        warned = [check for check in checks if check["status"] == "warn"]
+        status = "blocked" if failed else "caution" if warned else "ready"
+        warnings = [check["detail"] for check in checks if check["status"] in {"warn", "fail"}]
+        return {
+            "ok": not failed,
+            "status": status,
+            "title": (
+                "Local QA generator ready"
+                if status == "ready"
+                else "Local QA generator needs review"
+                if status == "caution"
+                else "Local QA generator blocked"
+            ),
+            "summary": (
+                "Cached model and dependencies are ready for model-backed QA generation."
+                if status == "ready"
+                else "Review warnings before using this model for QA generation."
+                if status == "caution"
+                else "Fix blocked checks before switching to Local Transformers QA generation."
+            ),
+            "nextAction": (
+                "Configure Local Transformers, then run Quality proof."
+                if status != "blocked"
+                else "Install dependencies and cache the model in the Archive first."
+            ),
+            "mode": "transformers",
+            "modelId": target_model_id,
+            "maxNewTokens": target_max_tokens,
+            "temperature": target_temperature,
+            "model": model_probe,
+            "memory": memory,
+            "checks": checks,
+            "warnings": warnings,
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "contractVersion": "foundry.qa-generator.preflight.v1",
+        }
 
     def set_model_text_backend(
         self,
@@ -529,6 +644,105 @@ class QAGenerationService:
         if transformers_available:
             return f"Transformers QA generator is configured for {self.model_id}."
         return "Transformers is not importable, so generation will fall back to deterministic drafts."
+
+    def _preflight_check(
+        self,
+        check_id: str,
+        label: str,
+        status: str,
+        detail: str,
+    ) -> Dict[str, str]:
+        return {
+            "id": check_id,
+            "label": label,
+            "status": status,
+            "detail": detail,
+        }
+
+    def _qa_model_probe(self, model_id: str) -> Dict[str, Any]:
+        direct_path = Path(model_id).expanduser()
+        if direct_path.exists():
+            size = self._directory_size(direct_path) if direct_path.is_dir() else direct_path.stat().st_size
+            return {
+                "modelId": model_id,
+                "path": str(direct_path),
+                "cached": True,
+                "sizeOnDiskBytes": size,
+                "message": "Generator model path exists locally.",
+            }
+        archive_path = DEFAULT_QA_MODEL_ARCHIVE_DIR / self._safe_archive_slug(model_id)
+        if archive_path.exists():
+            return {
+                "modelId": model_id,
+                "path": str(archive_path),
+                "cached": True,
+                "sizeOnDiskBytes": self._directory_size(archive_path),
+                "message": "Generator model is cached in the local Archive.",
+            }
+        return {
+            "modelId": model_id,
+            "path": None,
+            "cached": False,
+            "sizeOnDiskBytes": 0,
+            "message": "Generator model is not cached locally; use Archive search/download first.",
+        }
+
+    def _safe_archive_slug(self, model_id: str) -> str:
+        return re.sub(r"[^A-Za-z0-9._-]+", "-", model_id.strip()).strip("-") or "model"
+
+    def _directory_size(self, path: Path) -> int:
+        total = 0
+        if not path.exists():
+            return total
+        if path.is_file():
+            return path.stat().st_size
+        for item in path.rglob("*"):
+            if item.is_file():
+                try:
+                    total += item.stat().st_size
+                except OSError:
+                    continue
+        return total
+
+    def _available_memory_bytes(self) -> int:
+        try:
+            import psutil
+
+            return int(psutil.virtual_memory().available)
+        except Exception:
+            return 0
+
+    def _qa_memory_estimate(self, model_path: str | None) -> Dict[str, Any]:
+        available = self._available_memory_bytes()
+        model_size = self._directory_size(Path(model_path)) if model_path else 0
+        estimated = int(max(model_size * 2.0, 512 * 1024 * 1024 if model_path else 0))
+        if not model_path:
+            status = "unknown"
+            check_status = "warn"
+            message = "Memory fit will be checked after the generator model is cached."
+        elif available <= 0:
+            status = "unknown"
+            check_status = "warn"
+            message = "System memory could not be measured; monitor memory during QA generation."
+        elif estimated <= available * 0.5:
+            status = "fits"
+            check_status = "pass"
+            message = "Estimated QA generator load fits the conservative local budget."
+        elif estimated <= available * 0.8:
+            status = "tight"
+            check_status = "warn"
+            message = "Estimated QA generator load is tight; close other workloads first."
+        else:
+            status = "too-large"
+            check_status = "fail"
+            message = "Estimated QA generator load exceeds the conservative local budget."
+        return {
+            "fitStatus": status,
+            "checkStatus": check_status,
+            "estimatedLoadBytes": estimated,
+            "availableBytes": available,
+            "message": message,
+        }
 
     def _smoke_summary(
         self,

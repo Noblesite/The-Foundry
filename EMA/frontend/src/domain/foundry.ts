@@ -391,6 +391,36 @@ export interface ForgeLocalTrainerPreflightCheck {
   detail: string;
 }
 
+export interface QAGeneratorPreflightResult {
+  contractVersion: "foundry.qa-generator.preflight.v1";
+  ok: boolean;
+  status: FoundryReadinessStatus;
+  title: string;
+  summary: string;
+  nextAction: string;
+  mode: QAGeneratorMode;
+  modelId: string;
+  maxNewTokens: number;
+  temperature: number;
+  model?: {
+    modelId: string;
+    path?: string | null;
+    cached: boolean;
+    sizeOnDiskBytes: number;
+    message: string;
+  };
+  memory: {
+    fitStatus: ModelFitStatus;
+    checkStatus: "pass" | "warn" | "fail";
+    estimatedLoadBytes: number;
+    availableBytes: number;
+    message: string;
+  };
+  checks: ForgeLocalTrainerPreflightCheck[];
+  warnings: string[];
+  createdAt: string;
+}
+
 export type FoundryReadinessStatus = "ready" | "caution" | "blocked";
 
 export interface FoundryReadinessStation {

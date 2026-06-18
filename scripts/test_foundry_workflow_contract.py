@@ -211,6 +211,23 @@ async def _exercise_workflow(tmp_path: Path) -> None:
         temperature=0.1,
     )
     assert configured_runtime["ready"] is True
+    qa_preflight = catalog.qa_generator.preflight(
+        mode="deterministic",
+        model_id="sshleifer/tiny-gpt2",
+        max_new_tokens=128,
+        temperature=0.1,
+    )
+    assert qa_preflight["contractVersion"] == "foundry.qa-generator.preflight.v1"
+    assert qa_preflight["status"] == "ready"
+    blocked_preflight = catalog.qa_generator.preflight(
+        mode="transformers",
+        model_id="missing-foundry-generator-model",
+        max_new_tokens=96,
+        temperature=0.0,
+    )
+    assert blocked_preflight["contractVersion"] == "foundry.qa-generator.preflight.v1"
+    assert blocked_preflight["status"] == "blocked"
+    assert any(check["id"] == "archive-cache" for check in blocked_preflight["checks"])
     qa_smoke = catalog.qa_generator.smoke_proof()
     assert qa_smoke["contractVersion"] == "foundry.qa-generator.smoke-proof.v1"
     assert qa_smoke["rows"][0]["generationMetadata"]["contractVersion"] == "foundry.qa-generation.v1"

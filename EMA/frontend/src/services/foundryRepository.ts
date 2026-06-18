@@ -50,6 +50,7 @@ import {
   ModelDownloadJobDto,
   MaterialChunkDto,
   QAPairDto,
+  QAGeneratorPreflightDto,
   QAGeneratorQualityProofDto,
   QAGeneratorRuntimeDto,
   QAGeneratorSmokeProofDto,
@@ -102,6 +103,7 @@ import {
   ModelSearchResult,
   NavigationSection,
   QAPair,
+  QAGeneratorPreflightResult,
   QAGeneratorQualityProof,
   QAGeneratorRuntime,
   QAGeneratorSmokeProof,
@@ -298,6 +300,9 @@ export interface FoundryRepository {
   configureQAGeneratorRuntime: (
     request: ConfigureQAGeneratorRuntimeRequest
   ) => Promise<QAGeneratorRuntime>;
+  preflightQAGenerator: (
+    request: ConfigureQAGeneratorRuntimeRequest
+  ) => Promise<QAGeneratorPreflightResult>;
   runQAGeneratorSmokeProof: () => Promise<QAGeneratorSmokeProof>;
   runQAGeneratorQualityProof: () => Promise<QAGeneratorQualityProof>;
   startAssemblyLine: (
@@ -1043,6 +1048,82 @@ export const mockFoundryRepository: FoundryRepository = {
       },
     };
     return mockQAGeneratorRuntime;
+  },
+  preflightQAGenerator: async (request) => {
+    const isDeterministic = request.mode === "deterministic";
+    const checks = isDeterministic
+      ? [
+          {
+            id: "runtime-mode",
+            label: "Runtime mode",
+            status: "pass" as const,
+            detail: "Deterministic QA generation is available in mock mode.",
+          },
+        ]
+      : [
+          {
+            id: "runtime-mode",
+            label: "Runtime mode",
+            status: "pass" as const,
+            detail: "Local Transformers mode selected.",
+          },
+          {
+            id: "dependencies",
+            label: "Transformers dependency",
+            status: "fail" as const,
+            detail: "Mock mode cannot verify optional ML dependencies.",
+          },
+          {
+            id: "archive-cache",
+            label: "Local model cache",
+            status: "fail" as const,
+            detail: "Use the live API backend to check whether the generator model is cached.",
+          },
+          {
+            id: "memory-fit",
+            label: "Memory fit",
+            status: "warn" as const,
+            detail: "Memory fit is checked by the backend runtime.",
+          },
+        ];
+    const status = isDeterministic ? "ready" : "blocked";
+    return {
+      contractVersion: "foundry.qa-generator.preflight.v1",
+      ok: isDeterministic,
+      status,
+      title: isDeterministic
+        ? "Deterministic QA generator ready"
+        : "Local QA generator blocked in mock mode",
+      summary: isDeterministic
+        ? "Smoke-test QA generation can run offline."
+        : "Switch to API mode to verify dependencies, cache, and memory before model-backed QA generation.",
+      nextAction: isDeterministic
+        ? "Run Smoke proof or start the Assembly Line."
+        : "Start the backend and use VITE_FOUNDRY_DATA_SOURCE=api.",
+      mode: request.mode,
+      modelId: request.modelId || "sshleifer/tiny-gpt2",
+      maxNewTokens: request.maxNewTokens,
+      temperature: request.temperature,
+      model: {
+        modelId: request.modelId || "sshleifer/tiny-gpt2",
+        path: null,
+        cached: false,
+        sizeOnDiskBytes: 0,
+        message: "Mock mode does not inspect the local Archive.",
+      },
+      memory: {
+        fitStatus: "unknown",
+        checkStatus: isDeterministic ? "pass" : "warn",
+        estimatedLoadBytes: 0,
+        availableBytes: mockPlatformProfile.availableMemoryBytes,
+        message: isDeterministic
+          ? "No model memory needed for deterministic QA generation."
+          : "Memory fit is checked by the backend runtime.",
+      },
+      checks,
+      warnings: checks.filter((check) => check.status !== "pass").map((check) => check.detail),
+      createdAt: new Date().toISOString(),
+    };
   },
   runQAGeneratorSmokeProof: async () => {
     const row: QAPair = {
@@ -2653,6 +2734,13 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.post<ApiEnvelope<QAGeneratorRuntimeDto>>(
         foundryApiRoutes.configureQAGeneratorRuntime,
+        request
+      )
+    ),
+  preflightQAGenerator: async (request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<QAGeneratorPreflightDto>>(
+        foundryApiRoutes.preflightQAGenerator,
         request
       )
     ),

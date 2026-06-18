@@ -12,6 +12,7 @@ import {
   MaterialKind,
   MaterialSource,
   QAPair,
+  QAGeneratorPreflightResult,
   QAGeneratorQualityProof,
   QAGeneratorRuntime,
   QAGeneratorSmokeProof,
@@ -94,6 +95,15 @@ const promptVersionFromMetadata = (qaPair: QAPair): string | undefined => {
   return typeof metricVersion === "string" ? metricVersion : undefined;
 };
 
+const formatBytes = (bytes: number): string => {
+  if (!bytes) {
+    return "0 B";
+  }
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+};
+
 const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   repository,
   summary,
@@ -140,7 +150,10 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
     useState<QAGeneratorSmokeProof | null>(null);
   const [qaGeneratorQualityProof, setQAGeneratorQualityProof] =
     useState<QAGeneratorQualityProof | null>(null);
+  const [qaGeneratorPreflight, setQAGeneratorPreflight] =
+    useState<QAGeneratorPreflightResult | null>(null);
   const [isConfiguringGenerator, setIsConfiguringGenerator] = useState(false);
+  const [isPreflightingGenerator, setIsPreflightingGenerator] = useState(false);
   const [isRunningGeneratorSmoke, setIsRunningGeneratorSmoke] = useState(false);
   const [isRunningGeneratorQualityProof, setIsRunningGeneratorQualityProof] = useState(false);
 
@@ -248,6 +261,7 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
     key: K,
     value: ConfigureQAGeneratorRuntimeRequest[K]
   ) => {
+    setQAGeneratorPreflight(null);
     setQAGeneratorDraft((current) => ({ ...current, [key]: value }));
   };
 
@@ -341,12 +355,21 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
     setIsConfiguringGenerator(true);
     setError(null);
     try {
-      const runtime = await repository.configureQAGeneratorRuntime({
+      const request = {
         ...qaGeneratorDraft,
         modelId: qaGeneratorDraft.modelId.trim() || "sshleifer/tiny-gpt2",
         maxNewTokens: Number(qaGeneratorDraft.maxNewTokens),
         temperature: Number(qaGeneratorDraft.temperature),
-      });
+      };
+      if (request.mode === "transformers") {
+        const preflight = await repository.preflightQAGenerator(request);
+        setQAGeneratorPreflight(preflight);
+        if (!preflight.ok) {
+          setError(preflight.summary);
+          return;
+        }
+      }
+      const runtime = await repository.configureQAGeneratorRuntime(request);
       setQAGeneratorRuntime(runtime);
       setQAGeneratorDraft({
         mode: runtime.mode,
@@ -360,6 +383,24 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
       setError(runtimeError instanceof Error ? runtimeError.message : "Could not configure QA generator.");
     } finally {
       setIsConfiguringGenerator(false);
+    }
+  };
+
+  const preflightQAGenerator = async () => {
+    setIsPreflightingGenerator(true);
+    setError(null);
+    try {
+      const preflight = await repository.preflightQAGenerator({
+        ...qaGeneratorDraft,
+        modelId: qaGeneratorDraft.modelId.trim() || "sshleifer/tiny-gpt2",
+        maxNewTokens: Number(qaGeneratorDraft.maxNewTokens),
+        temperature: Number(qaGeneratorDraft.temperature),
+      });
+      setQAGeneratorPreflight(preflight);
+    } catch (preflightError: unknown) {
+      setError(preflightError instanceof Error ? preflightError.message : "Could not preflight QA generator.");
+    } finally {
+      setIsPreflightingGenerator(false);
     }
   };
 
@@ -610,6 +651,14 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                 <button
                   className="button-secondary button-compact"
                   type="button"
+                  disabled={isPreflightingGenerator}
+                  onClick={preflightQAGenerator}
+                >
+                  {isPreflightingGenerator ? "Checking" : "Preflight"}
+                </button>
+                <button
+                  className="button-secondary button-compact"
+                  type="button"
                   disabled={isConfiguringGenerator}
                   onClick={configureQAGenerator}
                 >
@@ -632,6 +681,36 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                   {isRunningGeneratorQualityProof ? "Comparing" : "Quality proof"}
                 </button>
               </div>
+
+              {qaGeneratorPreflight && (
+                <div className={`qa-generator-preflight qa-generator-preflight-${qaGeneratorPreflight.status}`}>
+                  <div className="runtime-readiness-header">
+                    <div>
+                      <span className="panel-kicker">Generator Preflight</span>
+                      <strong>{qaGeneratorPreflight.title}</strong>
+                      <p>{qaGeneratorPreflight.summary}</p>
+                    </div>
+                    <span className={`status-badge readiness-${qaGeneratorPreflight.status}`}>
+                      {qaGeneratorPreflight.status}
+                    </span>
+                  </div>
+                  <div className="material-meta">
+                    <span>{qaGeneratorPreflight.model?.cached ? "cached" : "not cached"}</span>
+                    <span>Load {formatBytes(qaGeneratorPreflight.memory.estimatedLoadBytes)}</span>
+                    <span>Available {formatBytes(qaGeneratorPreflight.memory.availableBytes)}</span>
+                    <span>{qaGeneratorPreflight.memory.fitStatus}</span>
+                  </div>
+                  <div className="qa-preflight-checks">
+                    {qaGeneratorPreflight.checks.map((check) => (
+                      <div className={`qa-preflight-check qa-preflight-check-${check.status}`} key={check.id}>
+                        <strong>{check.label}</strong>
+                        <span>{check.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="runtime-readiness-gate">{qaGeneratorPreflight.nextAction}</p>
+                </div>
+              )}
 
               {qaGeneratorSmokeProof && (
                 <div className={`qa-generator-proof qa-generator-proof-${qaGeneratorSmokeProof.status}`}>

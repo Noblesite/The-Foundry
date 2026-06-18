@@ -288,6 +288,19 @@ def run_api_workflow(tmp_path: Path) -> None:
                 )
             )
             assert runtime["ready"] is True
+            qa_preflight = assert_response(
+                client.post(
+                    "/api/v1/assembly-line/qa-generator/preflight",
+                    json={
+                        "mode": "deterministic",
+                        "modelId": "sshleifer/tiny-gpt2",
+                        "maxNewTokens": 128,
+                        "temperature": 0.1,
+                    },
+                )
+            )
+            assert qa_preflight["contractVersion"] == "foundry.qa-generator.preflight.v1"
+            assert qa_preflight["status"] == "ready"
 
             workshop = assert_response(
                 client.post(

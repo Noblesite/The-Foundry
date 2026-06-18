@@ -1103,6 +1103,20 @@ async def configure_foundry_qa_generator_runtime_endpoint(data: QAGeneratorRunti
         raise HTTPException(status_code=400, detail=str(error))
 
 
+@app.post("/api/v1/assembly-line/qa-generator/preflight")
+async def preflight_foundry_qa_generator_endpoint(data: QAGeneratorRuntimeInput):
+    try:
+        preflight = foundry_catalog_service.qa_generator.preflight(
+            mode=data.mode,
+            model_id=data.modelId,
+            max_new_tokens=data.maxNewTokens,
+            temperature=data.temperature,
+        )
+        return api_envelope(preflight)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
 @app.post("/api/v1/assembly-line/qa-generator/smoke-proof")
 async def smoke_proof_foundry_qa_generator_endpoint():
     return api_envelope(await asyncio.to_thread(foundry_catalog_service.qa_generator.smoke_proof))
