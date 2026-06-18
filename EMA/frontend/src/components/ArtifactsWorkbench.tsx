@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   AcademyAction,
+  ArchiveModelHandoff,
   Artifact,
   Construct,
   ModelArchiveEntry,
@@ -22,6 +23,7 @@ interface ArtifactsWorkbenchProps {
   workshop: Workshop;
   academyAction?: AcademyAction;
   archiveEntries: ModelArchiveEntry[];
+  handoff?: ArchiveModelHandoff | null;
   settings: WorkspaceSettings;
   onConstructLoaded: (construct: Construct, artifact: Artifact) => void;
   onArchiveEntriesChanged: (entries: ModelArchiveEntry[]) => void;
@@ -54,6 +56,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   workshop,
   academyAction,
   archiveEntries,
+  handoff,
   settings,
   onConstructLoaded,
   onArchiveEntriesChanged,
@@ -370,20 +373,23 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
             Boolean(entry.localPath)
         );
 
-  const searchModels = async () => {
+  const searchModels = async (queryOverride?: string) => {
     setIsSearchingModels(true);
     setError(null);
 
     try {
+      const query = queryOverride ?? modelQuery;
       const result = await repository.searchArchiveModels({
-        query: modelQuery,
+        query,
         pipelineTag: "text-generation",
         sort: "downloads",
         limit: 8,
         ...huggingFaceAuth,
       });
       setModelResults(result.models);
-      setSelectedModelId((current) => current || result.models[0]?.repoId || "");
+      setSelectedModelId((current) =>
+        queryOverride || current || result.models[0]?.repoId || ""
+      );
     } catch (searchError: unknown) {
       setError(searchError instanceof Error ? searchError.message : "Could not search Hugging Face models.");
     } finally {
@@ -451,8 +457,8 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     }
   };
 
-  const preflightSelectedModel = async () => {
-    if (!selectedModel) {
+  const preflightArchiveTarget = async (repoId?: string, revision?: string) => {
+    if (!repoId) {
       return;
     }
 
@@ -462,10 +468,18 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
 
     try {
       const result = await repository.preflightArchiveModel({
-        repoId: selectedModel.repoId,
-        revision: selectedModel.revision,
+        repoId,
+        revision,
         ...huggingFaceAuth,
       });
+      setModelResults((current) => {
+        const withoutDuplicate = current.filter(
+          (model) =>
+            !(model.repoId === result.model.repoId && model.revision === result.model.revision)
+        );
+        return [result.model, ...withoutDuplicate];
+      });
+      setSelectedModelId(result.model.repoId);
       setModelPreflight(result);
       setStatusText(result.message);
     } catch (preflightError: unknown) {
@@ -479,6 +493,29 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
       setIsPreflightingModel(false);
     }
   };
+
+  const preflightSelectedModel = async () => {
+    await preflightArchiveTarget(selectedModel?.repoId, selectedModel?.revision);
+  };
+
+  useEffect(() => {
+    if (!handoff) {
+      return;
+    }
+    setModelQuery(handoff.modelId);
+    setSelectedModelId(handoff.modelId);
+    setModelPreflight(null);
+    setAllowPreflightOverride(false);
+    setStatusText(
+      `${handoff.label || handoff.modelId} arrived from Materials. Archive will verify cache and download readiness.`
+    );
+    void searchModels(handoff.modelId);
+    if (handoff.preflightOnOpen) {
+      void preflightArchiveTarget(handoff.modelId, handoff.revision);
+    }
+    // Handoffs are one-shot route intents keyed by requestedAt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handoff?.requestedAt]);
 
   const retryDownloadJob = async (job: ModelDownloadJob) => {
     setStatusText(null);

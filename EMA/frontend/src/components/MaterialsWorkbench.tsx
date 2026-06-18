@@ -27,6 +27,7 @@ interface MaterialsWorkbenchProps {
   summary: SectionSummary;
   workshop: Workshop;
   academyAction?: AcademyAction;
+  onOpenArchiveModel: (modelId: string, label?: string) => void;
   onOpenAcademy: () => void;
 }
 
@@ -109,6 +110,7 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   summary,
   workshop,
   academyAction,
+  onOpenArchiveModel,
   onOpenAcademy,
 }) => {
   const [draft, setDraft] = useState<IngestMaterialRequest>({
@@ -242,6 +244,11 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
     ).length;
     return { accepted, rejected, draft, blocked };
   }, [reviewQAPairs]);
+
+  const canOpenQAGeneratorInArchive =
+    qaGeneratorPreflight?.mode === "transformers" &&
+    qaGeneratorPreflight.model &&
+    !qaGeneratorPreflight.model.cached;
 
   const updateDraft = <K extends keyof IngestMaterialRequest>(
     key: K,
@@ -709,6 +716,21 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                     ))}
                   </div>
                   <p className="runtime-readiness-gate">{qaGeneratorPreflight.nextAction}</p>
+                  {canOpenQAGeneratorInArchive && (
+                    <button
+                      className="button-secondary button-compact"
+                      type="button"
+                      onClick={() =>
+                        onOpenArchiveModel(
+                          qaGeneratorPreflight.modelId,
+                          "QA Generator"
+                        )
+                      }
+                    >
+                      <i className="fas fa-box-archive" aria-hidden="true" />
+                      Find in Archive
+                    </button>
+                  )}
                 </div>
               )}
 

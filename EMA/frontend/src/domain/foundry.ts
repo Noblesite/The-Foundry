@@ -771,6 +771,15 @@ export interface ConstructModelHandoff {
   preflightOnOpen: boolean;
 }
 
+export interface ArchiveModelHandoff {
+  modelId: string;
+  revision?: string;
+  label?: string;
+  source: "materials" | "settings" | "construct";
+  requestedAt: number;
+  preflightOnOpen: boolean;
+}
+
 export interface ModelPlatformProfile {
   os: string;
   machine: string;

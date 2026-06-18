@@ -19,6 +19,7 @@ import {
   findAcademyAction,
 } from "./domain/academyRegistry";
 import {
+  ArchiveModelHandoff,
   Artifact,
   Construct,
   ConstructModelHandoff,
@@ -215,6 +216,7 @@ const App: React.FC = () => {
   const [isCreatingWorkshop, setIsCreatingWorkshop] = useState(false);
   const [forgePreset, setForgePreset] = useState<StartForgeRequest | null>(null);
   const [academyFocusConceptId, setAcademyFocusConceptId] = useState<string | null>(null);
+  const [archiveHandoff, setArchiveHandoff] = useState<ArchiveModelHandoff | null>(null);
   const [constructHandoff, setConstructHandoff] = useState<ConstructModelHandoff | null>(null);
   const [constructRuntime, setConstructRuntime] = useState<ConstructRuntime | null>(null);
   const [foundryStatus, setFoundryStatus] = useState<FoundryRuntimeStatus | null>(null);
@@ -576,6 +578,18 @@ const App: React.FC = () => {
     setActiveSection("forge");
   };
 
+  const handleOpenArchiveWithModel = (modelId: string, label?: string) => {
+    setArchiveHandoff({
+      modelId,
+      label,
+      source: "materials",
+      requestedAt: Date.now(),
+      preflightOnOpen: true,
+    });
+    setActiveSection("artifacts");
+    setStatusToast(`${label || modelId} needs Archive cache before model-backed QA generation.`);
+  };
+
   const handleBaseModelSelected = (modelId: string) => {
     persistSettings({
       ...settings,
@@ -730,6 +744,7 @@ const App: React.FC = () => {
           summary={foundryData.sectionSummaries.materials}
           workshop={dashboardSummary.workshop}
           academyAction={getAcademyAction(ACADEMY_ACTION_IDS.materialsOpenAssemblyLine)}
+          onOpenArchiveModel={handleOpenArchiveWithModel}
           onOpenAcademy={() =>
             handleOpenAcademyAction(ACADEMY_ACTION_IDS.materialsOpenAssemblyLine)
           }
@@ -762,6 +777,7 @@ const App: React.FC = () => {
           workshop={dashboardSummary.workshop}
           academyAction={getAcademyAction(ACADEMY_ACTION_IDS.artifactsOpenPromotion)}
           archiveEntries={archiveEntries}
+          handoff={archiveHandoff}
           settings={settings}
           onConstructLoaded={handleConstructLoaded}
           onArchiveEntriesChanged={handleArchiveEntriesChanged}
