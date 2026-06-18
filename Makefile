@@ -1,6 +1,6 @@
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
-.PHONY: setup-runtime smoke backend-test build lint test check dev-backend dev-frontend health
+.PHONY: setup-runtime smoke backend-test build lint test check dev-backend dev-frontend health mvp-demo
 
 setup-runtime:
 	sh scripts/setup_runtime_dirs.sh
@@ -33,3 +33,7 @@ dev-frontend:
 
 health:
 	$(PYTHON) scripts/health_check.py
+
+mvp-demo:
+	$(PYTHON) scripts/health_check.py
+	$(PYTHON) scripts/run_mvp_manual_rehearsal.py

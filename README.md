@@ -11,12 +11,19 @@ part STEM lab, and part maker space: upload source material, shape it into
 training-ready data, run a Forge job, produce an Artifact, and talk to it
 through a Construct.
 
-## Current Status
+## Public MVP Status
 
 This repository is a public starting point cut from the original E.M.A.
-prototype. The product shell and MVP workflow contracts are in place. Heavy AI
-workers remain explicit opt-in runtime paths so a new user can run the app
-before installing local model packages.
+prototype. The product shell and MVP workflow contracts are in place, and the
+baseline app can prove the complete local learning loop without downloading
+models:
+
+```text
+Workshop -> Material -> QA Review -> JSONL Material -> Forge -> Artifact -> Construct -> Trial
+```
+
+Heavy AI workers remain explicit opt-in runtime paths so a new user can run the
+app before installing local model packages.
 
 Working now:
 
@@ -40,6 +47,9 @@ Still intentionally early:
 - Production authentication and user isolation.
 - Full migration from old E.M.A./Workspace ONE prototype modules.
 - Packaged installers and container deployment.
+
+See [Known Limitations](docs/known_limitations.md) for the current public MVP
+boundary.
 
 ## Repository Layout
 
@@ -99,6 +109,16 @@ From the repository root, verify the public baseline:
 make check
 ```
 
+With the backend running, prove the live MVP handoffs:
+
+```bash
+make mvp-demo
+```
+
+That command imports a tiny Material, creates reviewed QA, exports JSONL,
+simulates a Forge, creates an Artifact, loads Construct, saves a Trial, and
+prints the created IDs. It does not download model weights.
+
 ## Run Locally
 
 Start the backend:
@@ -131,6 +151,8 @@ The frontend can run fully against mock data by setting
 testing live Construct runtime/chat endpoints. Use `VITE_FOUNDRY_DATA_SOURCE=api`
 to hydrate the full console from FastAPI.
 
+For a guided walkthrough, use the [MVP Demo Script](docs/mvp_demo_script.md).
+
 ## Environment
 
 Copy the examples when you need local configuration:
@@ -161,6 +183,7 @@ make smoke
 make build
 make lint
 make health
+make mvp-demo
 make check
 ```
 
@@ -181,6 +204,8 @@ The Foundry uses domain terms that support the learn-by-building experience:
 
 - [Product Architecture](docs/the_foundry_product_architecture.md)
 - [First-Run Setup](docs/first_run_setup.md)
+- [MVP Demo Script](docs/mvp_demo_script.md)
+- [Known Limitations](docs/known_limitations.md)
 - [Catalog Persistence](docs/the_foundry_catalog_persistence.md)
 - [Forge Runtime Adapter](docs/forge_runtime_adapter.md)
 - [MVP Missing Features](docs/mvp_missing_features.md)
