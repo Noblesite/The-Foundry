@@ -164,6 +164,7 @@ def exercise_model_backed_qa_generation(
                     "question": "What rescue tool does Marshall use?",
                     "answer": "Marshall uses a water cannon during rescues.",
                     "confidence": 0.93,
+                    "qaType": "behavior",
                 }
             ]
         )
@@ -229,9 +230,15 @@ def exercise_model_backed_qa_generation(
     metadata = qa_pairs[0]["generationMetadata"]
     assert metadata["mode"] == "transformers"
     assert metadata["strategy"] == "model-json"
-    assert metadata["prompt"]["templateVersion"] == "foundry.qa-prompt.source-context.v1"
+    assert metadata["prompt"]["templateVersion"] == "foundry.qa-prompt.source-context.v2"
+    assert metadata["qaType"] == "behavior"
+    assert metadata["source"]["workshopSubject"] == "Foundry"
+    assert metadata["source"]["voiceTarget"] == "Engineer"
     assert qa_pairs[0]["qualityGate"]["metrics"]["sourceOverlap"] > 0
+    assert qa_pairs[0]["qualityGate"]["metrics"]["qaType"] == "behavior"
     assert captured_prompts
+    assert "Workshop subject: Foundry" in captured_prompts[0]["prompt"]
+    assert "Target voice/persona: Engineer" in captured_prompts[0]["prompt"]
     assert "Marshall uses a water cannon" in captured_prompts[0]["prompt"]
 
 

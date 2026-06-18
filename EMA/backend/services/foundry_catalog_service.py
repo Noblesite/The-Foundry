@@ -1239,7 +1239,7 @@ class FoundryCatalogService:
 
         with self._connect() as connection:
             workshop = connection.execute(
-                "SELECT id FROM workshops WHERE id = ?",
+                "SELECT * FROM workshops WHERE id = ?",
                 (workshop_id,),
             ).fetchone()
             if workshop is None:
@@ -1811,7 +1811,7 @@ class FoundryCatalogService:
 
         with self._connect() as connection:
             workshop = connection.execute(
-                "SELECT id FROM workshops WHERE id = ?",
+                "SELECT * FROM workshops WHERE id = ?",
                 (workshop_id,),
             ).fetchone()
             if workshop is None:
@@ -1896,7 +1896,7 @@ class FoundryCatalogService:
 
         with self._connect() as connection:
             workshop = connection.execute(
-                "SELECT id FROM workshops WHERE id = ?",
+                "SELECT * FROM workshops WHERE id = ?",
                 (workshop_id,),
             ).fetchone()
             if workshop is None:
@@ -2730,7 +2730,7 @@ class FoundryCatalogService:
 
         with self._connect() as connection:
             workshop = connection.execute(
-                "SELECT id FROM workshops WHERE id = ?",
+                "SELECT * FROM workshops WHERE id = ?",
                 (workshop_id,),
             ).fetchone()
             if workshop is None:
@@ -2750,6 +2750,7 @@ class FoundryCatalogService:
             material_outputs = [
                 self._prepare_material_output(
                     material=row,
+                    workshop=workshop,
                     run_id=run_id,
                     chunk_size_tokens=chunk_size_tokens,
                     chunk_overlap_tokens=chunk_overlap_tokens,
@@ -2897,6 +2898,7 @@ class FoundryCatalogService:
     def _prepare_material_output(
         self,
         material: sqlite3.Row,
+        workshop: sqlite3.Row,
         run_id: str,
         chunk_size_tokens: int,
         chunk_overlap_tokens: int,
@@ -2914,7 +2916,7 @@ class FoundryCatalogService:
                 for index in range(self._estimate_chunks(material, chunk_size_tokens))
             ]
 
-        qa_pairs = self._build_qa_pairs(material, run_id, chunks, qa_pairs_per_source)
+        qa_pairs = self._build_qa_pairs(material, workshop, run_id, chunks, qa_pairs_per_source)
         return {
             "material_id": material["id"],
             "chunks": chunks,
@@ -3054,6 +3056,7 @@ class FoundryCatalogService:
     def _build_qa_pairs(
         self,
         material: sqlite3.Row,
+        workshop: sqlite3.Row,
         run_id: str,
         chunks: List[Dict[str, Any]],
         qa_pairs_per_source: int,
@@ -3071,6 +3074,8 @@ class FoundryCatalogService:
                     chunk_id=chunk["id"],
                     chunk_text=chunk["text"],
                     qa_pair_count=remaining_count,
+                    workshop_subject=workshop["subject"],
+                    voice_target=workshop["voice_target"],
                 )
             )
             qa_pairs.extend(generated_rows[:remaining_count])

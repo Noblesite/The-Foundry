@@ -337,7 +337,10 @@ def run_material_import_contract_check() -> int:
 
     required_qa_generator_patterns = (
         "foundry.qa-generation.v1",
-        "foundry.qa-prompt.source-context.v1",
+        "foundry.qa-prompt.source-context.v2",
+        "qaType",
+        "workshopSubject",
+        "voiceTarget",
         "foundry.qa-generator.runtime.v1",
         "foundry.qa-generator.smoke-proof.v1",
         "foundry.qa-generator.quality-proof.v1",

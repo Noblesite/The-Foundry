@@ -72,6 +72,28 @@ const inferMaterialKindFromFile = (fileName: string): ImportMaterialFileRequest[
 const materialNameFromFile = (fileName: string) =>
   fileName.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim();
 
+const qaTypeFromMetadata = (qaPair: QAPair): string | undefined => {
+  const metadataType = qaPair.generationMetadata?.qaType;
+  if (typeof metadataType === "string" && metadataType.trim()) {
+    return metadataType;
+  }
+  const metricType = qaPair.qualityGate?.metrics?.qaType;
+  if (typeof metricType === "string" && metricType.trim()) {
+    return metricType;
+  }
+  return undefined;
+};
+
+const promptVersionFromMetadata = (qaPair: QAPair): string | undefined => {
+  const prompt = qaPair.generationMetadata?.prompt;
+  if (prompt && typeof prompt === "object" && "templateVersion" in prompt) {
+    const templateVersion = (prompt as { templateVersion?: unknown }).templateVersion;
+    return typeof templateVersion === "string" ? templateVersion : undefined;
+  }
+  const metricVersion = qaPair.qualityGate?.metrics?.promptTemplateVersion;
+  return typeof metricVersion === "string" ? metricVersion : undefined;
+};
+
 const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   repository,
   summary,
@@ -649,9 +671,13 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                           <span className="empty-state">No cached model row generated.</span>
                         )}
                         <div className="material-meta">
+                          {result.quality.qaType && <span>{result.quality.qaType}</span>}
                           <span>{Math.round(result.quality.confidence * 100)}% confidence</span>
                           <span>{Math.round(result.quality.sourceOverlap * 100)}% overlap</span>
                           <span>{result.quality.answerLength} words</span>
+                          {result.quality.groundedTerms && result.quality.groundedTerms.length > 0 && (
+                            <span>Grounded: {result.quality.groundedTerms.join(", ")}</span>
+                          )}
                         </div>
                       </article>
                     ))}
@@ -876,7 +902,16 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                           quality blocked
                         </span>
                       )}
-                      {qaPair.reviewedAt && <span>{new Date(qaPair.reviewedAt).toLocaleTimeString()}</span>}
+                      {qaTypeFromMetadata(qaPair) && (
+                        <span className="qa-quality-badge">
+                          {qaTypeFromMetadata(qaPair)}
+                        </span>
+                      )}
+                      {qaPair.reviewedAt && (
+                        <span className="qa-reviewed-time">
+                          {new Date(qaPair.reviewedAt).toLocaleTimeString()}
+                        </span>
+                      )}
                     </div>
                     {qaPair.qualityGate?.status === "blocked" && (
                       <p className="qa-quality-note">
@@ -890,6 +925,20 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                         )}
                       </p>
                     )}
+                    <div className="qa-quality-learning-row">
+                      <span>
+                        QA type teaches the generator what kind of example this row is meant to become.
+                      </span>
+                      {promptVersionFromMetadata(qaPair) && (
+                        <span>Prompt: {promptVersionFromMetadata(qaPair)}</span>
+                      )}
+                      {qaPair.qualityGate?.metrics?.groundedTerms &&
+                        qaPair.qualityGate.metrics.groundedTerms.length > 0 && (
+                          <span>
+                            Grounded terms: {qaPair.qualityGate.metrics.groundedTerms.join(", ")}
+                          </span>
+                        )}
+                    </div>
                     <label className="field-label" htmlFor={`qa-question-${qaPair.id}`}>
                       Question
                     </label>

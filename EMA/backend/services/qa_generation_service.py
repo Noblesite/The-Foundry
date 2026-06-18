@@ -14,7 +14,15 @@ from uuid import uuid4
 from .qa_quality_service import QAQualityEvaluator
 
 QA_GENERATION_CONTRACT_VERSION = "foundry.qa-generation.v1"
-QA_PROMPT_TEMPLATE_VERSION = "foundry.qa-prompt.source-context.v1"
+QA_PROMPT_TEMPLATE_VERSION = "foundry.qa-prompt.source-context.v2"
+QA_TYPE_SEQUENCE = (
+    "factual",
+    "behavior",
+    "style",
+    "cause-effect",
+    "correction",
+    "safety-boundary",
+)
 
 
 @dataclass(frozen=True)
@@ -24,6 +32,8 @@ class QAGenerationRequest:
     chunk_id: str
     chunk_text: str
     qa_pair_count: int
+    workshop_subject: str = ""
+    voice_target: str = ""
 
 
 class QAGenerationService:
@@ -201,6 +211,7 @@ class QAGenerationService:
             answer = str(row.get("answer", "")).strip()
             if not question or not answer:
                 continue
+            qa_type = self._normalize_qa_type(str(row.get("qaType") or row.get("type") or ""))
             rows.append(
                 self._row(
                     request=request,
@@ -210,6 +221,7 @@ class QAGenerationService:
                     strategy="model-json",
                     model_id=self.model_id,
                     row_index=index,
+                    qa_type=qa_type or self._qa_type_for_index(index),
                 )
             )
         return rows
@@ -254,11 +266,10 @@ class QAGenerationService:
         key_terms = self._key_terms(compact)
         rows = []
         for index in range(max(1, request.qa_pair_count)):
+            qa_type = self._qa_type_for_index(index)
             answer = sentences[index % len(sentences)] if sentences else compact[:800]
             term = key_terms[index % len(key_terms)] if key_terms else "this source"
-            question = (
-                f"What should a model learn about {term} from {request.material_name}?"
-            )
+            question = self._deterministic_question(request, term, qa_type)
             rows.append(
                 self._row(
                     request=request,
@@ -268,6 +279,7 @@ class QAGenerationService:
                     strategy="context-sentence",
                     model_id="deterministic-context-generator",
                     row_index=index,
+                    qa_type=qa_type,
                     fallback_reason=fallback_reason,
                     requested_model_id=requested_model_id,
                 )
@@ -284,15 +296,18 @@ class QAGenerationService:
         strategy: str,
         model_id: str,
         row_index: int,
+        qa_type: str,
         fallback_reason: str | None = None,
         requested_model_id: str | None = None,
     ) -> Dict[str, Any]:
         prompt = self._prompt(request)
+        compact_source = " ".join(request.chunk_text.split())
         metadata = {
             "contractVersion": QA_GENERATION_CONTRACT_VERSION,
             "mode": self.mode,
             "modelId": model_id,
             "strategy": strategy,
+            "qaType": qa_type,
             "rowIndex": row_index,
             "prompt": {
                 "templateVersion": QA_PROMPT_TEMPLATE_VERSION,
@@ -304,8 +319,11 @@ class QAGenerationService:
                 "chunkId": request.chunk_id,
                 "materialName": request.material_name,
                 "materialKind": request.material_kind,
+                "workshopSubject": request.workshop_subject,
+                "voiceTarget": request.voice_target,
                 "characterCount": len(request.chunk_text),
                 "tokenEstimate": len(request.chunk_text.split()),
+                "fingerprint": sha256(compact_source.encode("utf-8")).hexdigest()[:16],
             },
         }
         if fallback_reason:
@@ -322,15 +340,65 @@ class QAGenerationService:
         }
 
     def _prompt(self, request: QAGenerationRequest) -> str:
+        subject = request.workshop_subject or "the Workshop subject"
+        voice_target = request.voice_target or "the target behavior"
+        requested_types = ", ".join(QA_TYPE_SEQUENCE)
         return (
-            "You are The Foundry QA generator. Create high quality training examples "
-            "from the source context. Return only JSON as an array of objects with "
-            "question, answer, and confidence fields.\n\n"
+            "You are The Foundry QA generator. Create high quality, grounded "
+            "instruction-tuning examples from the source context. The examples "
+            "should help a learner understand why source quality matters while "
+            "also producing rows that can become training Material after human "
+            "review.\n\n"
+            "Return only JSON as an array of objects. Each object must contain "
+            "question, answer, confidence, and qaType fields. Use concise answers "
+            "grounded only in the source. Do not invent facts. Prefer a diverse "
+            f"mix of qaType values: {requested_types}.\n\n"
             f"Prompt template: {QA_PROMPT_TEMPLATE_VERSION}\n"
+            f"Workshop subject: {subject}\n"
+            f"Target voice/persona: {voice_target}\n"
             f"Material: {request.material_name}\n"
             f"Material kind: {request.material_kind}\n"
             f"Requested rows: {request.qa_pair_count}\n"
             f"Source context:\n{request.chunk_text[:4000]}\n"
+        )
+
+    def _qa_type_for_index(self, index: int) -> str:
+        return QA_TYPE_SEQUENCE[index % len(QA_TYPE_SEQUENCE)]
+
+    def _normalize_qa_type(self, value: str) -> str:
+        normalized = value.strip().lower().replace("_", "-")
+        aliases = {
+            "fact": "factual",
+            "facts": "factual",
+            "persona": "style",
+            "character": "behavior",
+            "causal": "cause-effect",
+            "cause": "cause-effect",
+            "safety": "safety-boundary",
+            "boundary": "safety-boundary",
+        }
+        normalized = aliases.get(normalized, normalized)
+        return normalized if normalized in QA_TYPE_SEQUENCE else ""
+
+    def _deterministic_question(
+        self,
+        request: QAGenerationRequest,
+        term: str,
+        qa_type: str,
+    ) -> str:
+        subject = request.workshop_subject or request.material_name
+        voice_target = request.voice_target or "the model"
+        templates = {
+            "factual": f"What fact about {term} should the model learn from {request.material_name}?",
+            "behavior": f"How should {voice_target} behave when {term} appears in {subject} source material?",
+            "style": f"What style or voice cue should {voice_target} learn from the source context about {term}?",
+            "cause-effect": f"Why does {term} matter for the target behavior in {subject}?",
+            "correction": f"What misconception about {term} should the training data correct?",
+            "safety-boundary": f"What grounded boundary should the model keep when answering about {term}?",
+        }
+        return templates.get(
+            qa_type,
+            f"What should a model learn about {term} from {request.material_name}?",
         )
 
     def _parse_model_rows(self, value: str) -> List[Dict[str, Any]]:
@@ -403,6 +471,8 @@ class QAGenerationService:
                 "he often recovers from clumsy moments by focusing on helping others."
             ),
             qa_pair_count=1,
+            workshop_subject="Paw Patrol rescue behavior",
+            voice_target="Marshall",
         )
 
     def _quality_proof_result(

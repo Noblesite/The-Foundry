@@ -4703,7 +4703,7 @@ input[type="checkbox"] {
   gap: 0.5rem;
 }
 
-.qa-review-card-header > span:last-child {
+.qa-reviewed-time {
   color: var(--text-dim);
   font-size: 0.7rem;
 }
@@ -4737,6 +4737,22 @@ input[type="checkbox"] {
   color: var(--forge-orange);
   font-size: 0.76rem;
   line-height: 1.45;
+}
+
+.qa-quality-learning-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+}
+
+.qa-quality-learning-row span {
+  border: 1px solid rgba(119, 140, 152, 0.2);
+  border-radius: 8px;
+  padding: 0.36rem 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  background: rgba(13, 17, 23, 0.42);
 }
 
 .qa-review-actions {

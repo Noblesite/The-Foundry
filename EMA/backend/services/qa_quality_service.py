@@ -44,6 +44,13 @@ class QAQualityEvaluator:
             "answerLength": len(answer.split()),
             "questionFormed": question_score == 1.0,
             "fallback": fallback_penalty > 0,
+            "groundedTerms": sorted(source_terms.intersection(answer_terms))[:6],
+            "qaType": generation_metadata.get("qaType", "unspecified"),
+            "promptTemplateVersion": (
+                generation_metadata.get("prompt", {}).get("templateVersion")
+                if isinstance(generation_metadata.get("prompt"), dict)
+                else None
+            ),
         }
 
     def empty(self) -> Dict[str, Any]:
@@ -54,6 +61,9 @@ class QAQualityEvaluator:
             "answerLength": 0,
             "questionFormed": False,
             "fallback": True,
+            "groundedTerms": [],
+            "qaType": "none",
+            "promptTemplateVersion": None,
         }
 
     def _key_terms(self, text: str) -> list[str]:

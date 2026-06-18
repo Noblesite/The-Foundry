@@ -173,6 +173,9 @@ export interface QAPair {
       answerLength: number;
       questionFormed: boolean;
       fallback: boolean;
+      groundedTerms?: string[];
+      qaType?: string;
+      promptTemplateVersion?: string | null;
     };
   };
   reviewStatus: QAReviewStatus;
@@ -231,6 +234,9 @@ export interface QAGeneratorQualityProofResult {
     answerLength: number;
     questionFormed: boolean;
     fallback: boolean;
+    groundedTerms?: string[];
+    qaType?: string;
+    promptTemplateVersion?: string | null;
   };
 }
 
