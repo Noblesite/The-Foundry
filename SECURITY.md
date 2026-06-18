@@ -31,6 +31,10 @@ Include:
 - Hugging Face tokens and other credentials must be provided through local
   environment variables.
 - The default Construct runtime is simulated.
+- Diagnostics are designed to redact sensitive values before export, but users
+  should still review bundles before sharing them.
+- Source materials, generated datasets, model weights, adapters, and local
+  SQLite catalogs should stay out of public repositories.
 
 Before production deployment, The Foundry needs explicit authentication,
 authorization, audit logging, CORS restrictions, upload scanning, rate limits,

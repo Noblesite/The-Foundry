@@ -75,15 +75,19 @@ The central risk is that several core actions still look product-complete while 
 
 ## MVP Boundary Snapshot
 
-This is the current scope line after the recent QA and runtime slices.
+This is the current scope line after the public MVP release-prep pass.
 
-MVP-critical remaining work:
+MVP-critical work now covered:
 
-- Prove one real, repeatable Material -> QA -> JSONL -> Forge -> Artifact -> Construct -> Trial path from a clean checkout.
-- Keep one tiny cached model path as the official validation path; larger or better models are post-MVP unless they are needed to prove the same path.
-- Keep the QA quality evaluator lightweight and deterministic enough for local tests; model-judge ensembles are post-MVP.
+- One repeatable Material -> QA -> JSONL -> Forge -> Artifact -> Construct -> Trial path is proven by isolated tests and `make mvp-demo`.
+- The official proof path stays tiny and does not require model downloads.
+- QA quality checks stay lightweight enough for local tests; model-judge ensembles are post-MVP.
+- Setup, health checks, first-run docs, and demo docs are strong enough for another developer to reproduce the demo without tribal knowledge.
+
+MVP guardrails to keep protected:
+
 - Make every simulated/fallback state unmistakable before a user can export, train, load, or evaluate.
-- Keep setup, health checks, and first-run docs strong enough that another developer can reproduce the demo without tribal knowledge.
+- Keep local data, token handling, diagnostics redaction, file limits, and path restrictions explicit.
 
 Do not add before MVP unless one of the items above is blocked:
 
@@ -314,7 +318,7 @@ These are valid Foundry goals, but they are scope creep before the core loop is 
 
 ## Recommended MVP Sequence
 
-1. Do one human read-through of the public README, MVP Demo Script, and Known Limitations before tagging the public MVP.
+1. Tag the prepared public MVP release after one last clean check.
 
 ## MVP Definition Of Done
 

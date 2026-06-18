@@ -21,6 +21,12 @@ Run the public baseline before opening a pull request:
 make check
 ```
 
+To prove the public MVP handoff path against a running backend:
+
+```bash
+make mvp-demo
+```
+
 ## Local App
 
 Backend:
