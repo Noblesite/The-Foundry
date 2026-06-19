@@ -49,6 +49,7 @@ import {
   LoadConstructRuntimeRequest,
   ModelDownloadJobDto,
   MaterialChunkDto,
+  PreviewWebsiteMaterialRequest,
   QAPairDto,
   QAGeneratorPreflightDto,
   QAGeneratorQualityProofDto,
@@ -109,6 +110,7 @@ import {
   QAGeneratorSmokeProof,
   SectionSummary,
   Trial,
+  WebsiteMaterialPreview,
   Workshop,
 } from "../domain/foundry";
 import apiClient from "../managers/axiosConfig";
@@ -291,6 +293,10 @@ export interface FoundryRepository {
     workshopId: string,
     request: IngestMaterialRequest
   ) => Promise<MaterialSource>;
+  previewWebsiteMaterial: (
+    workshopId: string,
+    request: PreviewWebsiteMaterialRequest
+  ) => Promise<WebsiteMaterialPreview>;
   importMaterialFile: (
     workshopId: string,
     request: ImportMaterialFileRequest
@@ -1015,6 +1021,18 @@ export const mockFoundryRepository: FoundryRepository = {
     mockMaterialSources.unshift(material);
     return material;
   },
+  previewWebsiteMaterial: async (_workshopId, request) => ({
+    contractVersion: "foundry.material.website-preview.v1",
+    sourceUrl: request.sourceUri,
+    title: "Mock website snapshot",
+    description: "Mock preview generated without network access.",
+    textPreview:
+      "Marshall uses a water cannon during rescue practice. He helps Adventure Bay with ladder safety and teamwork.",
+    textLength: 103,
+    estimatedTokenCount: 16,
+    fetchLimitBytes: 2 * 1024 * 1024,
+    createdAt: new Date().toISOString(),
+  }),
   importMaterialFile: async (_workshopId, request) => {
     const material: MaterialSource = {
       id: `mat-${request.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
@@ -2697,6 +2715,13 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.post<ApiEnvelope<MaterialSource>>(
         foundryApiRoutes.materials(workshopId),
+        request
+      )
+    ),
+  previewWebsiteMaterial: async (workshopId, request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<WebsiteMaterialPreview>>(
+        foundryApiRoutes.previewWebsiteMaterial(workshopId),
         request
       )
     ),

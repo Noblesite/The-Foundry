@@ -39,6 +39,7 @@ import {
   Trial,
   TrialVerdict,
   NavigationSection,
+  WebsiteMaterialPreview,
   WorkshopStatus,
 } from "../domain/foundry";
 
@@ -55,6 +56,8 @@ export const foundryApiRoutes = {
   workshops: `${FOUNDRY_API_VERSION}/workshops`,
   workshop: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}`,
   materials: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/materials`,
+  previewWebsiteMaterial: (workshopId: string) =>
+    `${FOUNDRY_API_VERSION}/workshops/${workshopId}/materials/website-preview`,
   importMaterialFile: (workshopId: string) =>
     `${FOUNDRY_API_VERSION}/workshops/${workshopId}/materials/import-file`,
   assemblyLines: (workshopId: string) =>
@@ -299,6 +302,7 @@ export type QAGeneratorRuntimeDto = QAGeneratorRuntime;
 export type QAGeneratorPreflightDto = QAGeneratorPreflightResult;
 export type QAGeneratorSmokeProofDto = QAGeneratorSmokeProof;
 export type QAGeneratorQualityProofDto = QAGeneratorQualityProof;
+export type WebsiteMaterialPreviewDto = WebsiteMaterialPreview;
 
 export interface ForgeSmokeProofRequest {
   runTraining: boolean;
@@ -363,6 +367,10 @@ export interface IngestMaterialRequest {
   kind: MaterialKind;
   sourceUri: string;
   metadata?: Record<string, string>;
+}
+
+export interface PreviewWebsiteMaterialRequest {
+  sourceUri: string;
 }
 
 export interface ImportMaterialFileRequest {

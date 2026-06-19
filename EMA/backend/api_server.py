@@ -55,6 +55,9 @@ class RegisterMaterialInput(BaseModel):
     kind: Literal["csv", "pdf", "website", "transcript", "video-transcript", "text", "jsonl"]
     sourceUri: str
 
+class WebsiteMaterialPreviewInput(BaseModel):
+    sourceUri: str
+
 class StartAssemblyLineInput(BaseModel):
     materialSourceIds: list[str]
     chunkSizeTokens: int
@@ -1046,6 +1049,20 @@ async def register_foundry_material_endpoint(workshop_id: str, data: RegisterMat
         return api_envelope(material)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error))
+
+
+@app.post("/api/v1/workshops/{workshop_id}/materials/website-preview")
+async def preview_foundry_website_material_endpoint(workshop_id: str, data: WebsiteMaterialPreviewInput):
+    source_uri = data.sourceUri.strip()
+    if not source_uri:
+        raise HTTPException(status_code=400, detail="Website source cannot be empty.")
+
+    try:
+        return api_envelope(
+            await foundry_catalog_service.preview_website_material(source_url=source_uri)
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.post("/api/v1/workshops/{workshop_id}/materials/import-file")

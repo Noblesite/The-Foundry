@@ -1963,6 +1963,33 @@ class FoundryCatalogService:
             ).fetchone()
             return self._material_from_row(row)
 
+    async def preview_website_material(
+        self,
+        *,
+        source_url: str,
+    ) -> Dict[str, Any]:
+        return await self._run_query(lambda: self._preview_website_material_sync(source_url))
+
+    def _preview_website_material_sync(self, source_url: str) -> Dict[str, Any]:
+        safe_url = self._validate_website_url(source_url)
+        html = self._fetch_website_html(safe_url)
+        extracted = self._extract_website_text(html)
+        text = extracted["text"].strip()
+        if not text:
+            raise ValueError("Website did not contain readable text for the Assembly Line.")
+        preview_text = text[:1600].rstrip()
+        return {
+            "contractVersion": "foundry.material.website-preview.v1",
+            "sourceUrl": safe_url,
+            "title": extracted["title"],
+            "description": extracted["description"],
+            "textPreview": preview_text,
+            "textLength": len(text),
+            "estimatedTokenCount": len(text.split()),
+            "fetchLimitBytes": self._website_fetch_max_bytes(),
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        }
+
     async def import_material_file(
         self,
         workshop_id: str,

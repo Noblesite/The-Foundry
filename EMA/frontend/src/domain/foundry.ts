@@ -128,6 +128,18 @@ export interface MaterialSet {
   sources: MaterialSource[];
 }
 
+export interface WebsiteMaterialPreview {
+  contractVersion: "foundry.material.website-preview.v1";
+  sourceUrl: string;
+  title: string;
+  description: string;
+  textPreview: string;
+  textLength: number;
+  estimatedTokenCount: number;
+  fetchLimitBytes: number;
+  createdAt: string;
+}
+
 export interface AssemblyLineRun {
   id: string;
   workshopId: string;

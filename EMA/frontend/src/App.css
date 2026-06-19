@@ -3499,6 +3499,29 @@ input[type="checkbox"] {
   box-shadow: var(--shadow-orange);
 }
 
+.website-preview-card {
+  display: grid;
+  gap: 0.62rem;
+  border: 1px solid rgba(0, 212, 255, 0.22);
+  border-radius: 8px;
+  padding: 0.72rem;
+  background:
+    linear-gradient(135deg, rgba(0, 212, 255, 0.06), rgba(13, 17, 23, 0.16)),
+    rgba(13, 17, 23, 0.58);
+}
+
+.website-preview-card blockquote {
+  max-height: 12rem;
+  margin: 0;
+  overflow: auto;
+  border-left: 2px solid rgba(0, 212, 255, 0.42);
+  padding: 0.55rem 0.68rem;
+  background: rgba(13, 17, 23, 0.44);
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 .qa-generator-preflight {
   display: grid;
   gap: 0.62rem;

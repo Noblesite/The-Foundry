@@ -167,6 +167,17 @@ def exercise_website_material_snapshot(
               </body>
             </html>
         """
+        preview = assert_response(
+            client.post(
+                f"/api/v1/workshops/{workshop_id}/materials/website-preview",
+                json={"sourceUri": "https://example.test/marshall"},
+            )
+        )
+        assert preview["contractVersion"] == "foundry.material.website-preview.v1"
+        assert preview["sourceUrl"] == "https://example.test/marshall"
+        assert preview["title"] == "Marshall Rescue Wiki"
+        assert "Marshall uses a water cannon" in preview["textPreview"]
+
         material = assert_response(
             client.post(
                 f"/api/v1/workshops/{workshop_id}/materials",

@@ -17,6 +17,7 @@ import {
   QAGeneratorRuntime,
   QAGeneratorSmokeProof,
   SectionSummary,
+  WebsiteMaterialPreview,
   Workshop,
 } from "../domain/foundry";
 import { FoundryRepository } from "../services/foundryRepository";
@@ -141,6 +142,8 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [websitePreview, setWebsitePreview] = useState<WebsiteMaterialPreview | null>(null);
+  const [isPreviewingWebsite, setIsPreviewingWebsite] = useState(false);
   const [qaGeneratorRuntime, setQAGeneratorRuntime] = useState<QAGeneratorRuntime | null>(null);
   const [qaGeneratorDraft, setQAGeneratorDraft] = useState<ConfigureQAGeneratorRuntimeRequest>({
     mode: "deterministic",
@@ -249,11 +252,17 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
     qaGeneratorPreflight?.mode === "transformers" &&
     qaGeneratorPreflight.model &&
     !qaGeneratorPreflight.model.cached;
+  const isWebsiteMaterial = draft.kind === "website" && !selectedFile;
+  const normalizedWebsiteSource = draft.sourceUri.trim();
+  const hasFreshWebsitePreview =
+    !isWebsiteMaterial ||
+    Boolean(websitePreview && websitePreview.sourceUrl === normalizedWebsiteSource);
 
   const updateDraft = <K extends keyof IngestMaterialRequest>(
     key: K,
     value: IngestMaterialRequest[K]
   ) => {
+    setWebsitePreview(null);
     setDraft((current) => ({ ...current, [key]: value }));
   };
 
@@ -290,6 +299,9 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
       if (!trimmedName) {
         throw new Error("Material name cannot be empty.");
       }
+      if (isWebsiteMaterial && !hasFreshWebsitePreview) {
+        throw new Error("Preview this website before staging it as Material.");
+      }
       const material = selectedFile
         ? await repository.importMaterialFile(workshop.id, {
             name: trimmedName,
@@ -317,6 +329,7 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   const handleFileSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] || null;
     setSelectedFile(file);
+    setWebsitePreview(null);
     if (!file) {
       return;
     }
@@ -327,6 +340,27 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
       kind: inferredKind,
       sourceUri: "",
     }));
+  };
+
+  const previewWebsiteMaterial = async () => {
+    const sourceUri = draft.sourceUri.trim();
+    if (!sourceUri) {
+      setError("Website source cannot be empty.");
+      return;
+    }
+
+    setIsPreviewingWebsite(true);
+    setWebsitePreview(null);
+    setError(null);
+
+    try {
+      const preview = await repository.previewWebsiteMaterial(workshop.id, { sourceUri });
+      setWebsitePreview(preview);
+    } catch (previewError: unknown) {
+      setError(previewError instanceof Error ? previewError.message : "Could not preview website Material.");
+    } finally {
+      setIsPreviewingWebsite(false);
+    }
   };
 
   const startAssemblyLine = async () => {
@@ -564,12 +598,56 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
             type="text"
             value={draft.sourceUri}
             onChange={(event) => updateDraft("sourceUri", event.target.value)}
-            placeholder="runtime/materials/sources/episode-summaries.csv"
+            placeholder={
+              draft.kind === "website"
+                ? "https://example.com/source-page"
+                : "runtime/materials/sources/episode-summaries.csv"
+            }
             required={!selectedFile}
             disabled={Boolean(selectedFile)}
           />
+          {isWebsiteMaterial && (
+            <>
+              <div className="runtime-action-row">
+                <button
+                  className="button-secondary button-compact"
+                  type="button"
+                  disabled={isPreviewingWebsite || !normalizedWebsiteSource}
+                  onClick={previewWebsiteMaterial}
+                >
+                  <i className="fas fa-eye" aria-hidden="true" />
+                  {isPreviewingWebsite ? "Previewing" : "Preview Scrape"}
+                </button>
+                <span className="selection-count">
+                  {hasFreshWebsitePreview ? "Preview ready" : "Preview required"}
+                </span>
+              </div>
+              {websitePreview && (
+                <article className="website-preview-card" aria-label="Website scrape preview">
+                  <div className="runtime-readiness-header">
+                    <div>
+                      <span className="panel-kicker">Website Preview</span>
+                      <strong>{websitePreview.title || "Untitled page"}</strong>
+                      <p>{websitePreview.description || websitePreview.sourceUrl}</p>
+                    </div>
+                    <span className="status-badge is-active">ready</span>
+                  </div>
+                  <div className="material-meta">
+                    <span>{websitePreview.estimatedTokenCount.toLocaleString()} tokens</span>
+                    <span>{websitePreview.textLength.toLocaleString()} chars</span>
+                    <span>{formatBytes(websitePreview.fetchLimitBytes)} limit</span>
+                  </div>
+                  <blockquote>{websitePreview.textPreview}</blockquote>
+                </article>
+              )}
+            </>
+          )}
 
-          <button className="button-primary" type="submit" disabled={isSaving}>
+          <button
+            className="button-primary"
+            type="submit"
+            disabled={isSaving || (isWebsiteMaterial && !hasFreshWebsitePreview)}
+          >
             <i className="fas fa-box-archive" aria-hidden="true" />
             {isSaving ? "Staging" : selectedFile ? "Import Material" : "Stage Material"}
           </button>

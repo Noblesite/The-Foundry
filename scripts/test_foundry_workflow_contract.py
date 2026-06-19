@@ -136,6 +136,15 @@ async def exercise_website_material_snapshot(
               </body>
             </html>
         """
+        preview = await catalog.preview_website_material(
+            source_url="https://example.test/marshall"
+        )
+        assert preview["contractVersion"] == "foundry.material.website-preview.v1"
+        assert preview["sourceUrl"] == "https://example.test/marshall"
+        assert preview["title"] == "Marshall Rescue Wiki"
+        assert "Marshall uses a water cannon" in preview["textPreview"]
+        assert preview["estimatedTokenCount"] > 0
+
         material = await catalog.register_material(
             workshop_id=workshop_id,
             name="Marshall Wiki Snapshot",
