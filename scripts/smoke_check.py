@@ -329,6 +329,11 @@ def run_material_import_contract_check() -> int:
         "update_qa_pair_review",
         "review_status IN ('accepted', 'edited')",
         "\"reviewStatus\": row[\"review_status\"]",
+        "_snapshot_website_source",
+        "_validate_website_url",
+        "_fetch_website_html",
+        "_extract_website_text",
+        "FOUNDRY_WEBSITE_FETCH_MAX_BYTES",
     )
     missing_service = [
         pattern for pattern in required_service_patterns if pattern not in service_source

@@ -111,6 +111,63 @@ async def exercise_material_ingestion_formats(
         assert material["expected"] in chunk_text
 
 
+async def exercise_website_material_snapshot(
+    catalog: FoundryCatalogService,
+    workshop_id: str,
+) -> None:
+    original_validate = catalog._validate_website_url
+    original_fetch = catalog._fetch_website_html
+    try:
+        catalog._validate_website_url = lambda source_url: source_url
+        catalog._fetch_website_html = lambda _source_url: """
+            <html>
+              <head>
+                <title>Marshall Rescue Wiki</title>
+                <meta name="description" content="Rescue notes for Marshall." />
+                <script>window.noisy = true;</script>
+              </head>
+              <body>
+                <nav>Ignore navigation chrome</nav>
+                <main>
+                  <h1>Marshall Rescue Profile</h1>
+                  <p>Marshall uses a water cannon during rescue practice.</p>
+                  <p>He helps Adventure Bay with ladder safety.</p>
+                </main>
+              </body>
+            </html>
+        """
+        material = await catalog.register_material(
+            workshop_id=workshop_id,
+            name="Marshall Wiki Snapshot",
+            kind="website",
+            source_uri="https://example.test/marshall",
+        )
+        assert material["kind"] == "website"
+        assert material["sourceUri"].startswith("runtime/")
+        assert material["sourceUri"].endswith(".txt")
+        snapshot_path = catalog_module.BASE_DIR / material["sourceUri"]
+        assert snapshot_path.exists()
+        snapshot_text = snapshot_path.read_text(encoding="utf-8")
+        assert "Source URL: https://example.test/marshall" in snapshot_text
+        assert "Marshall uses a water cannon" in snapshot_text
+        assert "window.noisy" not in snapshot_text
+
+        assembly = await catalog.start_assembly_line(
+            workshop_id=workshop_id,
+            material_source_ids=[material["id"]],
+            chunk_size_tokens=128,
+            chunk_overlap_tokens=0,
+            qa_pairs_per_source=1,
+        )
+        chunks = await catalog.list_material_chunks(workshop_id, assembly["id"])
+        chunk_text = "\n".join(chunk["text"] for chunk in chunks)
+        assert "Marshall Rescue Profile" in chunk_text
+        assert "ladder safety" in chunk_text
+    finally:
+        catalog._validate_website_url = original_validate
+        catalog._fetch_website_html = original_fetch
+
+
 async def exercise_model_backed_qa_generation(
     catalog: FoundryCatalogService,
     workshop_id: str,
@@ -244,6 +301,7 @@ async def _exercise_workflow(tmp_path: Path) -> None:
         base_model="sshleifer/tiny-gpt2",
     )
     await exercise_material_ingestion_formats(catalog, workshop["id"])
+    await exercise_website_material_snapshot(catalog, workshop["id"])
     await exercise_model_backed_qa_generation(catalog, workshop["id"])
     catalog.qa_generator.configure(
         mode="deterministic",

@@ -2,15 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import ipaddress
 import json
 import math
 import os
 import re
 import sqlite3
+import socket
 from datetime import datetime, timezone
+from html import unescape
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 from uuid import uuid4
+
+import requests
 
 from .qa_generation_service import QAGenerationRequest, QAGenerationService
 from .qa_quality_service import QA_QUALITY_CONFIDENCE_THRESHOLD, QAQualityEvaluator
@@ -21,6 +28,7 @@ DEFAULT_DB_PATH = BASE_DIR / "runtime" / "foundry_catalog.db"
 DEFAULT_EXPORT_DIR = BASE_DIR / "runtime" / "materials" / "exports"
 DEFAULT_SOURCE_DIR = BASE_DIR / "runtime" / "materials" / "sources"
 DEFAULT_MATERIAL_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
+DEFAULT_WEBSITE_FETCH_MAX_BYTES = 2 * 1024 * 1024
 SUPPORTED_IMPORT_EXTENSIONS = {
     "csv": {".csv"},
     "pdf": {".pdf"},
@@ -29,6 +37,110 @@ SUPPORTED_IMPORT_EXTENSIONS = {
     "transcript": {".txt", ".md", ".text", ".transcript", ".srt", ".vtt"},
     "video-transcript": {".txt", ".md", ".text", ".transcript", ".srt", ".vtt"},
 }
+
+
+class _FoundryHTMLTextExtractor(HTMLParser):
+    """Small dependency-free readable-text extractor for MVP website snapshots."""
+
+    BLOCK_TAGS = {
+        "article",
+        "aside",
+        "blockquote",
+        "br",
+        "dd",
+        "div",
+        "dl",
+        "dt",
+        "figcaption",
+        "footer",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "header",
+        "li",
+        "main",
+        "nav",
+        "ol",
+        "p",
+        "pre",
+        "section",
+        "table",
+        "td",
+        "th",
+        "tr",
+        "ul",
+    }
+    IGNORED_TAGS = {
+        "canvas",
+        "form",
+        "iframe",
+        "noscript",
+        "script",
+        "style",
+        "svg",
+        "template",
+    }
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: List[str] = []
+        self.title_parts: List[str] = []
+        self.description = ""
+        self._ignored_depth = 0
+        self._in_title = False
+
+    def handle_starttag(self, tag: str, attrs: List[tuple[str, Optional[str]]]) -> None:
+        normalized_tag = tag.lower()
+        if normalized_tag in self.IGNORED_TAGS:
+            self._ignored_depth += 1
+            return
+        if self._ignored_depth:
+            return
+        if normalized_tag == "title":
+            self._in_title = True
+        if normalized_tag == "meta":
+            attributes = {key.lower(): value or "" for key, value in attrs}
+            if attributes.get("name", "").lower() == "description":
+                self.description = attributes.get("content", "").strip()
+        if normalized_tag in self.BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        normalized_tag = tag.lower()
+        if normalized_tag in self.IGNORED_TAGS and self._ignored_depth:
+            self._ignored_depth -= 1
+            return
+        if self._ignored_depth:
+            return
+        if normalized_tag == "title":
+            self._in_title = False
+        if normalized_tag in self.BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if self._ignored_depth:
+            return
+        text = unescape(data).strip()
+        if not text:
+            return
+        if self._in_title:
+            self.title_parts.append(text)
+        self.parts.append(text)
+        self.parts.append(" ")
+
+    def readable_text(self) -> str:
+        lines = []
+        for raw_line in "".join(self.parts).splitlines():
+            line = re.sub(r"\s+", " ", raw_line).strip()
+            if line:
+                lines.append(line)
+        return "\n".join(lines)
+
+    def title(self) -> str:
+        return re.sub(r"\s+", " ", " ".join(self.title_parts)).strip()
 
 
 class FoundryCatalogService:
@@ -1817,6 +1929,15 @@ class FoundryCatalogService:
             if workshop is None:
                 raise ValueError(f"Workshop {workshop_id} was not found.")
 
+            stored_source_uri = source_uri
+            if kind == "website":
+                stored_source_uri = self._snapshot_website_source(
+                    workshop_id=workshop_id,
+                    material_id=material_id,
+                    material_name=name,
+                    source_url=source_uri,
+                )
+
             connection.execute(
                 """
                 INSERT INTO materials (
@@ -1825,7 +1946,7 @@ class FoundryCatalogService:
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (material_id, workshop_id, name, kind, "staged", source_uri, 0, 0),
+                (material_id, workshop_id, name, kind, "staged", stored_source_uri, 0, 0),
             )
             connection.execute(
                 """
@@ -2930,7 +3051,15 @@ class FoundryCatalogService:
         chunk_size_tokens: int,
         chunk_overlap_tokens: int,
     ) -> List[Dict[str, Any]]:
-        if material["kind"] not in {"text", "transcript", "video-transcript", "csv", "jsonl", "pdf"}:
+        if material["kind"] not in {
+            "text",
+            "transcript",
+            "video-transcript",
+            "csv",
+            "jsonl",
+            "pdf",
+            "website",
+        }:
             return []
 
         text = self._read_text_source(material["source_uri"])
@@ -3052,6 +3181,125 @@ class FoundryCatalogService:
             if text.strip():
                 pages.append(f"Page {index}. {text.strip()}")
         return "\n\n".join(pages)
+
+    def _snapshot_website_source(
+        self,
+        *,
+        workshop_id: str,
+        material_id: str,
+        material_name: str,
+        source_url: str,
+    ) -> str:
+        safe_url = self._validate_website_url(source_url)
+        html = self._fetch_website_html(safe_url)
+        extracted = self._extract_website_text(html)
+        text = extracted["text"].strip()
+        if not text:
+            raise ValueError("Website did not contain readable text for the Assembly Line.")
+
+        destination_dir = DEFAULT_SOURCE_DIR / self._safe_export_name(workshop_id)
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = self._safe_source_filename(f"{material_name or material_id}.website.txt")
+        destination_path = destination_dir / f"{material_id}-{safe_name}"
+        fetched_at = datetime.now(timezone.utc).isoformat()
+        title_line = extracted["title"] or material_name or safe_url
+        description = extracted["description"]
+        header = [
+            "Foundry Website Snapshot",
+            f"Source URL: {safe_url}",
+            f"Fetched At: {fetched_at}",
+            f"Title: {title_line}",
+        ]
+        if description:
+            header.append(f"Description: {description}")
+        header.extend(["", "--- Extracted Text ---", ""])
+        destination_path.write_text("\n".join(header) + text + "\n", encoding="utf-8")
+        return self._runtime_uri(destination_path)
+
+    def _validate_website_url(self, source_url: str) -> str:
+        parsed = urlparse(source_url.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Website Materials must use an http:// or https:// URL.")
+        if parsed.username or parsed.password:
+            raise ValueError("Website URLs cannot include embedded credentials.")
+        hostname = parsed.hostname
+        if not hostname:
+            raise ValueError("Website URL must include a hostname.")
+        if os.getenv("FOUNDRY_ALLOW_PRIVATE_WEBSITE_FETCH", "").lower() in {"1", "true", "yes"}:
+            return source_url.strip()
+
+        try:
+            address_info = socket.getaddrinfo(hostname, None)
+        except socket.gaierror as error:
+            raise ValueError(f"Could not resolve website host: {hostname}.") from error
+
+        for item in address_info:
+            ip_text = item[4][0]
+            try:
+                ip_address = ipaddress.ip_address(ip_text)
+            except ValueError:
+                continue
+            if not ip_address.is_global:
+                raise ValueError(
+                    "Website fetches to private, loopback, or local network addresses are blocked by default."
+                )
+        return source_url.strip()
+
+    def _fetch_website_html(self, source_url: str) -> str:
+        max_bytes = self._website_fetch_max_bytes()
+        try:
+            response = requests.get(
+                source_url,
+                headers={
+                    "User-Agent": "TheFoundryMaterialScraper/0.1 (+https://github.com/Noblesite/The-Foundry)",
+                    "Accept": "text/html,text/plain;q=0.9,*/*;q=0.1",
+                },
+                stream=True,
+                timeout=(5, 12),
+            )
+            response.raise_for_status()
+        except requests.RequestException as error:
+            raise ValueError(f"Could not fetch website Material: {error}") from error
+
+        content_type = response.headers.get("content-type", "").lower()
+        if content_type and not any(
+            accepted in content_type for accepted in ("text/html", "text/plain", "application/xhtml")
+        ):
+            raise ValueError(f"Website Material returned unsupported content type: {content_type}.")
+
+        chunks: List[bytes] = []
+        total = 0
+        for chunk in response.iter_content(chunk_size=16 * 1024):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > max_bytes:
+                raise ValueError(
+                    f"Website Material exceeds the {round(max_bytes / (1024 * 1024), 1)} MB MVP fetch limit."
+                )
+            chunks.append(chunk)
+
+        encoding = response.encoding or response.apparent_encoding or "utf-8"
+        return b"".join(chunks).decode(encoding, errors="ignore")
+
+    def _extract_website_text(self, html: str) -> Dict[str, str]:
+        extractor = _FoundryHTMLTextExtractor()
+        extractor.feed(html)
+        extractor.close()
+        return {
+            "title": extractor.title(),
+            "description": re.sub(r"\s+", " ", extractor.description).strip(),
+            "text": extractor.readable_text(),
+        }
+
+    def _website_fetch_max_bytes(self) -> int:
+        raw_limit = os.getenv("FOUNDRY_WEBSITE_FETCH_MAX_BYTES", "").strip()
+        if not raw_limit:
+            return DEFAULT_WEBSITE_FETCH_MAX_BYTES
+        try:
+            return max(128 * 1024, int(raw_limit))
+        except ValueError:
+            return DEFAULT_WEBSITE_FETCH_MAX_BYTES
 
     def _build_qa_pairs(
         self,

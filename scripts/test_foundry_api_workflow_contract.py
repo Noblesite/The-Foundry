@@ -145,6 +145,72 @@ def exercise_material_ingestion_formats(client: TestClient, workshop_id: str) ->
         assert item["expected"] in chunk_text
 
 
+def exercise_website_material_snapshot(
+    client: TestClient,
+    catalog: FoundryCatalogService,
+    workshop_id: str,
+) -> None:
+    original_validate = catalog._validate_website_url
+    original_fetch = catalog._fetch_website_html
+    try:
+        catalog._validate_website_url = lambda source_url: source_url
+        catalog._fetch_website_html = lambda _source_url: """
+            <html>
+              <head><title>Marshall Rescue Wiki</title></head>
+              <body>
+                <script>window.noisy = true;</script>
+                <main>
+                  <h1>Marshall Rescue Profile</h1>
+                  <p>Marshall uses a water cannon during rescue practice.</p>
+                  <p>He helps Adventure Bay with ladder safety.</p>
+                </main>
+              </body>
+            </html>
+        """
+        material = assert_response(
+            client.post(
+                f"/api/v1/workshops/{workshop_id}/materials",
+                json={
+                    "name": "Marshall Wiki Snapshot",
+                    "kind": "website",
+                    "sourceUri": "https://example.test/marshall",
+                },
+            )
+        )
+        assert material["kind"] == "website"
+        assert material["sourceUri"].startswith("runtime/")
+        assert material["sourceUri"].endswith(".txt")
+        snapshot_path = catalog_module.BASE_DIR / material["sourceUri"]
+        assert snapshot_path.exists()
+        snapshot_text = snapshot_path.read_text(encoding="utf-8")
+        assert "Source URL: https://example.test/marshall" in snapshot_text
+        assert "window.noisy" not in snapshot_text
+
+        assembly = assert_response(
+            client.post(
+                f"/api/v1/workshops/{workshop_id}/assembly-lines",
+                json={
+                    "materialSourceIds": [material["id"]],
+                    "chunkSizeTokens": 128,
+                    "chunkOverlapTokens": 0,
+                    "qaPairsPerSource": 1,
+                },
+            )
+        )
+        chunks = assert_response(
+            client.get(
+                f"/api/v1/workshops/{workshop_id}/chunks",
+                params={"runId": assembly["id"]},
+            )
+        )
+        chunk_text = "\n".join(chunk["text"] for chunk in chunks)
+        assert "Marshall Rescue Profile" in chunk_text
+        assert "ladder safety" in chunk_text
+    finally:
+        catalog._validate_website_url = original_validate
+        catalog._fetch_website_html = original_fetch
+
+
 def exercise_model_backed_qa_generation(
     client: TestClient,
     catalog: FoundryCatalogService,
@@ -314,6 +380,7 @@ def run_api_workflow(tmp_path: Path) -> None:
                 )
             )
             exercise_material_ingestion_formats(client, workshop["id"])
+            exercise_website_material_snapshot(client, isolated_catalog, workshop["id"])
 
             material = assert_response(
                 client.post(
