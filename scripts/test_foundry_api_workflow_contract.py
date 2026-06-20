@@ -191,6 +191,13 @@ def exercise_website_material_snapshot(
         assert material["kind"] == "website"
         assert material["sourceUri"].startswith("runtime/")
         assert material["sourceUri"].endswith(".txt")
+        scrape = material["metadata"]["scrape"]
+        assert scrape["contractVersion"] == "foundry.material.scrape-metadata.v1"
+        assert scrape["status"] == "snapshot-ready"
+        assert scrape["sourceUrl"] == "https://example.test/marshall"
+        assert scrape["storedSourceUri"] == material["sourceUri"]
+        assert scrape["title"] == "Marshall Rescue Wiki"
+        assert scrape["estimatedTokenCount"] > 0
         snapshot_path = catalog_module.BASE_DIR / material["sourceUri"]
         assert snapshot_path.exists()
         snapshot_text = snapshot_path.read_text(encoding="utf-8")

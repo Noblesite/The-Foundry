@@ -179,6 +179,7 @@ export interface MaterialSourceDto {
   kind: MaterialKind;
   status: MaterialStatus;
   sourceUri: string;
+  metadata?: Record<string, unknown>;
   chunkCount: number;
   qaPairCount: number;
   createdAt: string;

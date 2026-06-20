@@ -106,6 +106,34 @@ const formatBytes = (bytes: number): string => {
   return `${(bytes / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 };
 
+interface WebsiteScrapeMetadata {
+  status?: string;
+  sourceUrl?: string;
+  storedSourceUri?: string;
+  title?: string;
+  fetchedAt?: string;
+  estimatedTokenCount?: number;
+}
+
+const scrapeMetadataFromMaterial = (material: MaterialSource): WebsiteScrapeMetadata | null => {
+  const scrape = material.metadata?.scrape;
+  if (!scrape || typeof scrape !== "object" || Array.isArray(scrape)) {
+    return null;
+  }
+  return scrape as WebsiteScrapeMetadata;
+};
+
+const formatCatalogDate = (value?: string): string | null => {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toLocaleDateString();
+};
+
 const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   repository,
   summary,
@@ -921,29 +949,40 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
             </div>
           </div>
           <div className="material-list">
-            {materials.map((material) => (
-              <article className="material-row" key={material.id}>
-                <label className="material-select" htmlFor={`material-${material.id}`}>
-                  <input
-                    id={`material-${material.id}`}
-                    type="checkbox"
-                    checked={selectedMaterialIds.includes(material.id)}
-                    onChange={() => toggleMaterialSelection(material.id)}
-                  />
-                  <span className="sr-only">Select {material.name}</span>
-                </label>
-                <div>
-                  <strong>{material.name}</strong>
-                  <span>{material.sourceUri}</span>
-                </div>
-                <div className="material-meta">
-                  <span>{material.kind}</span>
-                  <span>{material.status}</span>
-                  <span>{material.chunkCount} chunks</span>
-                  <span>{material.qaPairCount} QA</span>
-                </div>
-              </article>
-            ))}
+            {materials.map((material) => {
+              const scrape = scrapeMetadataFromMaterial(material);
+              const fetchedDate = formatCatalogDate(scrape?.fetchedAt);
+              return (
+                <article className="material-row" key={material.id}>
+                  <label className="material-select" htmlFor={`material-${material.id}`}>
+                    <input
+                      id={`material-${material.id}`}
+                      type="checkbox"
+                      checked={selectedMaterialIds.includes(material.id)}
+                      onChange={() => toggleMaterialSelection(material.id)}
+                    />
+                    <span className="sr-only">Select {material.name}</span>
+                  </label>
+                  <div>
+                    <strong>{scrape?.title || material.name}</strong>
+                    <span>{scrape?.sourceUrl || material.sourceUri}</span>
+                    {scrape?.storedSourceUri && (
+                      <span className="material-source-note">Snapshot: {scrape.storedSourceUri}</span>
+                    )}
+                  </div>
+                  <div className="material-meta">
+                    <span>{material.kind}</span>
+                    <span>{scrape?.status || material.status}</span>
+                    {fetchedDate && <span>fetched {fetchedDate}</span>}
+                    {scrape?.estimatedTokenCount ? (
+                      <span>{scrape.estimatedTokenCount.toLocaleString()} tokens</span>
+                    ) : null}
+                    <span>{material.chunkCount} chunks</span>
+                    <span>{material.qaPairCount} QA</span>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </div>
       </div>

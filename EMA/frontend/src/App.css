@@ -4646,6 +4646,11 @@ input[type="checkbox"] {
   font-size: 0.75rem;
 }
 
+.material-row .material-source-note {
+  margin-top: 0.2rem;
+  color: rgba(174, 187, 201, 0.7);
+}
+
 .material-meta {
   display: flex;
   flex-wrap: wrap;

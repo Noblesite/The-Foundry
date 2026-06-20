@@ -201,6 +201,7 @@ class FoundryCatalogService:
                 kind TEXT NOT NULL,
                 status TEXT NOT NULL,
                 source_uri TEXT NOT NULL,
+                metadata_json TEXT NOT NULL DEFAULT '{}',
                 chunk_count INTEGER NOT NULL DEFAULT 0,
                 qa_pair_count INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -469,6 +470,7 @@ class FoundryCatalogService:
             """
         )
         self._ensure_forge_contract_columns(connection)
+        self._ensure_material_metadata_columns(connection)
         self._ensure_qa_review_columns(connection)
 
     def _ensure_forge_contract_columns(self, connection: sqlite3.Connection) -> None:
@@ -485,6 +487,15 @@ class FoundryCatalogService:
         for column_name, statement in migrations:
             if column_name not in columns:
                 connection.execute(statement)
+
+    def _ensure_material_metadata_columns(self, connection: sqlite3.Connection) -> None:
+        columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(materials)").fetchall()
+        }
+        if "metadata_json" not in columns:
+            connection.execute(
+                "ALTER TABLE materials ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'"
+            )
 
     def _ensure_qa_review_columns(self, connection: sqlite3.Connection) -> None:
         columns = {
@@ -970,6 +981,9 @@ class FoundryCatalogService:
             "kind": row["kind"],
             "status": row["status"],
             "sourceUri": row["source_uri"],
+            "metadata": self._decode_json_object(
+                row["metadata_json"] if "metadata_json" in row.keys() else None
+            ),
             "chunkCount": row["chunk_count"],
             "qaPairCount": row["qa_pair_count"],
         }
@@ -1930,23 +1944,36 @@ class FoundryCatalogService:
                 raise ValueError(f"Workshop {workshop_id} was not found.")
 
             stored_source_uri = source_uri
+            material_metadata: Dict[str, Any] = {}
             if kind == "website":
-                stored_source_uri = self._snapshot_website_source(
+                snapshot = self._snapshot_website_source(
                     workshop_id=workshop_id,
                     material_id=material_id,
                     material_name=name,
                     source_url=source_uri,
                 )
+                stored_source_uri = snapshot["sourceUri"]
+                material_metadata = {"scrape": snapshot["metadata"]}
 
             connection.execute(
                 """
                 INSERT INTO materials (
-                    id, workshop_id, name, kind, status, source_uri,
+                    id, workshop_id, name, kind, status, source_uri, metadata_json,
                     chunk_count, qa_pair_count
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (material_id, workshop_id, name, kind, "staged", stored_source_uri, 0, 0),
+                (
+                    material_id,
+                    workshop_id,
+                    name,
+                    kind,
+                    "staged",
+                    stored_source_uri,
+                    json.dumps(material_metadata),
+                    0,
+                    0,
+                ),
             )
             connection.execute(
                 """
@@ -2041,6 +2068,17 @@ class FoundryCatalogService:
         destination_path = destination_dir / f"{material_id}-{safe_filename}"
         destination_path.write_bytes(content)
         source_uri = self._runtime_uri(destination_path)
+        imported_at = datetime.now(timezone.utc).isoformat()
+        material_metadata = {
+            "ingest": {
+                "contractVersion": "foundry.material.ingest-metadata.v1",
+                "status": "imported",
+                "filename": source_name,
+                "storedSourceUri": source_uri,
+                "sizeBytes": len(content),
+                "importedAt": imported_at,
+            }
+        }
 
         with self._connect() as connection:
             workshop = connection.execute(
@@ -2057,12 +2095,22 @@ class FoundryCatalogService:
             connection.execute(
                 """
                 INSERT INTO materials (
-                    id, workshop_id, name, kind, status, source_uri,
+                    id, workshop_id, name, kind, status, source_uri, metadata_json,
                     chunk_count, qa_pair_count
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (material_id, workshop_id, name, kind, "staged", source_uri, 0, 0),
+                (
+                    material_id,
+                    workshop_id,
+                    name,
+                    kind,
+                    "staged",
+                    source_uri,
+                    json.dumps(material_metadata),
+                    0,
+                    0,
+                ),
             )
             connection.execute(
                 """
@@ -3216,7 +3264,7 @@ class FoundryCatalogService:
         material_id: str,
         material_name: str,
         source_url: str,
-    ) -> str:
+    ) -> Dict[str, Any]:
         safe_url = self._validate_website_url(source_url)
         html = self._fetch_website_html(safe_url)
         extracted = self._extract_website_text(html)
@@ -3241,7 +3289,23 @@ class FoundryCatalogService:
             header.append(f"Description: {description}")
         header.extend(["", "--- Extracted Text ---", ""])
         destination_path.write_text("\n".join(header) + text + "\n", encoding="utf-8")
-        return self._runtime_uri(destination_path)
+        source_uri = self._runtime_uri(destination_path)
+        return {
+            "sourceUri": source_uri,
+            "metadata": {
+                "contractVersion": "foundry.material.scrape-metadata.v1",
+                "status": "snapshot-ready",
+                "sourceUrl": safe_url,
+                "storedSourceUri": source_uri,
+                "title": extracted["title"],
+                "description": description,
+                "fetchedAt": fetched_at,
+                "textLength": len(text),
+                "estimatedTokenCount": len(text.split()),
+                "fetchLimitBytes": self._website_fetch_max_bytes(),
+                "extractor": "foundry-html-text-extractor",
+            },
+        }
 
     def _validate_website_url(self, source_url: str) -> str:
         parsed = urlparse(source_url.strip())
