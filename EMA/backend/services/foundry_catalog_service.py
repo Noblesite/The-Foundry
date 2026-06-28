@@ -4111,24 +4111,11 @@ class FoundryCatalogService:
     ) -> Dict[str, Any]:
         chunks = self._build_text_chunks(material, run_id, chunk_size_tokens, chunk_overlap_tokens)
         if not chunks:
-            chunks = [
-                {
-                    "id": f"chk-{uuid4().hex[:12]}",
-                    "index": index,
-                    "text": f"Estimated chunk {index + 1} for {material['name']}.",
-                    "token_count": chunk_size_tokens,
-                    "metadata": self._chunk_metadata(
-                        material=material,
-                        run_id=run_id,
-                        chunk_index=index,
-                        token_start=index * chunk_size_tokens,
-                        token_count=chunk_size_tokens,
-                        text=f"Estimated chunk {index + 1} for {material['name']}.",
-                        estimated=True,
-                    ),
-                }
-                for index in range(self._estimate_chunks(material, chunk_size_tokens))
-            ]
+            raise ValueError(
+                f"Could not read source text for Material '{material['name']}'. "
+                "Check that the source path is relative to the Foundry runtime root, "
+                "or upload the file through the Material importer."
+            )
 
         qa_pairs = self._build_qa_pairs(material, workshop, run_id, chunks, qa_pairs_per_source)
         return {

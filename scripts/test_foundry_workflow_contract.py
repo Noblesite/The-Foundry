@@ -184,6 +184,31 @@ async def exercise_website_material_snapshot(
         catalog._fetch_website_html = original_fetch
 
 
+async def exercise_missing_material_source_blocks_assembly(
+    catalog: FoundryCatalogService,
+    workshop_id: str,
+) -> None:
+    material = await catalog.register_material(
+        workshop_id=workshop_id,
+        name="Missing Source Notes",
+        kind="text",
+        source_uri="runtime/materials/sources/does-not-exist.txt",
+    )
+
+    try:
+        await catalog.start_assembly_line(
+            workshop_id=workshop_id,
+            material_source_ids=[material["id"]],
+            chunk_size_tokens=128,
+            chunk_overlap_tokens=0,
+            qa_pairs_per_source=1,
+        )
+    except ValueError as error:
+        assert "Could not read source text" in str(error)
+    else:
+        raise AssertionError("Unreadable Material source should not produce estimated chunks.")
+
+
 async def exercise_model_backed_qa_generation(
     catalog: FoundryCatalogService,
     workshop_id: str,
@@ -387,6 +412,7 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     )
     await exercise_material_ingestion_formats(catalog, workshop["id"])
     await exercise_website_material_snapshot(catalog, workshop["id"])
+    await exercise_missing_material_source_blocks_assembly(catalog, workshop["id"])
     await exercise_model_backed_qa_generation(catalog, workshop["id"])
     catalog.qa_generator.configure(
         mode="deterministic",
