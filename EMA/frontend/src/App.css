@@ -477,14 +477,15 @@ input[type="checkbox"] {
 
 .workshop-list-item {
   display: grid;
-  gap: 0.18rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.35rem;
+  align-items: center;
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 0.58rem 0.65rem;
+  padding: 0.22rem;
   background: rgba(13, 17, 23, 0.52);
   color: var(--text-primary);
-  cursor: pointer;
   text-align: left;
 }
 
@@ -495,7 +496,19 @@ input[type="checkbox"] {
   box-shadow: var(--shadow-blue);
 }
 
-.workshop-list-item span {
+.workshop-list-select {
+  display: grid;
+  min-width: 0;
+  gap: 0.18rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0.36rem 0.4rem;
+  text-align: left;
+}
+
+.workshop-list-select span {
   overflow: hidden;
   font-size: 0.82rem;
   font-weight: 700;
@@ -503,13 +516,33 @@ input[type="checkbox"] {
   white-space: nowrap;
 }
 
-.workshop-list-item small {
+.workshop-list-select small {
   overflow: hidden;
   color: var(--text-secondary);
   font-size: 0.68rem;
   text-overflow: ellipsis;
   text-transform: capitalize;
   white-space: nowrap;
+}
+
+.workshop-delete-button {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(255, 138, 0, 0.06);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+}
+
+.workshop-delete-button:hover,
+.workshop-delete-button:focus-visible {
+  border-color: rgba(255, 138, 0, 0.55);
+  background: rgba(255, 138, 0, 0.16);
+  color: var(--forge-orange);
 }
 
 .operator-card {
@@ -769,6 +802,12 @@ input[type="checkbox"] {
   transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
 }
 
+.topbar-workshop-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 0.2rem;
+}
+
 .topbar-workshop-option:hover,
 .topbar-workshop-option:focus-visible,
 .topbar-workshop-option.is-active {
@@ -781,20 +820,54 @@ input[type="checkbox"] {
   box-shadow: inset 3px 0 0 var(--arc-blue);
 }
 
-.topbar-workshop-option span {
+.topbar-workshop-option-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 0.12rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0.45rem 0.52rem;
+  text-align: left;
+}
+
+.topbar-workshop-option-select span {
   display: grid;
   min-width: 0;
   gap: 0.12rem;
 }
 
-.topbar-workshop-option strong {
+.topbar-workshop-option-select strong {
   overflow: hidden;
   font-size: 0.82rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.topbar-workshop-option i {
+.topbar-workshop-delete {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(255, 138, 0, 0.05);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.topbar-workshop-delete:hover,
+.topbar-workshop-delete:focus-visible {
+  border-color: rgba(255, 138, 0, 0.55);
+  background: rgba(255, 138, 0, 0.16);
+  color: var(--forge-orange);
+}
+
+.topbar-workshop-option.is-active .topbar-workshop-delete {
+  background: transparent;
   color: var(--arc-blue);
 }
 
@@ -1849,6 +1922,11 @@ input[type="checkbox"] {
   overflow: auto;
 }
 
+.workshop-delete-modal {
+  gap: 0.85rem;
+  padding: 0 1rem 1rem;
+}
+
 .modal-heading {
   display: flex;
   align-items: center;
@@ -1862,6 +1940,28 @@ input[type="checkbox"] {
   font-size: 1.35rem;
 }
 
+.modal-support {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.delete-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  border: 1px solid rgba(255, 138, 0, 0.38);
+  border-radius: 8px;
+  padding: 0.78rem 0.85rem;
+  background: rgba(255, 138, 0, 0.08);
+  color: var(--text-primary);
+}
+
+.delete-warning i {
+  margin-top: 0.16rem;
+  color: var(--forge-orange);
+}
+
 .workshop-form {
   display: grid;
   gap: 0.75rem;
@@ -1873,6 +1973,29 @@ input[type="checkbox"] {
   grid-template-columns: minmax(0, 0.6fr) minmax(0, 1fr);
   gap: 0.7rem;
   margin-top: 0.25rem;
+}
+
+.button-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 138, 0, 0.58);
+  border-radius: 8px;
+  padding: 0.72rem 0.9rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 38%),
+    rgba(255, 138, 0, 0.16);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-weight: 800;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.button-danger:hover,
+.button-danger:focus-visible {
+  border-color: var(--forge-orange);
+  background: rgba(255, 138, 0, 0.24);
+  box-shadow: 0 0 22px rgba(255, 138, 0, 0.18);
 }
 
 .toast-error {

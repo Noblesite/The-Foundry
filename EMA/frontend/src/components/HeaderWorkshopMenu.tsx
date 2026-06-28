@@ -5,6 +5,7 @@ interface HeaderWorkshopMenuProps {
   activeWorkshop: Workshop;
   workshops: Workshop[];
   onCreateWorkshop: () => void;
+  onDeleteWorkshop: (workshop: Workshop) => void;
   onSelectWorkshop: (workshop: Workshop) => void;
 }
 
@@ -18,6 +19,7 @@ const HeaderWorkshopMenu: React.FC<HeaderWorkshopMenuProps> = ({
   activeWorkshop,
   workshops,
   onCreateWorkshop,
+  onDeleteWorkshop,
   onSelectWorkshop,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -65,6 +67,11 @@ const HeaderWorkshopMenu: React.FC<HeaderWorkshopMenuProps> = ({
     onCreateWorkshop();
   };
 
+  const deleteWorkshop = (workshop: Workshop) => {
+    setIsOpen(false);
+    onDeleteWorkshop(workshop);
+  };
+
   return (
     <div className="topbar-workshop-menu" ref={menuRef}>
       <button
@@ -95,22 +102,36 @@ const HeaderWorkshopMenu: React.FC<HeaderWorkshopMenuProps> = ({
             {orderedWorkshops.map((workshop) => {
               const isActive = workshop.id === activeWorkshop.id;
               return (
-                <button
+                <div
                   aria-current={isActive ? "true" : undefined}
                   className={`topbar-workshop-option ${isActive ? "is-active" : ""}`}
                   key={workshop.id}
-                  onClick={() => selectWorkshop(workshop)}
-                  role="menuitem"
-                  type="button"
+                  role="none"
                 >
-                  <span>
-                    <strong>{workshop.name}</strong>
-                    <small>
-                      {workshop.voiceTarget} / {formatStatus(workshop.status)}
-                    </small>
-                  </span>
-                  {isActive && <i className="fas fa-check" aria-hidden="true" />}
-                </button>
+                  <button
+                    className="topbar-workshop-option-select"
+                    onClick={() => selectWorkshop(workshop)}
+                    role="menuitem"
+                    type="button"
+                  >
+                    <span>
+                      <strong>{workshop.name}</strong>
+                      <small>
+                        {workshop.voiceTarget} / {formatStatus(workshop.status)}
+                      </small>
+                    </span>
+                    {isActive && <i className="fas fa-check" aria-hidden="true" />}
+                  </button>
+                  <button
+                    aria-label={`Delete Workshop ${workshop.name}`}
+                    className="topbar-workshop-delete"
+                    onClick={() => deleteWorkshop(workshop)}
+                    role="menuitem"
+                    type="button"
+                  >
+                    <i className="fas fa-trash-can" aria-hidden="true" />
+                  </button>
+                </div>
               );
             })}
           </div>

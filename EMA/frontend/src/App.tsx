@@ -12,6 +12,7 @@ import Metrics from "./components/Metrics";
 import SettingsPanel, { WorkspaceSettings } from "./components/SettingsOverlay";
 import TrialsWorkbench from "./components/TrialsWorkbench";
 import WorkshopCreateModal from "./components/WorkshopCreateModal";
+import WorkshopDeleteModal from "./components/WorkshopDeleteModal";
 import WorkshopSwitcher from "./components/WorkshopSwitcher";
 import { CreateWorkshopRequest, StartForgeRequest } from "./contracts/foundryApi";
 import {
@@ -227,6 +228,9 @@ const App: React.FC = () => {
   const [activeModelDownloadJobId, setActiveModelDownloadJobId] = useState<string | null>(null);
   const [isWorkshopModalOpen, setIsWorkshopModalOpen] = useState(false);
   const [isCreatingWorkshop, setIsCreatingWorkshop] = useState(false);
+  const [workshopPendingDeletion, setWorkshopPendingDeletion] = useState<Workshop | null>(null);
+  const [deleteWorkshopError, setDeleteWorkshopError] = useState<string | null>(null);
+  const [isDeletingWorkshop, setIsDeletingWorkshop] = useState(false);
   const [forgePreset, setForgePreset] = useState<StartForgeRequest | null>(null);
   const [academyFocusConceptId, setAcademyFocusConceptId] = useState<string | null>(null);
   const [archiveHandoff, setArchiveHandoff] = useState<ArchiveModelHandoff | null>(null);
@@ -613,7 +617,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSelectWorkshop = (workshop: Workshop) => {
+  const applyActiveWorkshop = (workshop: Workshop) => {
     setFoundryData((current) => ({
       ...current,
       dashboard: {
@@ -627,6 +631,57 @@ const App: React.FC = () => {
       characterVoice: workshop.voiceTarget,
     });
     setActiveSection("workshop");
+  };
+
+  const handleSelectWorkshop = (workshop: Workshop) => {
+    applyActiveWorkshop(workshop);
+  };
+
+  const handleRequestDeleteWorkshop = (workshop: Workshop) => {
+    setDeleteWorkshopError(null);
+    setWorkshopPendingDeletion(workshop);
+  };
+
+  const handleCloseDeleteWorkshop = () => {
+    if (!isDeletingWorkshop) {
+      setWorkshopPendingDeletion(null);
+      setDeleteWorkshopError(null);
+    }
+  };
+
+  const handleDeleteWorkshop = async (confirmationName: string) => {
+    if (!workshopPendingDeletion) {
+      return;
+    }
+    setIsDeletingWorkshop(true);
+    setDeleteWorkshopError(null);
+
+    try {
+      const result = await repository.deleteWorkshop(workshopPendingDeletion.id, {
+        confirmationName,
+      });
+      const remainingWorkshops = await repository.listWorkshops();
+      setWorkshops(remainingWorkshops);
+
+      const nextWorkshop =
+        result.nextWorkshop ||
+        remainingWorkshops.find((workshop) => workshop.id !== result.deletedWorkshopId) ||
+        remainingWorkshops[0];
+
+      if (nextWorkshop) {
+        applyActiveWorkshop(nextWorkshop);
+      }
+      setStatusToast(
+        `Deleted ${result.deletedWorkshopName}. ${result.deletedCounts.workshops || 1} Workshop removed.`
+      );
+      setWorkshopPendingDeletion(null);
+    } catch (error: unknown) {
+      setDeleteWorkshopError(
+        error instanceof Error ? error.message : "Could not delete this Workshop."
+      );
+    } finally {
+      setIsDeletingWorkshop(false);
+    }
   };
 
   const handleConstructLoaded = (construct: Construct, artifact: Artifact) => {
@@ -1017,6 +1072,7 @@ const App: React.FC = () => {
           activeWorkshopId={dashboardSummary.workshop.id}
           workshops={workshops}
           onCreateWorkshop={openWorkshopModal}
+          onDeleteWorkshop={handleRequestDeleteWorkshop}
           onSelectWorkshop={handleSelectWorkshop}
         />
 
@@ -1040,6 +1096,7 @@ const App: React.FC = () => {
               activeWorkshop={dashboardSummary.workshop}
               workshops={workshops}
               onCreateWorkshop={openWorkshopModal}
+              onDeleteWorkshop={handleRequestDeleteWorkshop}
               onSelectWorkshop={handleSelectWorkshop}
             />
             <button
@@ -1095,6 +1152,15 @@ const App: React.FC = () => {
         settings={settings}
         onClose={closeWorkshopModal}
         onCreate={handleCreateWorkshop}
+      />
+      <WorkshopDeleteModal
+        error={deleteWorkshopError}
+        isDeleting={isDeletingWorkshop}
+        isOpen={Boolean(workshopPendingDeletion)}
+        remainingWorkshopCount={workshops.length}
+        workshop={workshopPendingDeletion}
+        onCancel={handleCloseDeleteWorkshop}
+        onConfirm={handleDeleteWorkshop}
       />
       {createError && <div className="toast-error" role="status">{createError}</div>}
       {statusToast && <div className="toast-status" role="status">{statusToast}</div>}

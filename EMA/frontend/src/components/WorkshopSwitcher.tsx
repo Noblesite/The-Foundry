@@ -5,6 +5,7 @@ interface WorkshopSwitcherProps {
   activeWorkshopId: string;
   workshops: Workshop[];
   onCreateWorkshop: () => void;
+  onDeleteWorkshop: (workshop: Workshop) => void;
   onSelectWorkshop: (workshop: Workshop) => void;
 }
 
@@ -12,6 +13,7 @@ const WorkshopSwitcher: React.FC<WorkshopSwitcherProps> = ({
   activeWorkshopId,
   workshops,
   onCreateWorkshop,
+  onDeleteWorkshop,
   onSelectWorkshop,
 }) => (
   <section className="workshop-switcher panel-glass" aria-label="Saved Workshops">
@@ -26,16 +28,33 @@ const WorkshopSwitcher: React.FC<WorkshopSwitcherProps> = ({
     </div>
 
     <div className="workshop-list">
-      {workshops.map((workshop) => (
-        <button
-          key={workshop.id}
-          className={`workshop-list-item ${activeWorkshopId === workshop.id ? "is-active" : ""}`}
-          onClick={() => onSelectWorkshop(workshop)}
-        >
-          <span>{workshop.name}</span>
-          <small>{workshop.voiceTarget} / {workshop.status}</small>
-        </button>
-      ))}
+      {workshops.map((workshop) => {
+        const isActive = activeWorkshopId === workshop.id;
+        return (
+          <div
+            key={workshop.id}
+            className={`workshop-list-item ${isActive ? "is-active" : ""}`}
+            role="group"
+          >
+            <button
+              className="workshop-list-select"
+              onClick={() => onSelectWorkshop(workshop)}
+              type="button"
+            >
+              <span>{workshop.name}</span>
+              <small>{workshop.voiceTarget} / {workshop.status}</small>
+            </button>
+            <button
+              aria-label={`Delete Workshop ${workshop.name}`}
+              className="workshop-delete-button"
+              onClick={() => onDeleteWorkshop(workshop)}
+              type="button"
+            >
+              <i className="fas fa-trash-can" aria-hidden="true" />
+            </button>
+          </div>
+        );
+      })}
     </div>
   </section>
 );

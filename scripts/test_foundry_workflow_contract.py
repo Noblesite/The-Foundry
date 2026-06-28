@@ -345,6 +345,84 @@ async def exercise_model_backed_qa_generation(
     assert all(check["status"] == "pass" for check in preview["trainingReadiness"]["checks"])
 
 
+async def exercise_workshop_cleanup(catalog: FoundryCatalogService) -> None:
+    workshop = await catalog.create_workshop(
+        name="Cleanup Target Workshop",
+        subject="Cleanup",
+        voice_target="Archivist",
+        base_model="sshleifer/tiny-gpt2",
+    )
+    material = await catalog.import_material_file(
+        workshop_id=workshop["id"],
+        name="Cleanup Notes",
+        kind="text",
+        filename="cleanup-notes.txt",
+        content=b"Cleanup notes should disappear with their Workshop.",
+    )
+    source_path = catalog_module.BASE_DIR / material["sourceUri"]
+    assert source_path.exists()
+
+    assembly = await catalog.start_assembly_line(
+        workshop_id=workshop["id"],
+        material_source_ids=[material["id"]],
+        chunk_size_tokens=128,
+        chunk_overlap_tokens=0,
+        qa_pairs_per_source=1,
+    )
+    assert assembly["chunkCount"] == 1
+    with catalog._connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO construct_runtime_validations (
+                id, construct_id, artifact_id, model_id, device, status,
+                total_tokens, duration_seconds, cleanup_status, metadata_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "val-cleanup-target",
+                workshop["activeConstructId"],
+                workshop["activeArtifactId"],
+                "sshleifer/tiny-gpt2",
+                "cpu",
+                "passed",
+                3,
+                0.1,
+                "ok",
+                "{}",
+            ),
+        )
+
+    try:
+        await catalog.delete_workshop(
+            workshop_id=workshop["id"],
+            confirmation_name="Wrong Workshop",
+        )
+    except ValueError as error:
+        assert "exact Workshop name" in str(error)
+    else:
+        raise AssertionError("Workshop deletion should require exact-name confirmation.")
+
+    result = await catalog.delete_workshop(
+        workshop_id=workshop["id"],
+        confirmation_name=workshop["name"],
+    )
+    assert result["deletedWorkshopId"] == workshop["id"]
+    assert result["deletedWorkshopName"] == workshop["name"]
+    assert result["deletedCounts"]["workshops"] == 1
+    assert result["deletedCounts"]["materials"] == 1
+    assert result["deletedCounts"]["assemblyLineRuns"] == 1
+    assert result["deletedCounts"]["materialChunks"] == 1
+    assert result["deletedCounts"]["qaPairs"] >= 1
+    assert result["deletedCounts"]["artifacts"] == 1
+    assert result["deletedCounts"]["constructs"] == 1
+    assert result["deletedCounts"]["constructRuntimeValidations"] == 1
+    assert result["nextWorkshop"]["id"] != workshop["id"]
+    assert not source_path.exists()
+    remaining_ids = {item["id"] for item in await catalog.list_workshops()}
+    assert workshop["id"] not in remaining_ids
+
+
 async def exercise_workflow(tmp_path: Path) -> None:
     runtime_root = catalog_module.BASE_DIR / "runtime" / "test-workflow" / tmp_path.name
     catalog_module.DEFAULT_SOURCE_DIR = runtime_root / "sources"
@@ -929,6 +1007,7 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     assert evidence["readyArtifactCount"] >= 1
     assert evidence["trialCount"] == 1
     assert evidence["updatedAt"]
+    await exercise_workshop_cleanup(catalog)
 
 
 def main() -> int:

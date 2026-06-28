@@ -51,6 +51,9 @@ class CreateWorkshopInput(BaseModel):
     voiceTarget: str | None = None
     baseModel: str | None = None
 
+class DeleteWorkshopInput(BaseModel):
+    confirmationName: str
+
 class RegisterMaterialInput(BaseModel):
     name: str
     kind: Literal["csv", "pdf", "website", "transcript", "video-transcript", "text", "jsonl"]
@@ -1038,6 +1041,21 @@ async def create_foundry_workshop_endpoint(data: CreateWorkshopInput):
         base_model=data.baseModel.strip() if data.baseModel else None,
     )
     return api_envelope(workshop)
+
+
+@app.delete("/api/v1/workshops/{workshop_id}")
+async def delete_foundry_workshop_endpoint(workshop_id: str, data: DeleteWorkshopInput):
+    confirmation_name = data.confirmationName.strip()
+    if not confirmation_name:
+        raise HTTPException(status_code=400, detail="Workshop confirmation name cannot be empty.")
+    try:
+        result = await foundry_catalog_service.delete_workshop(
+            workshop_id=workshop_id,
+            confirmation_name=confirmation_name,
+        )
+        return api_envelope(result)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/v1/workshops/{workshop_id}/materials")

@@ -25,6 +25,8 @@ import {
   ConstructRuntimeProbeDto,
   CreateTrialRequest,
   CreateWorkshopRequest,
+  DeleteWorkshopRequest,
+  DeleteWorkshopResult,
   ExportEvaluationSamplesDto,
   ExportEvaluationSamplesRequest,
   ExportConstructRuntimeEventsDto,
@@ -285,6 +287,10 @@ export interface FoundryRepository {
   getFoundryStatus: () => Promise<FoundryRuntimeStatus>;
   checkReadinessGate: (request: FoundryReadinessGateRequest) => Promise<FoundryReadinessGate>;
   createWorkshop: (request: CreateWorkshopRequest) => Promise<Workshop>;
+  deleteWorkshop: (
+    workshopId: string,
+    request: DeleteWorkshopRequest
+  ) => Promise<DeleteWorkshopResult>;
   getDashboard: () => Promise<DashboardSummary>;
   getDashboardEvidence: (workshopId: string) => Promise<DashboardLoopEvidence>;
   getNavigationItems: () => Promise<FoundryNavigationItem[]>;
@@ -1292,6 +1298,29 @@ export const mockFoundryRepository: FoundryRepository = {
     activeArtifactId: "art-draft",
     activeConstructId: "con-draft",
   }),
+  deleteWorkshop: async (workshopId, request) => {
+    if (workshopId === mockDashboardSummary.workshop.id) {
+      throw new Error("Create another Workshop before deleting the last one.");
+    }
+    return {
+      deletedWorkshopId: workshopId,
+      deletedWorkshopName: request.confirmationName,
+      deletedCounts: {
+        workshops: 1,
+        materials: 0,
+        assemblyLineRuns: 0,
+        materialChunks: 0,
+        qaPairs: 0,
+        forgeRuns: 0,
+        artifacts: 0,
+        constructs: 0,
+        constructMessages: 0,
+        trials: 0,
+      },
+      removedRuntimePaths: [],
+      nextWorkshop: mockDashboardSummary.workshop,
+    };
+  },
   getDashboard: async () => mockDashboardSummary,
   getDashboardEvidence: async () => mockDashboardSummary.loopEvidence!,
   getNavigationItems: async () => foundryNavigationItems,
@@ -3270,6 +3299,13 @@ export const apiFoundryRepository: FoundryRepository = {
   },
   createWorkshop: async (request) =>
     unwrap(await apiClient.post<ApiEnvelope<Workshop>>(foundryApiRoutes.workshops, request)),
+  deleteWorkshop: async (workshopId, request) =>
+    unwrap(
+      await apiClient.delete<ApiEnvelope<DeleteWorkshopResult>>(
+        foundryApiRoutes.workshop(workshopId),
+        { data: request }
+      )
+    ),
   getDashboard: async () =>
     unwrap(await apiClient.get<ApiEnvelope<DashboardSummary>>(foundryApiRoutes.dashboard)),
   getDashboardEvidence: async (workshopId) =>

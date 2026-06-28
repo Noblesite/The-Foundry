@@ -41,6 +41,7 @@ import {
   TrialVerdict,
   NavigationSection,
   WebsiteMaterialPreview,
+  Workshop,
   WorkshopStatus,
 } from "../domain/foundry";
 
@@ -427,6 +428,18 @@ export interface CreateWorkshopRequest {
   subject: string;
   voiceTarget?: string;
   baseModel?: string;
+}
+
+export interface DeleteWorkshopRequest {
+  confirmationName: string;
+}
+
+export interface DeleteWorkshopResult {
+  deletedWorkshopId: string;
+  deletedWorkshopName: string;
+  deletedCounts: Record<string, number>;
+  removedRuntimePaths: string[];
+  nextWorkshop?: Workshop | null;
 }
 
 export interface IngestMaterialRequest {

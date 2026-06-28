@@ -145,6 +145,54 @@ def exercise_material_ingestion_formats(client: TestClient, workshop_id: str) ->
         assert item["expected"] in chunk_text
 
 
+def exercise_workshop_delete_contract(client: TestClient) -> None:
+    cleanup_workshop = assert_response(
+        client.post(
+            "/api/v1/workshops",
+            json={
+                "name": "API Cleanup Workshop",
+                "subject": "Cleanup",
+                "voiceTarget": "Archivist",
+                "baseModel": "sshleifer/tiny-gpt2",
+            },
+        )
+    )
+    material = assert_response(
+        client.post(
+            f"/api/v1/workshops/{cleanup_workshop['id']}/materials/import-file",
+            params={
+                "name": "API Cleanup Notes",
+                "kind": "text",
+                "filename": "api-cleanup.txt",
+            },
+            content=b"API cleanup notes should be removed with their Workshop.",
+        )
+    )
+    source_path = catalog_module.BASE_DIR / material["sourceUri"]
+    assert source_path.exists()
+
+    wrong_confirmation = client.request(
+        "DELETE",
+        f"/api/v1/workshops/{cleanup_workshop['id']}",
+        json={"confirmationName": "Wrong Workshop"},
+    )
+    assert wrong_confirmation.status_code == 400
+    assert "exact Workshop name" in wrong_confirmation.text
+
+    result = assert_response(
+        client.request(
+            "DELETE",
+            f"/api/v1/workshops/{cleanup_workshop['id']}",
+            json={"confirmationName": cleanup_workshop["name"]},
+        )
+    )
+    assert result["deletedWorkshopId"] == cleanup_workshop["id"]
+    assert result["deletedCounts"]["workshops"] == 1
+    assert result["deletedCounts"]["materials"] == 1
+    assert result["nextWorkshop"]["id"] != cleanup_workshop["id"]
+    assert not source_path.exists()
+
+
 def exercise_website_material_snapshot(
     client: TestClient,
     catalog: FoundryCatalogService,
@@ -1113,6 +1161,7 @@ def run_api_workflow(tmp_path: Path) -> None:
 
             bootstrap = assert_response(client.get("/api/v1/foundry/bootstrap"))
             assert bootstrap["dashboard"]["loopEvidence"]["updatedAt"]
+            exercise_workshop_delete_contract(client)
     finally:
         api_server.foundry_catalog_service = original_catalog_service
         api_server.forge_training_service = original_forge_service

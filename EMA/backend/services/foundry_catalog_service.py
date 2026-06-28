@@ -7,6 +7,7 @@ import json
 import math
 import os
 import re
+import shutil
 import sqlite3
 import socket
 from datetime import datetime, timezone
@@ -1378,6 +1379,186 @@ class FoundryCatalogService:
                 (workshop_id,),
             ).fetchone()
             return self._workshop_from_row(row)
+
+    async def delete_workshop(
+        self,
+        workshop_id: str,
+        confirmation_name: str,
+    ) -> Dict[str, Any]:
+        async with self._write_lock:
+            return await self._run_query(
+                lambda: self._delete_workshop_sync(workshop_id, confirmation_name)
+            )
+
+    def _delete_workshop_sync(
+        self,
+        workshop_id: str,
+        confirmation_name: str,
+    ) -> Dict[str, Any]:
+        with self._connect() as connection:
+            workshop = connection.execute(
+                "SELECT * FROM workshops WHERE id = ?",
+                (workshop_id,),
+            ).fetchone()
+            if workshop is None:
+                raise ValueError(f"Workshop {workshop_id} was not found.")
+
+            if workshop["name"] != confirmation_name:
+                raise ValueError("Type the exact Workshop name to confirm deletion.")
+
+            workshop_count = connection.execute(
+                "SELECT COUNT(*) FROM workshops",
+            ).fetchone()[0]
+            if workshop_count <= 1:
+                raise ValueError("Create another Workshop before deleting the last one.")
+
+            material_rows = connection.execute(
+                "SELECT source_uri FROM materials WHERE workshop_id = ?",
+                (workshop_id,),
+            ).fetchall()
+            artifact_rows = connection.execute(
+                "SELECT id, adapter_path FROM artifacts WHERE workshop_id = ?",
+                (workshop_id,),
+            ).fetchall()
+            artifact_ids = [row["id"] for row in artifact_rows]
+            construct_ids = [
+                row["id"]
+                for row in connection.execute(
+                    "SELECT id FROM constructs WHERE workshop_id = ?",
+                    (workshop_id,),
+                ).fetchall()
+            ]
+
+            deleted_counts: Dict[str, int] = {}
+            if construct_ids:
+                placeholders = ",".join("?" for _ in construct_ids)
+                deleted_counts["constructMessages"] = connection.execute(
+                    f"DELETE FROM construct_messages WHERE construct_id IN ({placeholders})",
+                    construct_ids,
+                ).rowcount
+            else:
+                deleted_counts["constructMessages"] = 0
+
+            validation_ids = construct_ids + artifact_ids
+            if validation_ids:
+                placeholders = ",".join("?" for _ in validation_ids)
+                deleted_counts["constructRuntimeValidations"] = connection.execute(
+                    f"""
+                    DELETE FROM construct_runtime_validations
+                    WHERE construct_id IN ({placeholders})
+                       OR artifact_id IN ({placeholders})
+                    """,
+                    validation_ids + validation_ids,
+                ).rowcount
+            else:
+                deleted_counts["constructRuntimeValidations"] = 0
+
+            for table_name, label in (
+                ("trials", "trials"),
+                ("constructs", "constructs"),
+                ("artifacts", "artifacts"),
+                ("forge_runs", "forgeRuns"),
+                ("qa_pairs", "qaPairs"),
+                ("material_chunks", "materialChunks"),
+                ("assembly_line_runs", "assemblyLineRuns"),
+                ("materials", "materials"),
+            ):
+                deleted_counts[label] = connection.execute(
+                    f"DELETE FROM {table_name} WHERE workshop_id = ?",
+                    (workshop_id,),
+                ).rowcount
+
+            deleted_counts["workshops"] = connection.execute(
+                "DELETE FROM workshops WHERE id = ?",
+                (workshop_id,),
+            ).rowcount
+
+            next_row = connection.execute(
+                """
+                SELECT * FROM workshops
+                ORDER BY datetime(updated_at) DESC, name ASC
+                LIMIT 1
+                """
+            ).fetchone()
+
+        removed_paths = self._cleanup_workshop_runtime_paths(
+            workshop_id=workshop_id,
+            material_source_uris=[row["source_uri"] for row in material_rows],
+            artifact_adapter_paths=[
+                row["adapter_path"] for row in artifact_rows if row["adapter_path"]
+            ],
+        )
+
+        return {
+            "deletedWorkshopId": workshop_id,
+            "deletedWorkshopName": workshop["name"],
+            "deletedCounts": deleted_counts,
+            "removedRuntimePaths": removed_paths,
+            "nextWorkshop": self._workshop_from_row(next_row) if next_row else None,
+        }
+
+    def _cleanup_workshop_runtime_paths(
+        self,
+        workshop_id: str,
+        material_source_uris: List[str],
+        artifact_adapter_paths: List[str],
+    ) -> List[str]:
+        candidates = [
+            DEFAULT_SOURCE_DIR / self._safe_export_name(workshop_id),
+            DEFAULT_EXPORT_DIR / workshop_id,
+            BASE_DIR / "runtime" / "artifacts" / workshop_id,
+        ]
+        candidates.extend(
+            self._resolve_catalog_runtime_path(source_uri)
+            for source_uri in material_source_uris
+            if source_uri and not self._looks_like_remote_uri(source_uri)
+        )
+        candidates.extend(
+            self._resolve_catalog_runtime_path(adapter_path)
+            for adapter_path in artifact_adapter_paths
+            if adapter_path and not adapter_path.startswith("runtime/artifacts/pending/")
+        )
+
+        removed_paths: List[str] = []
+        seen_paths: set[str] = set()
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            resolved_key = str(resolved)
+            if resolved_key in seen_paths or not self._is_runtime_cleanup_path(resolved):
+                continue
+            seen_paths.add(resolved_key)
+
+            if not resolved.exists():
+                continue
+            try:
+                if resolved.is_dir():
+                    shutil.rmtree(resolved)
+                else:
+                    resolved.unlink()
+                removed_paths.append(self._runtime_uri(resolved))
+            except OSError:
+                continue
+        return removed_paths
+
+    def _is_runtime_cleanup_path(self, path: Path) -> bool:
+        allowed_roots = [
+            DEFAULT_SOURCE_DIR.resolve(),
+            DEFAULT_EXPORT_DIR.resolve(),
+            (BASE_DIR / "runtime" / "materials").resolve(),
+            (BASE_DIR / "runtime" / "artifacts").resolve(),
+        ]
+        return any(self._path_is_relative_to(path, root) for root in allowed_roots)
+
+    def _path_is_relative_to(self, path: Path, root: Path) -> bool:
+        try:
+            path.relative_to(root)
+            return True
+        except ValueError:
+            return False
+
+    def _looks_like_remote_uri(self, value: str) -> bool:
+        parsed = urlparse(value)
+        return bool(parsed.scheme and parsed.scheme not in {"file"})
 
     async def list_materials(self, workshop_id: str) -> List[Dict[str, Any]]:
         def query():
