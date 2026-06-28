@@ -80,6 +80,7 @@ Before merge, confirm these docs tell the same story:
 - `docs/first_run_setup.md`
 - `docs/mvp_demo_script.md`
 - `docs/release_notes_v0.1.0-mvp.md`
+- `docs/release_notes_v0.1.1-mvp.md`
 - `docs/mvp_missing_features.md`
 - `docs/roadmap.md`
 - `docs/license_policy.md`

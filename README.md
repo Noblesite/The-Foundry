@@ -209,6 +209,7 @@ The Foundry uses domain terms that support the learn-by-building experience:
 - [License Policy](docs/license_policy.md)
 - [Public Release Checklist](docs/public_release_checklist.md)
 - [Release Notes: v0.1.0-mvp](docs/release_notes_v0.1.0-mvp.md)
+- [Release Notes: v0.1.1-mvp](docs/release_notes_v0.1.1-mvp.md)
 - [Catalog Persistence](docs/the_foundry_catalog_persistence.md)
 - [Forge Runtime Adapter](docs/forge_runtime_adapter.md)
 - [MVP Missing Features](docs/mvp_missing_features.md)
