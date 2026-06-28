@@ -1,8 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  ACADEMY_ACTION_IDS,
+  findAcademyAction,
+} from "../domain/academyRegistry";
+import {
   Artifact,
+  AcademyAction,
   Construct,
   ConstructMessage,
   ConstructModelHandoff,
@@ -13,8 +18,10 @@ import {
   ConstructRuntimeValidation,
   ConstructRuntimeValidationPage,
   CreateConstructRuntimeEventRequest,
+  FoundryLoopFocus,
   FoundryRuntimeStatus,
   ModelArchiveEntry,
+  ReviewedTrialVerdict,
   resolveDefaultBaseModel,
   Trial,
   TrialVerdict,
@@ -35,7 +42,12 @@ import {
   shortModelId,
 } from "../domain/runtimeState";
 import { FoundryRepository } from "../services/foundryRepository";
-import { LearningCard, TrainingMetricExplainer } from "./LearningComponents";
+import LoopFocusCallout from "./LoopFocusCallout";
+import {
+  AcademyActionTooltip,
+  LearningCard,
+  TrainingMetricExplainer,
+} from "./LearningComponents";
 import { WorkspaceSettings } from "./SettingsOverlay";
 import SystemReadinessPanel from "./SystemReadinessPanel";
 
@@ -294,6 +306,7 @@ interface DiagnosticsBundlePreview {
 }
 
 interface ConstructWorkbenchProps {
+  academyActions: AcademyAction[];
   artifact: Artifact;
   construct: Construct;
   handoff?: ConstructModelHandoff | null;
@@ -304,10 +317,14 @@ interface ConstructWorkbenchProps {
   preparationActivity?: ModelPreparationActivity;
   onPrepareModel?: (action: SystemReadinessModelAction) => void;
   onCancelPreparation?: () => void;
+  onOpenAcademyAction: (actionId: string) => void;
   onRuntimeChanged?: (runtime: ConstructRuntime) => void;
+  onLoopEvidenceRefresh?: () => void;
+  loopFocus?: FoundryLoopFocus | null;
 }
 
 const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
+  academyActions,
   artifact,
   construct,
   handoff,
@@ -318,10 +335,15 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   preparationActivity,
   onPrepareModel,
   onCancelPreparation,
+  onOpenAcademyAction,
   onRuntimeChanged,
+  onLoopEvidenceRefresh,
+  loopFocus,
 }) => {
   const conversationId = `construct-${construct.id}`;
   const configuredModelTarget = settings.constructModelId || resolveDefaultBaseModel(settings);
+  const constructLoopFocused = loopFocus?.section === "construct";
+  const constructRuntimeFocusRef = useRef<HTMLDivElement | null>(null);
   const [activeConstruct, setActiveConstruct] = useState(construct);
   const [activeArtifact, setActiveArtifact] = useState(artifact);
   const [messages, setMessages] = useState<ConstructMessage[]>([
@@ -337,6 +359,21 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [runtimeDetail, setRuntimeDetail] = useState("Using deterministic simulated token streaming.");
   const [runtime, setRuntime] = useState<ConstructRuntime | null>(null);
   const [probePrompt, setProbePrompt] = useState("The Foundry is");
+
+  useEffect(() => {
+    if (!constructLoopFocused) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      constructRuntimeFocusRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 80);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [constructLoopFocused, loopFocus?.requestedAt]);
   const [probeModelId, setProbeModelId] = useState("sshleifer/tiny-gpt2");
   const [probeResult, setProbeResult] = useState<ConstructRuntimeProbeResult | null>(null);
   const [isRuntimeBusy, setIsRuntimeBusy] = useState(false);
@@ -965,8 +1002,12 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   };
 
   const loadCurrentRuntime = async (options?: { confirmCaution?: boolean; modelOverride?: string }) => {
-    const targetModel =
-      options?.modelOverride || configuredModelTarget || runtimeLoadTarget || activeArtifact.baseModel;
+    const adapterBackedArtifact =
+      activeArtifact.readiness?.artifactKind === "lora-adapter" && activeArtifact.adapterPath;
+    const targetModel = adapterBackedArtifact
+      ? activeArtifact.baseModel
+      : options?.modelOverride || configuredModelTarget || runtimeLoadTarget || activeArtifact.baseModel;
+    const adapterPath = adapterBackedArtifact ? activeArtifact.adapterPath : undefined;
     const preflight = await runRuntimePreflight(targetModel);
     const readiness = buildRuntimeReadinessSummary(preflight);
     if (!readiness.canLoad) {
@@ -1005,7 +1046,9 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       type: "configure",
       status: "running",
       title: "Runtime configure started",
-      detail: `Preparing transformers runtime for ${shortModelId(targetModel)}.`,
+      detail: adapterPath
+        ? `Preparing transformers runtime for ${shortModelId(targetModel)} with ${activeArtifact.name}.`
+        : `Preparing transformers runtime for ${shortModelId(targetModel)}.`,
     });
     const configured = await repository.configureConstructRuntime({
       mode: "transformers",
@@ -1026,11 +1069,15 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     addRuntimeTimelineEvent({
       type: "load",
       status: "running",
-      title: "Model load started",
-      detail: `Loading ${shortModelId(targetModel)} into the local runtime.`,
+      title: adapterPath ? "Model and adapter load started" : "Model load started",
+      detail: adapterPath
+        ? `Loading ${shortModelId(targetModel)} plus adapter ${activeArtifact.id}.`
+        : `Loading ${shortModelId(targetModel)} into the local runtime.`,
     });
     const runtimeStatus = await repository.loadConstructRuntime({
       modelId: targetModel,
+      adapterPath,
+      artifactId: adapterPath ? activeArtifact.id : undefined,
     });
     await refreshRuntimeTimeline();
     setRuntime(runtimeStatus);
@@ -1042,10 +1089,14 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     addRuntimeTimelineEvent({
       type: "load",
       status: "passed",
-      title: "Model loaded",
-      detail: `${shortModelId(targetModel)} loaded on ${runtimeStatus.device} in ${formatLoadDuration(
-        completedLoadEvent.durationSeconds
-      )}.`,
+      title: adapterPath ? "Model and adapter loaded" : "Model loaded",
+      detail: adapterPath
+        ? `${shortModelId(targetModel)} loaded with adapter ${activeArtifact.id} on ${
+            runtimeStatus.device
+          } in ${formatLoadDuration(completedLoadEvent.durationSeconds)}.`
+        : `${shortModelId(targetModel)} loaded on ${runtimeStatus.device} in ${formatLoadDuration(
+            completedLoadEvent.durationSeconds
+          )}.`,
     });
     return runtimeStatus;
   };
@@ -1306,6 +1357,11 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
             artifactId: event.artifact.id,
             constructId: event.construct.id,
           });
+          if (event.trial) {
+            setSavedTrial(event.trial);
+            setTrialVerdict(event.trial.verdict);
+            onLoopEvidenceRefresh?.();
+          }
           if (options?.smokeTest) {
             const diagnostics = (eventRuntime?.diagnostics || {}) as Record<string, unknown>;
             const cleanup = (diagnostics.memoryCleanup || {}) as Record<string, unknown>;
@@ -1484,7 +1540,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     }
   };
 
-  const saveTrial = async (verdict: TrialVerdict) => {
+  const saveTrial = async (verdict: ReviewedTrialVerdict) => {
     if (!lastInspection) {
       return;
     }
@@ -1509,10 +1565,12 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           runtimeStatus: lastInspection.runtimeStatus,
           modelId: lastInspection.modelId,
           device: lastInspection.device,
+          runtime,
         },
       });
       setTrialVerdict(verdict);
       setSavedTrial(trial);
+      onLoopEvidenceRefresh?.();
     } catch (saveError: unknown) {
       setTrialError(saveError instanceof Error ? saveError.message : "Could not save Trial.");
     } finally {
@@ -1548,6 +1606,15 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     typeof memoryCleanup.cacheSizeBefore === "number" ? memoryCleanup.cacheSizeBefore : null;
   const memoryCleanupCacheAfter =
     typeof memoryCleanup.cacheSizeAfter === "number" ? memoryCleanup.cacheSizeAfter : null;
+  const loadedModelDiagnostics =
+    runtime?.diagnostics?.loadedModel && typeof runtime.diagnostics.loadedModel === "object"
+      ? (runtime.diagnostics.loadedModel as Record<string, unknown>)
+      : {};
+  const loadedModelAdapterPath =
+    typeof loadedModelDiagnostics.adapterPath === "string"
+      ? loadedModelDiagnostics.adapterPath
+      : null;
+  const loadedModelAdapterLoaded = loadedModelDiagnostics.adapterLoaded === true;
   const apiReachable = Boolean(sourceStatus?.api.reachable);
   const constructReachable = Boolean(sourceStatus?.construct.reachable);
   const sourceReachabilityLabel = sourceStatus
@@ -1561,6 +1628,23 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       : "Mock mode";
   const sourceRuntimeDetail = sourceStatus?.construct.detail || activeFoundryDataSource.detail;
   const loadEvent = getRuntimeLoadEvent(runtime);
+  const runtimeLoadingAcademyAction = findAcademyAction(
+    academyActions,
+    ACADEMY_ACTION_IDS.constructRuntimeLoading
+  );
+  const adapterEvidenceAcademyAction = findAcademyAction(
+    academyActions,
+    ACADEMY_ACTION_IDS.constructAdapterEvidence
+  );
+  const memoryCleanupAcademyAction = findAcademyAction(
+    academyActions,
+    ACADEMY_ACTION_IDS.constructMemoryCleanup
+  );
+  const adapterEvidenceLabel = activeArtifact.adapterPath
+    ? "Adapter registered"
+    : loadedModelAdapterLoaded
+      ? "Adapter loaded"
+      : "No adapter";
   const runtimePhaseLabel = {
     idle: "Idle",
     configuring: "Configuring",
@@ -1664,6 +1748,31 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     : readinessNeedsConfirmation
     ? "Review Caution"
     : "Load Current Model";
+  const constructNextAction = useMemo(() => {
+    if (!constructLoopFocused) {
+      return undefined;
+    }
+    if (runtime?.loaded) {
+      return "Send a prompt, inspect the runtime evidence, then save the reply as a Trial verdict.";
+    }
+    if (readinessBlocksLoad) {
+      return readinessSummary?.nextAction || "Resolve runtime readiness blockers before loading.";
+    }
+    if (readinessNeedsConfirmation) {
+      return "Review the caution state and confirm the target before loading the model.";
+    }
+    if (!smokeModelCached) {
+      return "Prepare the tiny smoke model or select a cached Archive model before loading.";
+    }
+    return "Load the current model, then run a smoke prompt to prove streaming inference.";
+  }, [
+    constructLoopFocused,
+    readinessBlocksLoad,
+    readinessNeedsConfirmation,
+    readinessSummary?.nextAction,
+    runtime?.loaded,
+    smokeModelCached,
+  ]);
   const formatTimelineTime = (value: string) =>
     new Intl.DateTimeFormat(undefined, {
       hour: "numeric",
@@ -1698,6 +1807,12 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         </div>
       </div>
 
+      <LoopFocusCallout
+        focus={loopFocus}
+        nextAction={constructNextAction}
+        section="construct"
+      />
+
       <div className="construct-grid">
         <div className="construct-chat panel-glass">
           <div className="chat-surface">
@@ -1726,15 +1841,24 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
               </div>
             </div>
 
-            <div className="construct-runtime-card">
+            <div
+              className={`construct-runtime-card ${constructLoopFocused ? "is-loop-focused" : ""}`}
+              ref={constructRuntimeFocusRef}
+            >
               <div className="runtime-load-header">
                 <div>
                   <p className="panel-kicker">Local runtime</p>
                   <strong>{runtime?.loaded ? "Model loaded" : "Ready to load cached model"}</strong>
                 </div>
-                <span className={`status-badge runtime-phase-${runtimeLoadPhase}`}>
-                  {runtimePhaseLabel}
-                </span>
+                <div className="runtime-load-actions">
+                  <span className={`status-badge runtime-phase-${runtimeLoadPhase}`}>
+                    {runtimePhaseLabel}
+                  </span>
+                  <AcademyActionTooltip
+                    action={runtimeLoadingAcademyAction}
+                    label="Why load?"
+                  />
+                </div>
               </div>
               <span>{runtimeLoadTarget}</span>
               {handoffNotice && (
@@ -1781,6 +1905,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 <span>
                   {activeFoundryDataSource.label}
                   {constructReachable ? " connected" : ""}
+                  <AcademyActionTooltip
+                    action={runtimeLoadingAcademyAction}
+                    label="?"
+                  />
                 </span>
                 <strong>{sourceRuntimeDetail}</strong>
               </div>
@@ -1811,6 +1939,16 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 <div>
                   <span>Loaded model</span>
                   <strong>{shortModelId(loadedModel.modelId)}</strong>
+                </div>
+                <div>
+                  <span>
+                    Adapter
+                    <AcademyActionTooltip
+                      action={adapterEvidenceAcademyAction}
+                      label="?"
+                    />
+                  </span>
+                  <strong>{loadedModelAdapterPath || activeArtifact.adapterPath || adapterEvidenceLabel}</strong>
                 </div>
                 <div>
                   <span>Device</span>
@@ -1845,7 +1983,13 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                   <strong>{formatLoadDuration(loadEvent.durationSeconds)}</strong>
                 </div>
                 <div>
-                  <span>Memory cleanup</span>
+                  <span>
+                    Memory cleanup
+                    <AcademyActionTooltip
+                      action={memoryCleanupAcademyAction}
+                      label="?"
+                    />
+                  </span>
                   <strong>{memoryCleanupStatus}</strong>
                 </div>
                 <div>
@@ -2437,8 +2581,11 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
               <strong>{activeArtifact.name}</strong>
               <span>Forge</span>
               <strong>{activeArtifact.forgeRunId || "manual"}</strong>
-              <span>Adapter</span>
-              <strong>{activeArtifact.adapterPath || "not registered"}</strong>
+              <span>
+                Adapter
+                <AcademyActionTooltip action={adapterEvidenceAcademyAction} label="?" />
+              </span>
+              <strong>{loadedModelAdapterPath || activeArtifact.adapterPath || "not registered"}</strong>
               <span>Runtime</span>
               <strong>{runtimeMode}</strong>
               <span>Runtime status</span>
@@ -2449,7 +2596,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
               <strong>{loadedModel.device || runtime?.device || "none"}</strong>
               <span>Memory</span>
               <strong>{formatRuntimeMemory(runtimeMemory)}</strong>
-              <span>Last load</span>
+              <span>
+                Last load
+                <AcademyActionTooltip action={runtimeLoadingAcademyAction} label="?" />
+              </span>
               <strong>{loadEvent.status || "idle"}</strong>
               <span>Loaded at</span>
               <strong>{formatRuntimeTimestamp(loadEvent.finishedAt)}</strong>
@@ -2899,7 +3049,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                   <strong>{lastInspection.temperature}</strong>
                 </div>
                 <div className="trial-actions" aria-label="Trial verdict">
-                  {(["pass", "needs-work", "fail"] as TrialVerdict[]).map((verdict) => (
+                  {(["pass", "needs-work", "fail"] as ReviewedTrialVerdict[]).map((verdict) => (
                     <button
                       className={`button-secondary button-compact ${
                         trialVerdict === verdict ? "is-active" : ""
@@ -2913,10 +3063,12 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                     </button>
                   ))}
                 </div>
-                {trialVerdict && (
+                {savedTrial && (
                   <p className="save-state success-state">
-                    Trial saved as {trialVerdict}
-                    {savedTrial ? ` (${savedTrial.id}).` : "."}
+                    {trialVerdict === "needs-review"
+                      ? "Trial captured for review"
+                      : `Trial saved as ${trialVerdict}`}
+                    {` (${savedTrial.id}).`}
                   </p>
                 )}
                 {trialError && <p className="save-state error-state">{trialError}</p>}
@@ -2929,6 +3081,26 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           <LearningCard
             title="What is inference?"
             body="Inference is the moment the trained model turns your prompt, system instructions, retrieved context, and generation settings into new tokens."
+          />
+          <LearningCard
+            title="Runtime loading is the proof point"
+            body="A loaded Construct tells you which model, device, and adapter are actually active. Use that evidence before deciding whether an Artifact changed behavior."
+            academyAction={runtimeLoadingAcademyAction}
+            onAction={() => onOpenAcademyAction(ACADEMY_ACTION_IDS.constructRuntimeLoading)}
+          />
+          {activeArtifact.adapterPath && (
+            <LearningCard
+              title="Adapter-backed Constructs"
+              body="When a LoRA adapter is loaded with its base model, the response path is testing the Artifact produced by Forge instead of only the original base model."
+              academyAction={adapterEvidenceAcademyAction}
+              onAction={() => onOpenAcademyAction(ACADEMY_ACTION_IDS.constructAdapterEvidence)}
+            />
+          )}
+          <LearningCard
+            title="Memory cleanup keeps iteration smooth"
+            body="Unload and release memory before switching models or adapters. The runtime records which cleanup hooks ran so users can see what changed."
+            academyAction={memoryCleanupAcademyAction}
+            onAction={() => onOpenAcademyAction(ACADEMY_ACTION_IDS.constructMemoryCleanup)}
           />
           <LearningCard
             title="Why token streaming matters"

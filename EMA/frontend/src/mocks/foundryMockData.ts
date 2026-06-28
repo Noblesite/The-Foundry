@@ -218,6 +218,28 @@ export const mockDashboardSummary: DashboardSummary = {
   currentArtifact: mockArtifact,
   construct: mockConstruct,
   forgeQueue: mockForgeRuns,
+  loopEvidence: {
+    materialCount: mockMaterialSet.sources.length,
+    chunkCount: mockMaterialSet.chunkCount,
+    qaPairCount: mockMaterialSet.qaPairCount,
+    reviewedQAPairCount: 612,
+    acceptedQAPairCount: 584,
+    blockedQAPairCount: 30,
+    jsonlMaterialCount: 1,
+    assemblyRunCount: 2,
+    activeAssemblyRunCount: 1,
+    completedAssemblyRunCount: 1,
+    forgeRunCount: mockForgeRuns.length,
+    activeForgeRunCount: mockForgeRuns.filter(
+      (run) => run.status === "queued" || run.status === "running"
+    ).length,
+    completedForgeRunCount: mockForgeRuns.filter((run) => run.status === "completed").length,
+    artifactCount: 1,
+    readyArtifactCount: mockArtifact.status === "ready" ? 1 : 0,
+    trialCount: 0,
+    adapterBackedTrialCount: 0,
+    updatedAt: "2026-06-21T00:00:00.000Z",
+  },
   academyLesson: mockAcademyLesson,
   runtimeMetrics: mockRuntimeMetrics,
 };

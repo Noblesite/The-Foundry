@@ -9,6 +9,17 @@ export type NavigationSection =
   | "academy"
   | "settings";
 
+export interface FoundryLoopFocus {
+  id: string;
+  section: NavigationSection;
+  stepLabel: string;
+  title: string;
+  detail: string;
+  actionLabel: string;
+  targetLabel: string;
+  requestedAt: number;
+}
+
 export type TrainingMethod = "LoRA" | "QLoRA";
 export type ForgePurpose = "training" | "evaluation";
 export type WorkshopStatus = "planning" | "assembling" | "forging" | "evaluating" | "ready";
@@ -47,7 +58,8 @@ export type ForgeRuntimeMode = "simulated" | "local";
 export type ModelArchiveStatus = "remote" | "cached" | "ready" | "failed";
 export type ModelFitStatus = "fits" | "tight" | "too-large" | "unknown";
 export type TrialStatus = "not-started" | "running" | "passed" | "failed";
-export type TrialVerdict = "pass" | "needs-work" | "fail";
+export type ReviewedTrialVerdict = "pass" | "needs-work" | "fail";
+export type TrialVerdict = ReviewedTrialVerdict | "needs-review";
 export type LearningDifficulty = "starter" | "builder" | "advanced";
 export type ArtifactReadinessStatus = "verified" | "caution" | "simulated" | "blocked";
 
@@ -162,6 +174,7 @@ export interface MaterialChunk {
   chunkIndex: number;
   text: string;
   tokenCount: number;
+  metadata?: Record<string, unknown>;
 }
 
 export interface QAPair {
@@ -175,6 +188,10 @@ export interface QAPair {
   generatorModel?: string;
   confidence?: number;
   generationMetadata?: Record<string, unknown>;
+  sourceReference?: {
+    chunkMetadata?: Record<string, unknown>;
+    sourceLocation?: Record<string, unknown>;
+  };
   qualityGate?: {
     status: "passed" | "blocked" | string;
     reasons: string[];
@@ -183,12 +200,20 @@ export interface QAPair {
       score: number;
       confidence: number;
       sourceOverlap: number;
+      sourceTermCoverage?: number;
       answerLength: number;
       questionFormed: boolean;
       fallback: boolean;
+      answerInSource?: boolean;
+      answerTooShort?: boolean;
+      trivialQuestion?: boolean;
+      questionAnswerSimilarity?: number;
+      hallucinationRisk?: boolean;
+      qaTypeValid?: boolean;
       groundedTerms?: string[];
       qaType?: string;
       promptTemplateVersion?: string | null;
+      qualityThresholds?: Record<string, number>;
     };
   };
   reviewStatus: QAReviewStatus;
@@ -207,6 +232,40 @@ export interface QAGeneratorRuntime {
   dependencies: {
     transformers: boolean;
   };
+  platform?: ModelPlatformProfile;
+  selection?: QAGeneratorSelectionPlan;
+}
+
+export interface QAGeneratorTierPlan {
+  tier: number;
+  label: string;
+  provider: string;
+  mode: string;
+  modelId: string;
+  status: string;
+  fitStatus: string;
+  quality: string;
+  speed: string;
+  reason: string;
+  nextAction: string;
+}
+
+export interface QAGeneratorSelectionPlan {
+  contractVersion: "foundry.qa-generator.selection.v1";
+  selectedTier: number;
+  selectedProvider: string;
+  selectedMode: string;
+  selectedModelId: string;
+  qualityPreference: string;
+  fallbackPolicy: string;
+  contextWindowRequirement: {
+    promptContextTokens: number;
+    maxNewTokens: number;
+    estimatedRequiredContextTokens: number;
+    reason: string;
+  };
+  tiers: QAGeneratorTierPlan[];
+  platform: ModelPlatformProfile;
 }
 
 export interface QAGeneratorSmokeRow {
@@ -239,23 +298,44 @@ export interface QAGeneratorQualityProofResult {
   label: string;
   status: "passed" | "warning" | "failed" | string;
   detail: string;
+  proofSource?: string;
+  localFilesOnly?: boolean;
+  preflightStatus?: string;
   rows: QAGeneratorSmokeRow[];
   quality: {
     score: number;
     confidence: number;
     sourceOverlap: number;
+    sourceTermCoverage?: number;
     answerLength: number;
     questionFormed: boolean;
     fallback: boolean;
+    answerInSource?: boolean;
+    answerTooShort?: boolean;
+    trivialQuestion?: boolean;
+    questionAnswerSimilarity?: number;
+    hallucinationRisk?: boolean;
+    qaTypeValid?: boolean;
     groundedTerms?: string[];
     qaType?: string;
     promptTemplateVersion?: string | null;
+    qualityThresholds?: Record<string, number>;
   };
 }
 
 export interface QAGeneratorQualityProof {
   contractVersion: "foundry.qa-generator.quality-proof.v1";
   runtime: QAGeneratorRuntime;
+  proofMode?: {
+    source: "backend" | "mock" | string;
+    mode: QAGeneratorMode | string;
+    modelId: string;
+    localFilesOnly: boolean;
+    simulated: boolean;
+    preflightStatus: string;
+    modelCached: boolean;
+    modelPath?: string | null;
+  };
   request: {
     materialName: string;
     materialKind: MaterialKind | string;
@@ -304,6 +384,7 @@ export interface ForgeTrainingContract {
   workshopId: string;
   materialId: string;
   datasetUri: string;
+  datasetMetadata?: Record<string, unknown>;
   baseModel: string;
   method: TrainingMethod;
   purpose: ForgePurpose;
@@ -429,6 +510,8 @@ export interface QAGeneratorPreflightResult {
     availableBytes: number;
     message: string;
   };
+  platform?: ModelPlatformProfile;
+  selection?: QAGeneratorSelectionPlan;
   checks: ForgeLocalTrainerPreflightCheck[];
   warnings: string[];
   createdAt: string;
@@ -469,6 +552,13 @@ export interface ForgeLocalTrainerPreflightResult {
   contract: ForgeTrainingContract;
   validation: Record<string, unknown>;
   runtime: ForgeRuntime;
+  proofMode?: {
+    baselineSafe: boolean;
+    downloadRequired: boolean;
+    remoteDownloadAllowed: boolean;
+    requiresCachedModel: boolean;
+    note: string;
+  };
   model: {
     baseModel: string;
     path?: string | null;
@@ -528,9 +618,38 @@ export interface ArtifactReadiness {
   status: ArtifactReadinessStatus;
   canLoad: boolean;
   message: string;
+  artifactKind?: "lora-adapter" | "full-checkpoint" | "metadata-only" | "unknown-output";
   checkedPath: string;
   requiredFiles: string[];
   presentFiles: string[];
+  outputFiles?: ArtifactOutputFile[];
+  trainerResult?: ArtifactTrainerResult | null;
+  compatibility?: ArtifactCompatibility;
+}
+
+export interface ArtifactOutputFile {
+  path: string;
+  role: string;
+  sizeBytes: number;
+}
+
+export interface ArtifactTrainerResult {
+  adapterPath?: string | null;
+  baseModel?: string | null;
+  device?: string | null;
+  loss?: number | null;
+  rowsUsed?: number | null;
+  datasetRows?: number | null;
+  targetModules?: string[];
+  createdAt?: string | null;
+}
+
+export interface ArtifactCompatibility {
+  status: "matched" | "mismatch" | "unknown" | "simulated";
+  message: string;
+  baseModel: string;
+  trainedBaseModel?: string | null;
+  adapterAppliesToBase?: boolean | null;
 }
 
 export interface LibraryIndex {
@@ -566,6 +685,7 @@ export interface ConstructChatResponse {
   construct: Construct;
   artifact: Artifact;
   message: ConstructMessage;
+  trial?: Trial;
   generation: {
     contextWindow: number;
     maxNewTokens: number;
@@ -789,6 +909,8 @@ export interface ArchiveModelHandoff {
   revision?: string;
   label?: string;
   source: "materials" | "settings" | "construct";
+  purpose?: "qa-generator" | "base-model" | "construct-runtime";
+  returnTo?: NavigationSection;
   requestedAt: number;
   preflightOnOpen: boolean;
 }
@@ -885,7 +1007,22 @@ export interface Trial {
   runtimeMode: string;
   tokenCount: number;
   generationSettings: ConstructChatResponse["generation"] & Record<string, unknown>;
+  runtimeProfile?: TrialRuntimeProfile;
   createdAt: string;
+}
+
+export interface TrialRuntimeProfile {
+  source: "simulated" | "base-only" | "adapter-backed" | string;
+  runtimeMode: string;
+  baseModel?: string | null;
+  modelId?: string | null;
+  artifactId: string;
+  artifactKind?: string | null;
+  adapterPath?: string | null;
+  adapterLoaded?: boolean;
+  constructId: string;
+  readinessStatus?: string | null;
+  device?: string | null;
 }
 
 export interface ConstructChatTokenEvent {
@@ -901,6 +1038,7 @@ export interface ConstructChatDoneEvent {
   construct: Construct;
   artifact: Artifact;
   generation: ConstructChatResponse["generation"];
+  trial?: Trial;
   runtime?: {
     mode: string;
     status: string;
@@ -962,6 +1100,28 @@ export interface DashboardSummary {
   currentArtifact: Artifact;
   construct: Construct;
   forgeQueue: ForgeRun[];
+  loopEvidence?: DashboardLoopEvidence;
   academyLesson: AcademyLesson;
   runtimeMetrics: RuntimeMetric[];
+}
+
+export interface DashboardLoopEvidence {
+  materialCount: number;
+  chunkCount: number;
+  qaPairCount: number;
+  reviewedQAPairCount: number;
+  acceptedQAPairCount: number;
+  blockedQAPairCount: number;
+  jsonlMaterialCount: number;
+  assemblyRunCount: number;
+  activeAssemblyRunCount: number;
+  completedAssemblyRunCount: number;
+  forgeRunCount: number;
+  activeForgeRunCount: number;
+  completedForgeRunCount: number;
+  artifactCount: number;
+  readyArtifactCount: number;
+  trialCount: number;
+  adapterBackedTrialCount: number;
+  updatedAt: string;
 }

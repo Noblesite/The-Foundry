@@ -15,6 +15,7 @@ from backend.services.forge_smoke_service import LocalForgeSmokeService
 from backend.services.forge_training_service import ForgeTrainingService
 from backend.services.foundry_catalog_service import FoundryCatalogService
 from backend.services.huggingface_model_service import HuggingFaceModelService
+from backend.services.qa_generation_service import DEFAULT_QA_GENERATOR_MODEL_ID
 
 
 # Initialize FastAPI app
@@ -66,7 +67,7 @@ class StartAssemblyLineInput(BaseModel):
 
 class QAGeneratorRuntimeInput(BaseModel):
     mode: Literal["deterministic", "transformers", "local"]
-    modelId: str = "sshleifer/tiny-gpt2"
+    modelId: str = DEFAULT_QA_GENERATOR_MODEL_ID
     maxNewTokens: int = 320
     temperature: float = 0.2
 
@@ -112,6 +113,8 @@ class ConstructRuntimeInput(BaseModel):
 
 class ConstructRuntimeLoadInput(BaseModel):
     modelId: str | None = None
+    adapterPath: str | None = None
+    artifactId: str | None = None
 
 class ConstructRuntimePreflightInput(BaseModel):
     modelId: str
@@ -757,7 +760,11 @@ async def configure_foundry_construct_runtime_endpoint(data: ConstructRuntimeInp
 @app.post("/api/v1/constructs/runtime/load")
 async def load_foundry_construct_runtime_endpoint(data: ConstructRuntimeLoadInput):
     try:
-        runtime = await construct_inference_service.load(model_id=data.modelId)
+        runtime = await construct_inference_service.load(
+            model_id=data.modelId,
+            adapter_path=data.adapterPath,
+            artifact_id=data.artifactId,
+        )
         return api_envelope(runtime)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
@@ -968,6 +975,14 @@ async def foundry_bootstrap_endpoint():
 @app.get("/api/v1/foundry/dashboard")
 async def foundry_dashboard_endpoint():
     return api_envelope(await foundry_catalog_service.get_dashboard())
+
+
+@app.get("/api/v1/workshops/{workshop_id}/dashboard/evidence")
+async def foundry_workshop_dashboard_evidence_endpoint(workshop_id: str):
+    try:
+        return api_envelope(await foundry_catalog_service.get_dashboard_evidence(workshop_id))
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
 
 
 @app.get("/api/v1/foundry/navigation")
@@ -1231,6 +1246,24 @@ async def export_foundry_qa_pairs_endpoint(workshop_id: str, data: ExportQAPairs
             name=data.name.strip() if data.name else None,
         )
         return api_envelope(export)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+
+@app.post("/api/v1/workshops/{workshop_id}/qa-pairs/export/preview")
+async def preview_foundry_qa_pairs_export_endpoint(workshop_id: str, data: ExportQAPairsInput):
+    run_id = data.assemblyLineRunId.strip()
+    if not run_id:
+        raise HTTPException(status_code=400, detail="Assembly Line run id cannot be empty.")
+
+    try:
+        preview = await foundry_catalog_service.preview_qa_pairs_export(
+            workshop_id=workshop_id,
+            assembly_line_run_id=run_id,
+            include_drafts=data.includeDrafts,
+            include_low_quality=data.includeLowQuality,
+        )
+        return api_envelope(preview)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error))
 
@@ -1589,13 +1622,18 @@ async def stream_foundry_construct_chat_endpoint(construct_id: str, data: Constr
                 )
 
             response_text = "".join(streamed_tokens)
-            await foundry_catalog_service.persist_prepared_construct_chat_response(
+            runtime_payload = construct_inference_service.runtime_payload()
+            generation_settings = dict(prepared["generation"])
+            generation_settings["runtime"] = runtime_payload
+            trial = await foundry_catalog_service.persist_prepared_construct_chat_response(
                 construct_id=construct_id,
                 conversation_id=conversation_id,
                 user_message_id=prepared["userMessageId"],
                 assistant_message_id=prepared["message"]["id"],
                 user_text=message,
                 response_text=response_text,
+                generation_settings=generation_settings,
+                runtime_mode=runtime_payload.get("mode", "simulated"),
             )
             yield sse_event(
                 "done",
@@ -1606,7 +1644,8 @@ async def stream_foundry_construct_chat_endpoint(construct_id: str, data: Constr
                     "construct": prepared["construct"],
                     "artifact": prepared["artifact"],
                     "generation": prepared["generation"],
-                    "runtime": construct_inference_service.runtime_payload(),
+                    "runtime": runtime_payload,
+                    "trial": trial,
                 },
             )
         except ValueError as error:

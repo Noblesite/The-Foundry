@@ -77,6 +77,7 @@ class ConstructInferenceService:
             "finishedAt": None,
             "failureReason": None,
         }
+        self._active_adapter_context: Dict[str, Any] = {}
         self._runtime_events: list[Dict[str, Any]] = []
         self._load_lock = asyncio.Lock()
         self._stream_token_timeout_seconds = float(
@@ -99,14 +100,11 @@ class ConstructInferenceService:
         self._transformers_stream_backend = backend
 
     def describe_runtime(self) -> InferenceRuntime:
-        active_loaded_model_id = (
-            self._active_loaded_model_id
-            if self._active_loaded_model_id in self._model_cache
-            else ""
-        )
-        model_id = active_loaded_model_id or self.model_id or "active Artifact base model"
+        active_loaded_model_id = self._active_loaded_model_id if self._active_loaded_model_id in self._model_cache else ""
+        active_cached = self._model_cache.get(active_loaded_model_id, {}) if active_loaded_model_id else {}
+        model_id = active_cached.get("displayModelId") or active_loaded_model_id or self.model_id or "active Artifact base model"
         loaded = self.mode == "simulated" or bool(active_loaded_model_id)
-        loaded_device = self._loaded_device(model_id) if active_loaded_model_id else self.device_preference
+        loaded_device = self._device_for_model(active_cached.get("model")) if active_loaded_model_id else self.device_preference
         if self.mode == "transformers":
             return InferenceRuntime(
                 mode="transformers",
@@ -136,6 +134,16 @@ class ConstructInferenceService:
             "loaded": runtime.loaded,
             "cacheSize": len(self._model_cache),
         }
+        if self._active_loaded_model_id in self._model_cache:
+            cached = self._model_cache[self._active_loaded_model_id]
+            diagnostics["loadedModel"].update(
+                {
+                    "baseModelId": cached.get("baseModelId"),
+                    "adapterPath": cached.get("adapterPath"),
+                    "artifactId": cached.get("artifactId"),
+                    "adapterLoaded": bool(cached.get("adapterPath")),
+                }
+            )
         diagnostics["loadEvent"] = dict(self._last_load_event)
         diagnostics["memoryCleanup"] = dict(self._last_memory_cleanup)
         return {
@@ -407,7 +415,13 @@ class ConstructInferenceService:
         )
         return runtime
 
-    async def load(self, model_id: Optional[str] = None) -> Dict[str, Any]:
+    async def load(
+        self,
+        model_id: Optional[str] = None,
+        *,
+        adapter_path: Optional[str] = None,
+        artifact_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         if model_id:
             self.model_id = model_id.strip()
         if self.mode != "transformers":
@@ -433,11 +447,18 @@ class ConstructInferenceService:
         target_model = self.model_id
         if not target_model:
             raise ValueError("Set a model id before loading the Transformers runtime.")
+        adapter_reference = self._resolve_adapter_reference(adapter_path)
+        cache_key = self._model_cache_key(target_model, adapter_reference)
+        display_model_id = (
+            f"{target_model} + adapter:{artifact_id or Path(adapter_reference).name}"
+            if adapter_reference
+            else target_model
+        )
         started_at = time.perf_counter()
         event_started_at = self._utc_now()
         self._last_load_event = {
             "status": "loading",
-            "modelId": target_model,
+            "modelId": display_model_id,
             "device": self.device_preference,
             "durationSeconds": None,
             "startedAt": event_started_at,
@@ -448,12 +469,15 @@ class ConstructInferenceService:
             model_reference = self._resolve_model_reference(target_model)
             _tokenizer, model = await self._load_transformers_model(
                 model_reference,
-                cache_key=target_model,
+                cache_key=cache_key,
+                adapter_path=adapter_reference,
+                display_model_id=display_model_id,
+                artifact_id=artifact_id,
             )
-            self._active_loaded_model_id = target_model
+            self._active_loaded_model_id = cache_key
             self._record_load_event(
                 status="loaded",
-                model_id=target_model,
+                model_id=display_model_id,
                 device=self._device_for_model(model),
                 duration_seconds=round(time.perf_counter() - started_at, 3),
                 started_at=event_started_at,
@@ -461,17 +485,26 @@ class ConstructInferenceService:
             self.record_runtime_event(
                 event_type="load",
                 status="passed",
-                title="Model loaded",
-                detail=f"{target_model} loaded on {self._device_for_model(model)}.",
-                model_id=target_model,
+                title="Model loaded" if not adapter_reference else "Model and adapter loaded",
+                detail=(
+                    f"{target_model} loaded with adapter {adapter_reference} on {self._device_for_model(model)}."
+                    if adapter_reference
+                    else f"{target_model} loaded on {self._device_for_model(model)}."
+                ),
+                model_id=display_model_id,
                 runtime_status="loaded",
                 source="backend",
+                metadata={
+                    "baseModel": target_model,
+                    "adapterPath": adapter_reference,
+                    "artifactId": artifact_id,
+                },
             )
         except Exception as error:
             self._active_loaded_model_id = ""
             self._record_load_event(
                 status="failed",
-                model_id=target_model,
+                model_id=display_model_id,
                 device=self.device_preference,
                 duration_seconds=round(time.perf_counter() - started_at, 3),
                 started_at=event_started_at,
@@ -482,7 +515,7 @@ class ConstructInferenceService:
                 status="failed",
                 title="Model load failed",
                 detail=str(error),
-                model_id=target_model,
+                model_id=display_model_id,
                 runtime_status="failed",
                 source="backend",
             )
@@ -686,7 +719,19 @@ class ConstructInferenceService:
         system_prompt: Optional[str],
     ) -> AsyncIterator[str]:
         try:
-            target_model = self.model_id or prepared_response["artifact"]["baseModel"]
+            artifact = prepared_response.get("artifact", {})
+            readiness = artifact.get("readiness") or {}
+            adapter_path = artifact.get("adapterPath") if readiness.get("artifactKind") == "lora-adapter" else None
+            target_model = self.model_id or artifact.get("baseModel") or "active Artifact base model"
+            if adapter_path and (not self.model_id or self.model_id == "active Artifact base model"):
+                target_model = artifact.get("baseModel") or target_model
+            adapter_reference = self._resolve_adapter_reference(adapter_path)
+            cache_key = self._model_cache_key(target_model, adapter_reference)
+            display_model_id = (
+                f"{target_model} + adapter:{artifact.get('id') or Path(adapter_reference).name}"
+                if adapter_reference
+                else target_model
+            )
             model_reference = self._resolve_model_reference(target_model)
             started_at = time.perf_counter()
             event_started_at = self._utc_now()
@@ -696,17 +741,21 @@ class ConstructInferenceService:
                     user_message,
                     system_prompt,
                 )
-                self._active_loaded_model_id = target_model
-                self._model_cache[target_model] = {
+                self._active_loaded_model_id = cache_key
+                self._model_cache[cache_key] = {
                     "tokenizer": None,
                     "model": {
                         "device": self.device_preference,
                         "modelReference": model_reference,
                     },
+                    "displayModelId": display_model_id,
+                    "baseModelId": target_model,
+                    "adapterPath": adapter_reference,
+                    "artifactId": artifact.get("id"),
                 }
                 self._record_load_event(
                     status="loaded",
-                    model_id=target_model,
+                    model_id=display_model_id,
                     device=self.device_preference,
                     duration_seconds=round(time.perf_counter() - started_at, 3),
                     started_at=event_started_at,
@@ -717,12 +766,15 @@ class ConstructInferenceService:
                 return
             tokenizer, model = await self._load_transformers_model(
                 model_reference,
-                cache_key=target_model,
+                cache_key=cache_key,
+                adapter_path=adapter_reference,
+                display_model_id=display_model_id,
+                artifact_id=artifact.get("id"),
             )
-            self._active_loaded_model_id = target_model
+            self._active_loaded_model_id = cache_key
             self._record_load_event(
                 status="loaded",
-                model_id=target_model,
+                model_id=display_model_id,
                 device=self._device_for_model(model),
                 duration_seconds=round(time.perf_counter() - started_at, 3),
                 started_at=event_started_at,
@@ -843,7 +895,15 @@ class ConstructInferenceService:
         finally:
             self._clean_runtime_memory(torch)
 
-    async def _load_transformers_model(self, model_name: str, *, cache_key: Optional[str] = None):
+    async def _load_transformers_model(
+        self,
+        model_name: str,
+        *,
+        cache_key: Optional[str] = None,
+        adapter_path: Optional[str] = None,
+        display_model_id: Optional[str] = None,
+        artifact_id: Optional[str] = None,
+    ):
         model_cache_key = cache_key or model_name
         if model_cache_key in self._model_cache:
             cached = self._model_cache[model_cache_key]
@@ -859,9 +919,40 @@ class ConstructInferenceService:
                 self._active_loaded_model_id = ""
                 self._clean_runtime_memory(cache_size_before=1)
 
-            tokenizer, model = await asyncio.to_thread(self._load_transformers_model_sync, model_name)
-            self._model_cache[model_cache_key] = {"tokenizer": tokenizer, "model": model}
+            tokenizer, model = await asyncio.to_thread(
+                self._load_transformers_model_sync,
+                model_name,
+                adapter_path,
+            )
+            self._model_cache[model_cache_key] = {
+                "tokenizer": tokenizer,
+                "model": model,
+                "displayModelId": display_model_id or model_cache_key,
+                "baseModelId": model_name,
+                "adapterPath": adapter_path,
+                "artifactId": artifact_id,
+            }
             return tokenizer, model
+
+    def _model_cache_key(self, model_name: str, adapter_path: Optional[str]) -> str:
+        return f"{model_name}::adapter={adapter_path}" if adapter_path else model_name
+
+    def _resolve_adapter_reference(self, adapter_path: Optional[str]) -> Optional[str]:
+        if not adapter_path:
+            return None
+        adapter_reference = adapter_path.strip()
+        if not adapter_reference:
+            return None
+        adapter_file_path = Path(adapter_reference).expanduser()
+        if adapter_file_path.exists():
+            return str(adapter_file_path)
+        runtime_path = BASE_DIR / adapter_reference
+        if runtime_path.exists():
+            return str(runtime_path)
+        raise ValueError(
+            f"Artifact adapter path is not available on disk: {adapter_path}. "
+            "Run the Forge again or inspect Artifact readiness before loading Construct."
+        )
 
     def _resolve_model_reference(self, model_name: str, *, require_cached: bool = True) -> Optional[str]:
         model_reference = model_name.strip()
@@ -931,7 +1022,7 @@ class ConstructInferenceService:
         normalized = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw_value).strip("-")
         return normalized or "model"
 
-    def _load_transformers_model_sync(self, model_name: str):
+    def _load_transformers_model_sync(self, model_name: str, adapter_path: Optional[str] = None):
         from transformers import AutoModelForCausalLM, AutoTokenizer
         import torch
 
@@ -947,6 +1038,19 @@ class ConstructInferenceService:
             local_files_only=local_files_only,
             trust_remote_code=False,
         )
+        if adapter_path:
+            try:
+                from peft import PeftModel
+            except Exception as error:
+                raise RuntimeError(
+                    "PEFT is required to load LoRA adapter Artifacts into Construct. "
+                    "Install optional ML dependencies and retry."
+                ) from error
+            model = PeftModel.from_pretrained(
+                model,
+                adapter_path,
+                local_files_only=True,
+            )
         model.to(device)
         model.eval()
         return tokenizer, model

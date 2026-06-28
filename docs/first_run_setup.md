@@ -139,16 +139,34 @@ The safest model for proving the path is `sshleifer/tiny-gpt2`. It is a smoke-te
 Local Forge preflight:
 
 ```bash
-.venv/bin/python scripts/run_local_forge_smoke.py
+make ml-proof-preflight
 ```
+
+This creates a one-row JSONL Material, writes a Forge contract, and reports the
+local trainer checks without attempting model downloads or training.
 
 Local Forge run:
 
 ```bash
-.venv/bin/python scripts/run_local_forge_smoke.py --run
+make ml-proof
 ```
 
-If preflight blocks, follow the failed check detail. The most common blockers are missing optional ML packages, missing cached model files, or memory-fit warnings.
+`make ml-proof` is intentionally not part of `make check`. It requires optional
+ML packages and either a cached Archive model or an explicit
+`FOUNDRY_FORGE_ALLOW_REMOTE_MODEL_DOWNLOAD=1` opt-in. If preflight blocks,
+follow the failed check detail. The most common blockers are missing optional ML
+packages, missing cached model files, or memory-fit warnings.
+
+Construct adapter proof:
+
+```bash
+make construct-adapter-proof
+```
+
+This optional proof runs the tiny Forge LoRA path, loads the produced adapter
+into Construct with PEFT, streams a short reply, and saves a Trial. It is not
+part of `make check` because it exercises optional ML dependencies and a cached
+tiny model.
 
 ## 7. Readiness Gate
 

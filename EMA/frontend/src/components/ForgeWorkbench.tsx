@@ -1,11 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StartForgeRequest } from "../contracts/foundryApi";
+import {
+  ACADEMY_ACTION_IDS,
+  findAcademyAction,
+} from "../domain/academyRegistry";
 import {
   AcademyAction,
   Artifact,
   Construct,
   ConstructChatResponse,
   ForgeLocalTrainerPreflightResult,
+  FoundryLoopFocus,
   ForgeRun,
   ForgePurpose,
   ForgeRuntime,
@@ -27,10 +32,21 @@ import {
   LearningCard,
   TrainingMetricExplainer,
 } from "./LearningComponents";
+import LoopFocusCallout from "./LoopFocusCallout";
 
 const FORGE_WORKER_POLL_MS = 3000;
 
 type ForgeDetailTab = "events" | "contract" | "trial" | "metrics";
+type ForgeLoopFocusTarget = "contract" | "queue";
+
+const forgeLoopFocusTarget = (
+  focus?: FoundryLoopFocus | null
+): ForgeLoopFocusTarget | null => {
+  if (!focus || focus.section !== "forge") {
+    return null;
+  }
+  return focus.targetLabel === "Forge Queue" ? "queue" : "contract";
+};
 
 const formatBytes = (bytes: number) => {
   if (!bytes) {
@@ -50,7 +66,57 @@ const inferForgePurpose = (material?: MaterialSource): ForgePurpose => {
   return marker.includes("trial") || marker.includes("-trials-") ? "evaluation" : "training";
 };
 
+interface MaterialTrainingReadiness {
+  status: string;
+  forgeReady: boolean;
+  defaultTrainingSafe: boolean;
+  rowCount: number;
+  qualityPassedRows: number;
+  qualityBlockedRows: number;
+  deterministicRows: number;
+  fallbackRows: number;
+  generatorModels: string[];
+  recommendation: string;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const stringArrayFromUnknown = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+
+const numberFromUnknown = (value: unknown): number =>
+  typeof value === "number" && Number.isFinite(value) ? value : 0;
+
+const materialTrainingReadiness = (
+  material?: MaterialSource
+): MaterialTrainingReadiness | null => {
+  const exportMetadata = isRecord(material?.metadata?.export) ? material.metadata.export : null;
+  const trainingReadiness = isRecord(exportMetadata?.trainingReadiness)
+    ? exportMetadata.trainingReadiness
+    : null;
+  if (!trainingReadiness) {
+    return null;
+  }
+  return {
+    status: typeof trainingReadiness.status === "string" ? trainingReadiness.status : "unknown",
+    forgeReady: trainingReadiness.forgeReady === true,
+    defaultTrainingSafe: trainingReadiness.defaultTrainingSafe === true,
+    rowCount: numberFromUnknown(trainingReadiness.rowCount),
+    qualityPassedRows: numberFromUnknown(trainingReadiness.qualityPassedRows),
+    qualityBlockedRows: numberFromUnknown(trainingReadiness.qualityBlockedRows),
+    deterministicRows: numberFromUnknown(trainingReadiness.deterministicRows),
+    fallbackRows: numberFromUnknown(trainingReadiness.fallbackRows),
+    generatorModels: stringArrayFromUnknown(trainingReadiness.generatorModels),
+    recommendation:
+      typeof trainingReadiness.recommendation === "string"
+        ? trainingReadiness.recommendation
+        : "Review dataset readiness before creating a Forge.",
+  };
+};
+
 interface ForgeWorkbenchProps {
+  academyActions: AcademyAction[];
   repository: FoundryRepository;
   settings: WorkspaceSettings;
   summary: SectionSummary;
@@ -59,9 +125,13 @@ interface ForgeWorkbenchProps {
   academyAction?: AcademyAction;
   onConstructLoaded: (construct: Construct, artifact: Artifact) => void;
   onOpenAcademy: () => void;
+  onOpenAcademyAction: (actionId: string) => void;
+  onLoopEvidenceRefresh?: () => void;
+  loopFocus?: FoundryLoopFocus | null;
 }
 
 const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
+  academyActions,
   repository,
   settings,
   summary,
@@ -70,6 +140,9 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   academyAction,
   onConstructLoaded,
   onOpenAcademy,
+  onOpenAcademyAction,
+  onLoopEvidenceRefresh,
+  loopFocus,
 }) => {
   const defaultBaseModel = resolveDefaultBaseModel(settings);
   const [materials, setMaterials] = useState<MaterialSource[]>([]);
@@ -95,7 +168,24 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     useState<ForgeTrainingContract | null>(null);
   const [forgeDetailTab, setForgeDetailTab] = useState<ForgeDetailTab>("events");
   const [isLoadingForgeDetail, setIsLoadingForgeDetail] = useState(false);
+  const forgeFocusTarget = useMemo(() => forgeLoopFocusTarget(loopFocus), [loopFocus]);
+  const forgeContractRef = useRef<HTMLFormElement | null>(null);
+  const forgeQueueRef = useRef<HTMLElement | null>(null);
   const [isReconcilingForgeDetail, setIsReconcilingForgeDetail] = useState(false);
+
+  useEffect(() => {
+    if (!forgeFocusTarget || loopFocus?.section !== "forge") {
+      return undefined;
+    }
+
+    const target =
+      forgeFocusTarget === "queue" ? forgeQueueRef.current : forgeContractRef.current;
+    const timeoutId = window.setTimeout(() => {
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [forgeFocusTarget, loopFocus?.requestedAt, loopFocus?.section]);
   const [localTrainingRunId, setLocalTrainingRunId] = useState<string | null>(null);
   const [localPreflightRunId, setLocalPreflightRunId] = useState<string | null>(null);
   const [localTrainerPreflights, setLocalTrainerPreflights] = useState<
@@ -268,6 +358,60 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     () => jsonlMaterials.find((source) => source.id === draft.materialSetId),
     [draft.materialSetId, jsonlMaterials]
   );
+  const selectedTrainingReadiness = useMemo(
+    () => materialTrainingReadiness(selectedMaterial),
+    [selectedMaterial]
+  );
+  const selectedMaterialForgeBlocked = selectedTrainingReadiness?.forgeReady === false;
+  const forgeNextAction = useMemo(() => {
+    if (!forgeFocusTarget) {
+      return undefined;
+    }
+    if (forgeFocusTarget === "queue") {
+      if (forgeRuns.length === 0) {
+        return "Create a Forge contract first; queued and running jobs will appear here.";
+      }
+      return hasActiveForgeRuns
+        ? "Monitor the active Forge job and reconcile worker state when it finishes."
+        : "Inspect completed Forge jobs and load their Artifacts into Construct when ready.";
+    }
+    if (jsonlMaterials.length === 0) {
+      return "Export an approved JSONL Material from Materials before starting a Forge.";
+    }
+    if (!draft.materialSetId) {
+      return "Select an exported JSONL Material for the Forge contract.";
+    }
+    if (!selectedMaterial) {
+      return "Choose a valid JSONL Material from the available exported Materials.";
+    }
+    if (selectedTrainingReadiness?.forgeReady === false) {
+      return "Select a Forge-ready JSONL Material or return to Materials to fix the QA export.";
+    }
+    if (selectedTrainingReadiness?.defaultTrainingSafe === false) {
+      return "This JSONL Material is Forge-ready with caution. Review blocked or override rows before real training.";
+    }
+    return "Review method, base model, and proof settings, then queue the Forge.";
+  }, [
+    draft.materialSetId,
+    forgeFocusTarget,
+    forgeRuns.length,
+    hasActiveForgeRuns,
+    jsonlMaterials.length,
+    selectedMaterial,
+    selectedTrainingReadiness,
+  ]);
+  const trainingMethodAcademyAction = findAcademyAction(
+    academyActions,
+    ACADEMY_ACTION_IDS.forgeTrainingMethod
+  );
+  const adapterBoundaryAcademyAction = findAcademyAction(
+    academyActions,
+    ACADEMY_ACTION_IDS.forgeAdapterBoundary
+  );
+  const proofModeAcademyAction = findAcademyAction(
+    academyActions,
+    ACADEMY_ACTION_IDS.forgeProofMode
+  );
 
   const selectedForgeRun = useMemo(
     () => forgeRuns.find((run) => run.id === selectedForgeDetailId) || null,
@@ -397,6 +541,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
             ? "Tiny Forge proof preflight passed."
             : "Tiny Forge proof is blocked. Review the failed checks."
       );
+      onLoopEvidenceRefresh?.();
     } catch (proofError: unknown) {
       setError(proofError instanceof Error ? proofError.message : "Could not run Tiny Forge proof.");
     } finally {
@@ -564,6 +709,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
           ? `${state.forgeRun.label} completed. Artifact ${state.forgeRun.artifactId} is ready.`
           : "Local trainer completed worker execution."
       );
+      onLoopEvidenceRefresh?.();
     } catch (workerError: unknown) {
       setForgeDetailError(
         workerError instanceof Error ? workerError.message : "Could not run local Forge trainer."
@@ -586,6 +732,9 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     setStatusText(null);
 
     try {
+      if (selectedMaterialForgeBlocked) {
+        throw new Error("Selected JSONL Material is not Forge-ready. Fix the QA export before queueing.");
+      }
       const forgeRun = await repository.startForge(workshop.id, draft);
       setForgeRuns((current) => [forgeRun, ...current.filter((run) => run.id !== forgeRun.id)]);
       if (forgeRun.workerState) {
@@ -603,6 +752,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
           draft.purpose === "evaluation" ? "evaluation" : "training"
         } rows.`
       );
+      onLoopEvidenceRefresh?.();
     } catch (startError: unknown) {
       setError(startError instanceof Error ? startError.message : "Could not start Forge.");
     } finally {
@@ -635,6 +785,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
           ? `${forgeRun.label} completed. Artifact ${forgeRun.artifactId} is ready.`
           : `${forgeRun.label} is ${forgeRun.status} at ${forgeRun.progress}%.`
       );
+      onLoopEvidenceRefresh?.();
     } catch (advanceError: unknown) {
       setError(
         advanceError instanceof Error ? advanceError.message : "Could not advance Forge simulation."
@@ -681,6 +832,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
           ? `${latestRun.label} completed. Artifact ${latestRun.artifactId} is ready.`
           : `${latestRun.label} stopped at ${latestRun.progress}%.`
       );
+      onLoopEvidenceRefresh?.();
     } catch (completeError: unknown) {
       setError(
         completeError instanceof Error
@@ -740,8 +892,13 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
       const construct = await repository.loadArtifactIntoConstruct(workshop.id, {
         artifactId: artifact.id,
       });
-      setStatusText(`${artifact.name} loaded into ${construct.name}.`);
+      setStatusText(
+        artifact.readiness?.artifactKind === "lora-adapter"
+          ? `${artifact.name} loaded into ${construct.name}. Construct runtime will apply the adapter during local load.`
+          : `${artifact.name} loaded into ${construct.name}.`
+      );
       onConstructLoaded(construct, artifact);
+      onLoopEvidenceRefresh?.();
     } catch (loadError: unknown) {
       setError(loadError instanceof Error ? loadError.message : "Could not load Construct.");
     } finally {
@@ -760,8 +917,14 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
         <div className="status-badge is-forging">{workshop.name}</div>
       </div>
 
+      <LoopFocusCallout focus={loopFocus} nextAction={forgeNextAction} section="forge" />
+
       <div className="forge-layout">
-        <form className="forge-panel panel-glass" onSubmit={startForge}>
+        <form
+          className={`forge-panel panel-glass ${forgeFocusTarget === "contract" ? "is-loop-focused" : ""}`}
+          onSubmit={startForge}
+          ref={forgeContractRef}
+        >
           <div className="panel-heading">
             <div>
               <p className="panel-kicker">Forge contract</p>
@@ -817,6 +980,7 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
             <div>
               <label className="field-label" htmlFor="forge-method">
                 Method
+                <AcademyActionTooltip action={trainingMethodAcademyAction} label="?" />
               </label>
               <select
                 id="forge-method"
@@ -860,13 +1024,16 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
               checked={draft.loadIn4Bit}
               onChange={(event) => updateDraft("loadIn4Bit", event.target.checked)}
             />
-            <span>Load base model in 4-bit</span>
+            <span>
+              Load base model in 4-bit
+              <AcademyActionTooltip action={trainingMethodAcademyAction} label="?" />
+            </span>
           </label>
 
           <button
             className="button-primary"
             type="submit"
-            disabled={isStarting || !draft.materialSetId}
+            disabled={isStarting || !draft.materialSetId || selectedMaterialForgeBlocked}
           >
             <i className="fas fa-fire-flame-curved" aria-hidden="true" />
             {isStarting
@@ -891,6 +1058,10 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
               <p className="panel-kicker">Forge Runtime</p>
               <h2>Trainer Adapter</h2>
             </div>
+            <AcademyActionTooltip
+              action={adapterBoundaryAcademyAction}
+              label="Why adapter boundary?"
+            />
           </div>
 
           <div className="construct-runtime-card">
@@ -941,6 +1112,10 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                 <i className="fas fa-flask-vial" aria-hidden="true" />
                 {smokeProofMode === "training" ? "Training" : "Run Tiny Forge Proof"}
               </button>
+              <AcademyActionTooltip
+                action={proofModeAcademyAction}
+                label="Why tiny proof?"
+              />
             </div>
           </div>
 
@@ -987,6 +1162,19 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                   ? `Adapter saved at ${smokeProofResult.workerState.metrics.adapterPath || "runtime output"}.`
                   : smokeProofResult.preflight.nextAction}
               </p>
+              {smokeProofResult.preflight.proofMode?.note && (
+                <p className="forge-proof-note">{smokeProofResult.preflight.proofMode.note}</p>
+              )}
+              {smokeProofResult.blocked.length > 0 && (
+                <div className="forge-proof-checks" aria-label="Blocked proof checks">
+                  {smokeProofResult.blocked.map((check) => (
+                    <div key={check.id}>
+                      <strong>{check.label}</strong>
+                      <span>{check.detail}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {smokeConstructResponse && (
                 <div className="forge-smoke-response">
                   <span>{smokeConstructResponse.construct.name}</span>
@@ -996,11 +1184,10 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
             </article>
           )}
 
-          <ConceptTooltip label="Why an adapter boundary?" title="Forge Runtime">
-            The Forge screen creates a training contract first. The simulator can
-            advance it today, while the local trainer adapter can execute tiny
-            LoRA jobs from the same contract when the runtime is ready.
-          </ConceptTooltip>
+          <AcademyActionTooltip
+            action={adapterBoundaryAcademyAction}
+            label="Why an adapter boundary?"
+          />
         </div>
 
         <div className="forge-panel panel-glass">
@@ -1021,6 +1208,63 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
                 <span>{selectedMaterial.status}</span>
                 <span>{inferForgePurpose(selectedMaterial)}</span>
               </div>
+              {selectedTrainingReadiness ? (
+                <div
+                  className={`forge-material-readiness readiness-${selectedTrainingReadiness.status}`}
+                  aria-label="Selected Material training readiness"
+                >
+                  <div className="runtime-readiness-header">
+                    <div>
+                      <span>Training readiness</span>
+                      <strong>
+                        {selectedTrainingReadiness.defaultTrainingSafe
+                          ? "Default training safe"
+                          : selectedTrainingReadiness.forgeReady
+                            ? "Forge-ready with caution"
+                            : "Blocked for Forge"}
+                      </strong>
+                    </div>
+                    <span className={`status-badge readiness-${selectedTrainingReadiness.status}`}>
+                      {selectedTrainingReadiness.status}
+                    </span>
+                  </div>
+                  <div className="runtime-preflight-stats">
+                    <div>
+                      <span>Rows</span>
+                      <strong>{selectedTrainingReadiness.rowCount.toLocaleString()}</strong>
+                    </div>
+                    <div>
+                      <span>Passed</span>
+                      <strong>{selectedTrainingReadiness.qualityPassedRows.toLocaleString()}</strong>
+                    </div>
+                    <div>
+                      <span>Blocked</span>
+                      <strong>{selectedTrainingReadiness.qualityBlockedRows.toLocaleString()}</strong>
+                    </div>
+                  </div>
+                  <p>{selectedTrainingReadiness.recommendation}</p>
+                  {(selectedTrainingReadiness.deterministicRows > 0 ||
+                    selectedTrainingReadiness.fallbackRows > 0) && (
+                    <p>
+                      Deterministic or fallback rows are present. Keep them for smoke tests,
+                      not production fine-tuning.
+                    </p>
+                  )}
+                  {selectedTrainingReadiness.generatorModels.length > 0 && (
+                    <span className="forge-readiness-models">
+                      Generated by {selectedTrainingReadiness.generatorModels.join(", ")}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="forge-material-readiness readiness-caution">
+                  <strong>Readiness metadata unavailable</strong>
+                  <p>
+                    Older JSONL Materials can still be used, but exporting again from Materials
+                    will attach QA quality and source-reference readiness.
+                  </p>
+                </div>
+              )}
             </article>
           ) : (
             <p className="empty-state">No training-ready JSONL Material selected.</p>
@@ -1030,11 +1274,16 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
             QLoRA loads the base model in a quantized form while training small adapter
             weights. It lowers memory pressure so more builders can fine-tune locally.
           </ConceptTooltip>
+          <AcademyActionTooltip action={trainingMethodAcademyAction} label="LoRA vs QLoRA" />
           <TrainingMetricExplainer />
         </div>
       </div>
 
-      <section className="assembly-runs panel-glass" aria-label="Forge queue">
+      <section
+        className={`assembly-runs panel-glass ${forgeFocusTarget === "queue" ? "is-loop-focused" : ""}`}
+        aria-label="Forge queue"
+        ref={forgeQueueRef}
+      >
         <div className="panel-heading">
           <div>
             <p className="panel-kicker">Forge Queue</p>
@@ -1487,6 +1736,24 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
         body={summary.concept.body}
         academyAction={academyAction}
         onAction={onOpenAcademy}
+      />
+      <LearningCard
+        title="Choose the adapter strategy"
+        body="LoRA and QLoRA both train compact adapters, but QLoRA lowers memory pressure by keeping the base model quantized during training."
+        academyAction={trainingMethodAcademyAction}
+        onAction={() => onOpenAcademyAction(ACADEMY_ACTION_IDS.forgeTrainingMethod)}
+      />
+      <LearningCard
+        title="The Forge contract is the boundary"
+        body="Simulator runs, tiny proof runs, and the real trainer all use the same contract so the handoff from JSONL Material to Artifact stays inspectable."
+        academyAction={adapterBoundaryAcademyAction}
+        onAction={() => onOpenAcademyAction(ACADEMY_ACTION_IDS.forgeAdapterBoundary)}
+      />
+      <LearningCard
+        title="Tiny proof keeps training honest"
+        body="Tiny proof validates the local LoRA path with a cached small model and tiny Material before anyone spends time on a longer Forge."
+        academyAction={proofModeAcademyAction}
+        onAction={() => onOpenAcademyAction(ACADEMY_ACTION_IDS.forgeProofMode)}
       />
       <div className="dashboard-note">
         <AcademyActionTooltip action={academyAction} label="Why this Forge lesson?" />

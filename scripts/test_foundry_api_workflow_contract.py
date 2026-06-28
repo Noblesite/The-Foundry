@@ -253,19 +253,52 @@ def exercise_model_backed_qa_generation(
             ]
         )
 
+    cached_generator_dir = catalog.db_path.parent / "cached-api-qa-generator"
+    cached_generator_dir.mkdir(parents=True, exist_ok=True)
+    (cached_generator_dir / "config.json").write_text("{}", encoding="utf-8")
+    generator_model_id = str(cached_generator_dir)
+
     catalog.qa_generator.set_model_text_backend(tiny_model_backend)
     runtime = assert_response(
         client.post(
             "/api/v1/assembly-line/qa-generator/runtime/configure",
             json={
                 "mode": "transformers",
-                "modelId": "sshleifer/tiny-gpt2",
+                "modelId": generator_model_id,
                 "maxNewTokens": 96,
                 "temperature": 0.0,
             },
         )
     )
     assert runtime["mode"] == "transformers"
+    preflight = assert_response(
+        client.post(
+            "/api/v1/assembly-line/qa-generator/preflight",
+            json={
+                "mode": "transformers",
+                "modelId": generator_model_id,
+                "maxNewTokens": 96,
+                "temperature": 0.0,
+            },
+        )
+    )
+    assert preflight["status"] == "ready"
+    assert preflight["model"]["cached"] is True
+    quality_proof = assert_response(
+        client.post("/api/v1/assembly-line/qa-generator/quality-proof")
+    )
+    assert quality_proof["proofMode"]["source"] == "backend"
+    assert quality_proof["proofMode"]["modelId"] == generator_model_id
+    assert quality_proof["proofMode"]["localFilesOnly"] is True
+    assert quality_proof["proofMode"]["simulated"] is False
+    assert quality_proof["proofMode"]["modelCached"] is True
+    model_proof = next(
+        result for result in quality_proof["results"] if result["label"] == "Cached local model"
+    )
+    assert model_proof["status"] == "passed"
+    assert model_proof["proofSource"] == "backend-local-model"
+    assert model_proof["localFilesOnly"] is True
+    assert model_proof["preflightStatus"] == "ready"
 
     workshop = assert_response(
         client.post(
@@ -274,7 +307,7 @@ def exercise_model_backed_qa_generation(
                 "name": "Model Backed API Workshop",
                 "subject": "Foundry",
                 "voiceTarget": "Engineer",
-                "baseModel": "sshleifer/tiny-gpt2",
+                "baseModel": generator_model_id,
             },
         )
     )
@@ -309,21 +342,66 @@ def exercise_model_backed_qa_generation(
             params={"runId": assembly["id"]},
         )
     )
-    assert qa_pairs and qa_pairs[0]["generatorModel"] == "sshleifer/tiny-gpt2"
+    assert qa_pairs and qa_pairs[0]["generatorModel"] == generator_model_id
     assert qa_pairs[0]["confidence"] == 0.93
     metadata = qa_pairs[0]["generationMetadata"]
     assert metadata["mode"] == "transformers"
     assert metadata["strategy"] == "model-json"
-    assert metadata["prompt"]["templateVersion"] == "foundry.qa-prompt.source-context.v2"
+    assert metadata["prompt"]["templateVersion"] == "foundry.qa-prompt.source-context.v3"
+    assert metadata["prompt"]["qualityTargets"]["groundedOnly"] is True
+    assert "factual" in metadata["prompt"]["requestedQaTypes"]
+    assert metadata["qaTypeGuidance"]
     assert metadata["qaType"] == "behavior"
     assert metadata["source"]["workshopSubject"] == "Foundry"
     assert metadata["source"]["voiceTarget"] == "Engineer"
     assert qa_pairs[0]["qualityGate"]["metrics"]["sourceOverlap"] > 0
+    assert qa_pairs[0]["qualityGate"]["metrics"]["answerInSource"] is True
+    assert qa_pairs[0]["qualityGate"]["metrics"]["hallucinationRisk"] is False
+    assert qa_pairs[0]["qualityGate"]["metrics"]["qaTypeValid"] is True
     assert qa_pairs[0]["qualityGate"]["metrics"]["qaType"] == "behavior"
     assert captured_prompts
-    assert "Workshop subject: Foundry" in captured_prompts[0]["prompt"]
-    assert "Target voice/persona: Engineer" in captured_prompts[0]["prompt"]
-    assert "Marshall uses a water cannon" in captured_prompts[0]["prompt"]
+    prompt_text = "\n".join(item["prompt"] for item in captured_prompts)
+    assert "Workshop subject: Foundry" in prompt_text
+    assert "Target voice/persona: Engineer" in prompt_text
+    assert "QA type guidance:" in prompt_text
+    assert "Quality checklist:" in prompt_text
+    assert "Marshall uses a water cannon" in prompt_text
+    accepted = assert_response(
+        client.patch(
+            f"/api/v1/workshops/{workshop['id']}/qa-pairs/{qa_pairs[0]['id']}",
+            json={
+                "question": qa_pairs[0]["question"],
+                "answer": qa_pairs[0]["answer"],
+                "reviewStatus": "accepted",
+            },
+        )
+    )
+    assert accepted["qualityGate"]["status"] == "passed"
+    preview = assert_response(
+        client.post(
+            f"/api/v1/workshops/{workshop['id']}/qa-pairs/export/preview",
+            json={
+                "assemblyLineRunId": assembly["id"],
+                "name": "Model Backed Rows",
+                "includeLowQuality": False,
+            },
+        )
+    )
+    assert preview["trainingReadiness"]["contractVersion"] == "foundry.qa-training-readiness.v1"
+    assert preview["trainingReadiness"]["status"] == "ready"
+    assert preview["trainingReadiness"]["forgeReady"] is True
+    assert preview["trainingReadiness"]["defaultTrainingSafe"] is True
+    assert preview["trainingReadiness"]["reviewedRows"] == 1
+    assert preview["trainingReadiness"]["sourceReferencedRows"] == 1
+    assert preview["trainingReadiness"]["qualityPassedRows"] == 1
+    assert preview["trainingReadiness"]["qualityBlockedRows"] == 0
+    assert preview["trainingReadiness"]["deterministicRows"] == 0
+    assert preview["trainingReadiness"]["fallbackRows"] == 0
+    assert preview["trainingReadiness"]["generatorModels"] == [generator_model_id]
+    assert preview["trainingReadiness"]["generatorModes"] == ["transformers"]
+    assert preview["trainingReadiness"]["promptVersions"] == ["foundry.qa-prompt.source-context.v3"]
+    assert all(check["status"] == "pass" for check in preview["trainingReadiness"]["checks"])
+    assert any(item["localFilesOnly"] is True for item in captured_prompts)
 
 
 def run_api_workflow(tmp_path: Path) -> None:
@@ -385,6 +463,9 @@ def run_api_workflow(tmp_path: Path) -> None:
             )
             assert qa_preflight["contractVersion"] == "foundry.qa-generator.preflight.v1"
             assert qa_preflight["status"] == "ready"
+            assert qa_preflight["selection"]["contractVersion"] == "foundry.qa-generator.selection.v1"
+            assert qa_preflight["selection"]["selectedTier"] == 0
+            assert qa_preflight["platform"]["accelerator"] in {"cpu", "cuda", "mps"}
 
             workshop = assert_response(
                 client.post(
@@ -435,6 +516,9 @@ def run_api_workflow(tmp_path: Path) -> None:
                 )
             )
             assert chunks and "Marshall helps the team" in chunks[0]["text"]
+            assert chunks[0]["metadata"]["contractVersion"] == "foundry.material-chunk.v1"
+            assert chunks[0]["metadata"]["source"]["materialId"] == material["id"]
+            assert chunks[0]["metadata"]["sourceLocation"]["chunkIndex"] == chunks[0]["chunkIndex"]
 
             qa_pairs = assert_response(
                 client.get(
@@ -444,6 +528,10 @@ def run_api_workflow(tmp_path: Path) -> None:
             )
             assert qa_pairs and qa_pairs[0]["reviewStatus"] == "draft"
             assert qa_pairs[0]["qualityGate"]["status"] == "blocked"
+            assert "trivialQuestion" in qa_pairs[0]["qualityGate"]["metrics"]
+            assert "hallucinationRisk" in qa_pairs[0]["qualityGate"]["metrics"]
+            assert qa_pairs[0]["generationMetadata"]["source"]["materialId"] == material["id"]
+            assert qa_pairs[0]["sourceReference"]["sourceLocation"]["chunkIndex"] == 0
 
             accepted = assert_response(
                 client.patch(
@@ -457,6 +545,31 @@ def run_api_workflow(tmp_path: Path) -> None:
             )
             assert accepted["reviewStatus"] == "accepted"
 
+            preview = assert_response(
+                client.post(
+                    f"/api/v1/workshops/{workshop['id']}/qa-pairs/export/preview",
+                    json={
+                        "assemblyLineRunId": assembly["id"],
+                        "name": "Accepted Rows",
+                        "includeLowQuality": True,
+                    },
+                )
+            )
+            assert preview["contractVersion"] == "foundry.qa-jsonl.preview.v1"
+            assert preview["rowCount"] == 1
+            assert preview["validation"]["forgeReady"] is True
+            assert preview["sampleRows"][0]["source"]["sourceLocation"]["chunkIndex"] == 0
+            assert preview["trainingReadiness"]["contractVersion"] == "foundry.qa-training-readiness.v1"
+            assert preview["trainingReadiness"]["status"] == "caution"
+            assert preview["trainingReadiness"]["forgeReady"] is True
+            assert preview["trainingReadiness"]["defaultTrainingSafe"] is False
+            assert preview["trainingReadiness"]["qualityBlockedRows"] == 1
+            assert preview["trainingReadiness"]["deterministicRows"] == 1
+            assert any(
+                check["id"] == "generator-provenance" and check["status"] == "warn"
+                for check in preview["trainingReadiness"]["checks"]
+            )
+
             exported = assert_response(
                 client.post(
                     f"/api/v1/workshops/{workshop['id']}/qa-pairs/export",
@@ -469,6 +582,17 @@ def run_api_workflow(tmp_path: Path) -> None:
             )
             assert exported["format"] == "jsonl"
             assert exported["qualityGate"]["status"] == "override"
+            assert exported["trainingReadiness"]["status"] == "caution"
+            assert exported["trainingReadiness"]["forgeReady"] is True
+            assert exported["trainingReadiness"]["defaultTrainingSafe"] is False
+            exported_path = catalog_module.BASE_DIR / exported["exportUri"]
+            exported_rows = [
+                json.loads(line)
+                for line in exported_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            assert exported_rows[0]["source"]["sourceLocation"]["chunkIndex"] == 0
+            assert exported_rows[0]["metadata"]["sourceReference"]["chunkMetadata"]["fingerprint"]
 
             forge = assert_response(
                 client.post(
@@ -559,7 +683,14 @@ def run_api_workflow(tmp_path: Path) -> None:
             assert local_artifact["adapterPath"] == local_state["metrics"]["adapterPath"]
             assert local_artifact["readiness"]["status"] == "verified"
             assert local_artifact["readiness"]["canLoad"] is True
+            assert local_artifact["readiness"]["artifactKind"] == "lora-adapter"
+            assert local_artifact["readiness"]["trainerResult"]["rowsUsed"] == 1
+            assert local_artifact["readiness"]["compatibility"]["status"] in {"matched", "mismatch"}
             assert "trainer-result.json" in local_artifact["readiness"]["presentFiles"]
+            assert any(
+                output_file["role"] == "adapter-weights"
+                for output_file in local_artifact["readiness"]["outputFiles"]
+            )
             assert (
                 catalog_module.BASE_DIR / local_artifact["adapterPath"] / "trainer-result.json"
             ).exists()
@@ -570,6 +701,49 @@ def run_api_workflow(tmp_path: Path) -> None:
                 )
             )
             assert local_construct["artifactId"] == local_artifact["id"]
+
+            load_calls = []
+
+            class FakeParameter:
+                device = "cpu"
+
+            class FakeConstructModel:
+                def parameters(self):
+                    return iter([FakeParameter()])
+
+            def fake_construct_loader(model_name: str, adapter_path: str | None = None):
+                load_calls.append({"modelName": model_name, "adapterPath": adapter_path})
+                return object(), FakeConstructModel()
+
+            isolated_construct._load_transformers_model_sync = fake_construct_loader
+            adapter_runtime = assert_response(
+                client.post(
+                    "/api/v1/constructs/runtime/configure",
+                    json={
+                        "mode": "transformers",
+                        "modelId": local_artifact["baseModel"],
+                        "device": "cpu",
+                    },
+                )
+            )
+            assert adapter_runtime["mode"] == "transformers"
+            loaded_adapter_runtime = assert_response(
+                client.post(
+                    "/api/v1/constructs/runtime/load",
+                    json={
+                        "modelId": local_artifact["baseModel"],
+                        "adapterPath": local_artifact["adapterPath"],
+                        "artifactId": local_artifact["id"],
+                    },
+                )
+            )
+            assert load_calls[-1]["adapterPath"].endswith(local_artifact["adapterPath"])
+            assert loaded_adapter_runtime["status"] == "loaded"
+            assert loaded_adapter_runtime["diagnostics"]["loadedModel"]["adapterLoaded"] is True
+            assert (
+                loaded_adapter_runtime["diagnostics"]["loadedModel"]["artifactId"]
+                == local_artifact["id"]
+            )
 
             async def preflight_construct_stub(model_id: str, device: str):
                 if model_id == str(cached_model_dir):
@@ -671,6 +845,7 @@ def run_api_workflow(tmp_path: Path) -> None:
             assert any(line.startswith("event: done") for line in lines)
             assert '"mode": "transformers"' in streamed.text
             assert '"status": "loaded"' in streamed.text
+            assert '"verdict": "needs-review"' in streamed.text
 
             isolated_construct.set_transformers_stream_backend(None)
             assert_response(
@@ -747,6 +922,8 @@ def run_api_workflow(tmp_path: Path) -> None:
             assert artifact["forgeRunId"] == forge["id"]
             assert artifact["readiness"]["status"] == "simulated"
             assert artifact["readiness"]["canLoad"] is True
+            assert artifact["readiness"]["artifactKind"] == "metadata-only"
+            assert artifact["readiness"]["compatibility"]["status"] == "simulated"
 
             construct = assert_response(
                 client.post(
@@ -771,6 +948,23 @@ def run_api_workflow(tmp_path: Path) -> None:
             )
             assert chat["artifact"]["id"] == artifact["id"]
             assert "Simulated response" in chat["message"]["text"]
+            assert chat["trial"]["messageId"] == chat["message"]["id"]
+            assert chat["trial"]["verdict"] == "needs-review"
+            assert chat["trial"]["generationSettings"]["autoTrial"]["reviewRequired"] is True
+            unreviewed_trials = assert_response(
+                client.get(f"/api/v1/workshops/{workshop['id']}/trials")
+            )
+            assert any(item["id"] == chat["trial"]["id"] for item in unreviewed_trials)
+            unreviewed_export = client.post(
+                f"/api/v1/workshops/{workshop['id']}/trials/export",
+                json={
+                    "trialIds": [chat["trial"]["id"]],
+                    "verdicts": [],
+                    "name": "Unreviewed Trial Export",
+                },
+            )
+            assert unreviewed_export.status_code == 404
+            assert "Review auto-captured Trials" in unreviewed_export.text
 
             trial = assert_response(
                 client.post(
@@ -790,10 +984,15 @@ def run_api_workflow(tmp_path: Path) -> None:
             )
             assert trial["runtimeMode"] == "simulated"
             assert trial["verdict"] == "pass"
+            assert trial["id"] == chat["trial"]["id"]
+            assert trial["runtimeProfile"]["source"] == "simulated"
+            assert trial["runtimeProfile"]["artifactKind"] == "metadata-only"
+            assert trial["runtimeProfile"]["adapterLoaded"] is False
 
             trials = assert_response(client.get(f"/api/v1/workshops/{workshop['id']}/trials"))
-            assert len(trials) == 1
-            assert trials[0]["id"] == trial["id"]
+            reviewed_trial = next(item for item in trials if item["id"] == trial["id"])
+            assert reviewed_trial["verdict"] == "pass"
+            assert reviewed_trial["runtimeProfile"]["source"] == "simulated"
 
             scored_artifact = next(
                 item
@@ -803,6 +1002,117 @@ def run_api_workflow(tmp_path: Path) -> None:
                 if item["id"] == artifact["id"]
             )
             assert scored_artifact["trialScore"] == 100
+
+            trial_export = assert_response(
+                client.post(
+                    f"/api/v1/workshops/{workshop['id']}/trials/export",
+                    json={
+                        "trialIds": [trial["id"]],
+                        "verdicts": [],
+                        "name": "Reviewed Trial Evaluation Set",
+                    },
+                )
+            )
+            assert trial_export["material"]["kind"] == "jsonl"
+            assert trial_export["trialCount"] == 1
+
+            evaluation_forge = assert_response(
+                client.post(
+                    f"/api/v1/workshops/{workshop['id']}/forges",
+                    json={
+                        "materialSetId": trial_export["material"]["id"],
+                        "baseModel": "sshleifer/tiny-gpt2",
+                        "method": "QLoRA",
+                        "purpose": "evaluation",
+                        "epochs": 3,
+                        "learningRate": "0.0002",
+                        "loadIn4Bit": True,
+                    },
+                )
+            )
+            assert evaluation_forge["purpose"] == "evaluation"
+            assert evaluation_forge["workerState"]["validation"]["valid"] is True
+            for _ in range(10):
+                evaluation_forge = assert_response(
+                    client.post(f"/api/v1/forges/{evaluation_forge['id']}/simulate")
+                )
+                if evaluation_forge["status"] == "completed":
+                    break
+            assert evaluation_forge["status"] == "completed"
+            evaluation_report = evaluation_forge["workerState"]["metrics"]["evaluationReport"]
+            assert evaluation_report["reportVersion"] == "foundry.forge.evaluation.v1"
+            assert evaluation_report["needsWorkCount"] == 1
+
+            weak_sample = evaluation_report["samples"][0]
+            weak_export = assert_response(
+                client.post(
+                    f"/api/v1/forges/{evaluation_forge['id']}/evaluation/weak-samples/export",
+                    json={
+                        "name": "Corrective Weak Samples",
+                        "samples": [
+                            {
+                                "instruction": weak_sample["instruction"],
+                                "expected": (
+                                    weak_sample["expected"]
+                                    + "\n\nCorrective note: keep the answer concise."
+                                ),
+                                "observed": weak_sample["observed"],
+                                "verdict": weak_sample["verdict"],
+                                "note": "Reviewed for the corrective Forge loop.",
+                            }
+                        ],
+                    },
+                )
+            )
+            assert weak_export["sampleCount"] == 1
+            assert weak_export["material"]["status"] == "qa-ready"
+            weak_metadata = weak_export["material"]["metadata"]["export"]
+            assert weak_metadata["source"] == "evaluation-report"
+            assert weak_metadata["reviewed"] is True
+            assert weak_metadata["trainingReadiness"]["forgeReady"] is True
+            assert weak_metadata["trainingReadiness"]["defaultTrainingSafe"] is False
+
+            corrective_forge = assert_response(
+                client.post(
+                    f"/api/v1/workshops/{workshop['id']}/forges",
+                    json={
+                        "materialSetId": weak_export["material"]["id"],
+                        "baseModel": "sshleifer/tiny-gpt2",
+                        "method": "LoRA",
+                        "purpose": "training",
+                        "epochs": 1,
+                        "learningRate": "0.0002",
+                        "loadIn4Bit": False,
+                    },
+                )
+            )
+            assert corrective_forge["purpose"] == "training"
+            assert corrective_forge["workerState"]["validation"]["valid"] is True
+            assert (
+                corrective_forge["trainingContract"]["datasetMetadata"]["export"]["source"]
+                == "evaluation-report"
+            )
+
+            dashboard = assert_response(client.get("/api/v1/foundry/dashboard"))
+            assert "loopEvidence" in dashboard
+            assert dashboard["loopEvidence"]["updatedAt"]
+
+            evidence = assert_response(
+                client.get(f"/api/v1/workshops/{workshop['id']}/dashboard/evidence")
+            )
+            assert evidence["materialCount"] >= 2
+            assert evidence["chunkCount"] >= 1
+            assert evidence["qaPairCount"] >= 1
+            assert evidence["acceptedQAPairCount"] >= 1
+            assert evidence["jsonlMaterialCount"] >= 1
+            assert evidence["completedForgeRunCount"] >= 1
+            assert evidence["artifactCount"] >= 1
+            assert evidence["readyArtifactCount"] >= 1
+            assert evidence["trialCount"] >= 1
+            assert evidence["updatedAt"]
+
+            bootstrap = assert_response(client.get("/api/v1/foundry/bootstrap"))
+            assert bootstrap["dashboard"]["loopEvidence"]["updatedAt"]
     finally:
         api_server.foundry_catalog_service = original_catalog_service
         api_server.forge_training_service = original_forge_service

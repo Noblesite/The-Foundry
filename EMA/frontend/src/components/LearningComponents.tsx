@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AcademyAction } from "../domain/foundry";
 
 interface ConceptTooltipProps {
-  label: string;
+  label: React.ReactNode;
   title: string;
   children: React.ReactNode;
 }
@@ -32,15 +33,121 @@ interface TokenPreviewProps {
   text: string;
 }
 
-export const ConceptTooltip: React.FC<ConceptTooltipProps> = ({ label, title, children }) => (
-  <span className="concept-tooltip" tabIndex={0}>
-    {label}
-    <span className="concept-tooltip-card" role="tooltip">
-      <strong>{title}</strong>
-      <span>{children}</span>
-    </span>
-  </span>
-);
+type TooltipPlacement = "above" | "below";
+
+interface TooltipPosition {
+  left: number;
+  top: number;
+  width: number;
+  placement: TooltipPlacement;
+}
+
+const TOOLTIP_MARGIN = 16;
+const TOOLTIP_MAX_WIDTH = 320;
+const TOOLTIP_MIN_WIDTH = 240;
+
+const clamp = (value: number, minimum: number, maximum: number) =>
+  Math.max(minimum, Math.min(maximum, value));
+
+const getTooltipPosition = (trigger: HTMLElement): TooltipPosition => {
+  const rect = trigger.getBoundingClientRect();
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+  const availableWidth = Math.max(0, viewportWidth - TOOLTIP_MARGIN * 2);
+  const width = Math.min(TOOLTIP_MAX_WIDTH, Math.max(TOOLTIP_MIN_WIDTH, availableWidth));
+  const left = clamp(rect.left, TOOLTIP_MARGIN, Math.max(TOOLTIP_MARGIN, viewportWidth - width - TOOLTIP_MARGIN));
+  const placement: TooltipPlacement = rect.top > 190 ? "above" : "below";
+
+  return {
+    left,
+    top: placement === "above" ? rect.top - 12 : rect.bottom + 12,
+    width,
+    placement,
+  };
+};
+
+export const ConceptTooltip: React.FC<ConceptTooltipProps> = ({ label, title, children }) => {
+  const tooltipId = useId();
+  const triggerRef = useRef<HTMLSpanElement | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [position, setPosition] = useState<TooltipPosition | null>(null);
+
+  const updatePosition = useCallback(() => {
+    if (!triggerRef.current) {
+      return;
+    }
+    setPosition(getTooltipPosition(triggerRef.current));
+  }, []);
+
+  const openTooltip = () => {
+    updatePosition();
+    setIsOpen(true);
+  };
+
+  const closeTooltip = () => {
+    setIsOpen(false);
+  };
+
+  const stopLabelForwarding = (event: React.MouseEvent<HTMLSpanElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const clickTooltip = (event: React.MouseEvent<HTMLSpanElement>) => {
+    stopLabelForwarding(event);
+    openTooltip();
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      return undefined;
+    }
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [isOpen, updatePosition]);
+
+  return (
+    <>
+      <span
+        aria-describedby={isOpen ? tooltipId : undefined}
+        aria-label={typeof label === "string" ? undefined : title}
+        className="concept-tooltip"
+        onBlur={closeTooltip}
+        onClick={clickTooltip}
+        onFocus={openTooltip}
+        onMouseDown={stopLabelForwarding}
+        onMouseEnter={openTooltip}
+        onMouseLeave={closeTooltip}
+        ref={triggerRef}
+        tabIndex={0}
+      >
+        {label}
+      </span>
+      {isOpen && position && createPortal(
+        <span
+          className={`concept-tooltip-card tooltip-floating-card tooltip-floating-card-${position.placement}`}
+          id={tooltipId}
+          role="tooltip"
+          style={{
+            left: position.left,
+            top: position.top,
+            width: position.width,
+          }}
+        >
+          <strong>{title}</strong>
+          <span>{children}</span>
+        </span>,
+        document.body
+      )}
+    </>
+  );
+};
 
 export const AcademyActionTooltip: React.FC<AcademyActionTooltipProps> = ({
   action,

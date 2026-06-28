@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { StartForgeRequest } from "../contracts/foundryApi";
 import { ACADEMY_ACTION_IDS, findAcademyAction } from "../domain/academyRegistry";
 import {
   AcademyAction,
+  FoundryLoopFocus,
   ForgeEvaluationReport,
   ForgeRun,
+  ReviewedTrialVerdict,
   SectionSummary,
   Trial,
   TrialVerdict,
@@ -12,6 +14,7 @@ import {
 } from "../domain/foundry";
 import { FoundryRepository } from "../services/foundryRepository";
 import { AcademyActionTooltip, LearningAction, LearningCard } from "./LearningComponents";
+import LoopFocusCallout from "./LoopFocusCallout";
 
 interface TrialsWorkbenchProps {
   academyActions: AcademyAction[];
@@ -21,13 +24,96 @@ interface TrialsWorkbenchProps {
   onOpenAcademy: (conceptId?: string) => void;
   onOpenAcademyAction: (actionId: string) => void;
   onOpenForgePreset: (preset: StartForgeRequest) => void;
+  onLoopEvidenceRefresh?: () => void;
+  loopFocus?: FoundryLoopFocus | null;
 }
 
 const verdictLabels: Record<TrialVerdict, string> = {
   pass: "Pass",
   "needs-work": "Needs work",
   fail: "Fail",
+  "needs-review": "Needs review",
 };
+
+const runtimeSourceLabels: Record<string, string> = {
+  simulated: "Simulated",
+  "base-only": "Base model",
+  "adapter-backed": "Adapter-backed",
+};
+
+const runtimeSourceLabel = (source?: string) =>
+  runtimeSourceLabels[source || ""] || source || "Unknown runtime";
+
+const runtimeModeLabel = (mode?: string) => {
+  if (mode === "transformers") {
+    return "Local Transformers";
+  }
+  if (mode === "simulated") {
+    return "Simulated";
+  }
+  return mode || "Unknown runtime";
+};
+
+const trialRuntimeEvidence = (trial: Trial) => {
+  const profile = trial.runtimeProfile;
+  const runtimeMode = profile?.runtimeMode || trial.runtimeMode;
+  const source = profile?.source || (runtimeMode === "simulated" ? "simulated" : "base-only");
+  const modelId = profile?.modelId || profile?.baseModel || "unknown model";
+  const device = profile?.device || "unknown device";
+
+  if (runtimeMode === "transformers" && source === "adapter-backed") {
+    return {
+      tone: "live-adapter",
+      icon: "fa-bolt",
+      kicker: "Real local stream",
+      title: "Adapter-backed local model",
+      detail: `Transformers streamed from ${modelId} on ${device}; the Artifact adapter was applied.`,
+    };
+  }
+
+  if (runtimeMode === "transformers") {
+    return {
+      tone: "live-base",
+      icon: "fa-microchip",
+      kicker: "Real local stream",
+      title: "Base model only",
+      detail: `Transformers streamed from ${modelId} on ${device}; no adapter was applied.`,
+    };
+  }
+
+  if (source === "simulated" || runtimeMode === "simulated") {
+    return {
+      tone: "simulated",
+      icon: "fa-flask",
+      kicker: "Simulated contract",
+      title: "Not model-quality proof",
+      detail: "This Trial proves the UI/API loop, but it did not stream from a loaded local model.",
+    };
+  }
+
+  return {
+    tone: "unknown",
+    icon: "fa-circle-question",
+    kicker: runtimeModeLabel(runtimeMode),
+    title: runtimeSourceLabel(source),
+    detail: "Runtime evidence is incomplete. Re-run the Construct prompt after loading a model.",
+  };
+};
+
+const verdictRank: Record<TrialVerdict, number> = {
+  pass: 3,
+  "needs-work": 2,
+  fail: 1,
+  "needs-review": 0,
+};
+
+const reviewedTrialVerdicts: ReviewedTrialVerdict[] = ["pass", "needs-work", "fail"];
+
+const normalizePrompt = (prompt: string) =>
+  prompt.trim().toLowerCase().replace(/\s+/g, " ");
+
+const shortValue = (value: string, length = 48) =>
+  value.length > length ? `${value.slice(0, length - 1)}...` : value;
 
 interface EvaluationReportSummary {
   forgeRun: ForgeRun;
@@ -40,7 +126,7 @@ interface ReviewedWeakSample {
   instruction: string;
   expected: string;
   observed: string;
-  verdict: Exclude<TrialVerdict, "pass">;
+  verdict: Exclude<ReviewedTrialVerdict, "pass">;
   note: string;
 }
 
@@ -49,12 +135,64 @@ type ReadinessState =
   | "ready-for-forge"
   | "candidate-artifact"
   | "ready-for-construct";
+type TrialsLoopFocusTarget = "comparison" | "export" | "list";
+type TrialFilter = "all" | "live-local" | "adapter-backed" | "simulated" | "needs-review";
+
+const trialsLoopFocusTarget = (
+  focus?: FoundryLoopFocus | null
+): TrialsLoopFocusTarget | null => {
+  if (!focus || focus.section !== "trials") {
+    return null;
+  }
+  if (focus.targetLabel.toLowerCase().includes("export")) {
+    return "export";
+  }
+  if (focus.targetLabel.toLowerCase().includes("comparison")) {
+    return "comparison";
+  }
+  return "list";
+};
 
 const readinessLabels: Record<ReadinessState, string> = {
   "needs-more-data": "Needs more data",
   "ready-for-forge": "Ready for another Forge",
   "candidate-artifact": "Candidate Artifact",
   "ready-for-construct": "Ready for Construct",
+};
+
+const trialFilterLabels: Record<TrialFilter, string> = {
+  all: "All",
+  "live-local": "Live local",
+  "adapter-backed": "Adapter-backed",
+  simulated: "Simulated",
+  "needs-review": "Needs review",
+};
+
+const trialFilterOrder: TrialFilter[] = [
+  "all",
+  "live-local",
+  "adapter-backed",
+  "simulated",
+  "needs-review",
+];
+
+const trialMatchesFilter = (trial: Trial, filter: TrialFilter) => {
+  const runtimeMode = trial.runtimeProfile?.runtimeMode || trial.runtimeMode;
+  const source = trial.runtimeProfile?.source || (runtimeMode === "simulated" ? "simulated" : "");
+
+  if (filter === "all") {
+    return true;
+  }
+  if (filter === "live-local") {
+    return runtimeMode === "transformers";
+  }
+  if (filter === "adapter-backed") {
+    return source === "adapter-backed";
+  }
+  if (filter === "simulated") {
+    return runtimeMode === "simulated" || source === "simulated";
+  }
+  return trial.verdict === "needs-review";
 };
 
 const getReportTime = (report: ForgeEvaluationReport) => Date.parse(report.createdAt) || 0;
@@ -97,8 +235,10 @@ const formatDelta = (value: number, suffix = "%"): string => {
 const weakSampleCount = (report: ForgeEvaluationReport): number =>
   report.samples.filter((sample) => sample.verdict !== "pass").length;
 
-const isWeakVerdict = (verdict: TrialVerdict): verdict is Exclude<TrialVerdict, "pass"> =>
-  verdict !== "pass";
+const isWeakVerdict = (
+  verdict: TrialVerdict
+): verdict is Exclude<ReviewedTrialVerdict, "pass"> =>
+  verdict === "needs-work" || verdict === "fail";
 
 const createReviewedSamples = (report: ForgeEvaluationReport): ReviewedWeakSample[] =>
   report.samples.flatMap((sample, index) => {
@@ -138,6 +278,8 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
   onOpenAcademy,
   onOpenAcademyAction,
   onOpenForgePreset,
+  onLoopEvidenceRefresh,
+  loopFocus,
 }) => {
   const [trials, setTrials] = useState<Trial[]>([]);
   const [evaluationReports, setEvaluationReports] = useState<EvaluationReportSummary[]>([]);
@@ -147,8 +289,32 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
   const [activeReportActionId, setActiveReportActionId] = useState<string | null>(null);
   const [reviewTarget, setReviewTarget] = useState<EvaluationReportSummary | null>(null);
   const [reviewSamples, setReviewSamples] = useState<ReviewedWeakSample[]>([]);
+  const trialsFocusTarget = useMemo(() => trialsLoopFocusTarget(loopFocus), [loopFocus]);
+  const trialComparisonRef = useRef<HTMLElement | null>(null);
+  const trialExportRef = useRef<HTMLDivElement | null>(null);
+  const trialListRef = useRef<HTMLDivElement | null>(null);
   const [reviewExportOpensForge, setReviewExportOpensForge] = useState(false);
   const [isExportingReview, setIsExportingReview] = useState(false);
+  const [reviewingTrialId, setReviewingTrialId] = useState<string | null>(null);
+  const [activeTrialFilter, setActiveTrialFilter] = useState<TrialFilter>("all");
+
+  useEffect(() => {
+    if (!trialsFocusTarget || loopFocus?.section !== "trials") {
+      return undefined;
+    }
+
+    const target =
+      trialsFocusTarget === "comparison"
+        ? trialComparisonRef.current
+        : trialsFocusTarget === "export"
+          ? trialExportRef.current
+          : trialListRef.current;
+    const timeoutId = window.setTimeout(() => {
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loopFocus?.requestedAt, loopFocus?.section, trialsFocusTarget]);
   const [exportState, setExportState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -214,7 +380,7 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
           ...counts,
           [trial.verdict]: counts[trial.verdict] + 1,
         }),
-        { pass: 0, "needs-work": 0, fail: 0 } as Record<TrialVerdict, number>
+        { pass: 0, "needs-work": 0, fail: 0, "needs-review": 0 } as Record<TrialVerdict, number>
       ),
     [trials]
   );
@@ -223,6 +389,124 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
     () => trials.filter((trial) => selectedTrialIds.includes(trial.id)),
     [selectedTrialIds, trials]
   );
+  const needsReviewTrials = useMemo(
+    () => trials.filter((trial) => trial.verdict === "needs-review"),
+    [trials]
+  );
+  const selectedHasUnreviewedTrials = selectedTrials.some(
+    (trial) => trial.verdict === "needs-review"
+  );
+  const visibleTrials = useMemo(
+    () => trials.filter((trial) => trialMatchesFilter(trial, activeTrialFilter)),
+    [activeTrialFilter, trials]
+  );
+  const trialFilterCounts = useMemo(
+    () =>
+      trialFilterOrder.reduce(
+        (counts, filter) => ({
+          ...counts,
+          [filter]: trials.filter((trial) => trialMatchesFilter(trial, filter)).length,
+        }),
+        {} as Record<TrialFilter, number>
+      ),
+    [trials]
+  );
+
+  const trialComparisons = useMemo(() => {
+    const groups = new Map<string, Trial[]>();
+    trials.forEach((trial) => {
+      const key = normalizePrompt(trial.prompt);
+      groups.set(key, [...(groups.get(key) || []), trial]);
+    });
+
+    return Array.from(groups.values())
+      .filter((group) => group.length >= 2)
+      .map((group) => {
+        const variants = [...group].sort(
+          (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)
+        );
+        const best = [...variants].sort(
+          (left, right) =>
+            verdictRank[right.verdict] - verdictRank[left.verdict] ||
+            Date.parse(right.createdAt) - Date.parse(left.createdAt)
+        )[0];
+        const sources = Array.from(
+          new Set(variants.map((trial) => trial.runtimeProfile?.source || trial.runtimeMode))
+        );
+        const artifacts = Array.from(new Set(variants.map((trial) => trial.artifactId)));
+        const tokenCounts = variants.map((trial) => trial.tokenCount);
+        return {
+          key: normalizePrompt(variants[0].prompt),
+          prompt: variants[0].prompt,
+          variants,
+          latest: variants[0],
+          best,
+          sources,
+          artifacts,
+          minTokens: Math.min(...tokenCounts),
+          maxTokens: Math.max(...tokenCounts),
+        };
+      })
+      .sort(
+        (left, right) =>
+          Date.parse(right.latest.createdAt) - Date.parse(left.latest.createdAt)
+      );
+  }, [trials]);
+
+  const trialComparisonSummary = useMemo(() => {
+    const comparedTrials = trialComparisons.reduce(
+      (total, comparison) => total + comparison.variants.length,
+      0
+    );
+    const adapterBacked = trials.filter(
+      (trial) => trial.runtimeProfile?.source === "adapter-backed"
+    ).length;
+    const liveLocal = trials.filter(
+      (trial) => (trial.runtimeProfile?.runtimeMode || trial.runtimeMode) === "transformers"
+    ).length;
+    const baseOnly = trials.filter((trial) => trial.runtimeProfile?.source === "base-only").length;
+    const simulated = trials.filter(
+      (trial) => trial.runtimeProfile?.source === "simulated" || !trial.runtimeProfile
+    ).length;
+    return {
+      promptGroups: trialComparisons.length,
+      comparedTrials,
+      liveLocal,
+      adapterBacked,
+      baseOnly,
+      simulated,
+    };
+  }, [trialComparisons, trials]);
+  const trialsNextAction = useMemo(() => {
+    if (!trialsFocusTarget) {
+      return undefined;
+    }
+    if (trials.length === 0) {
+      return "Run a Construct prompt and save a verdict so Trial evidence exists.";
+    }
+    if (trialsFocusTarget === "comparison") {
+      return trialComparisonSummary.promptGroups === 0
+        ? "Run the same prompt across Artifacts or runtime modes to create a comparison group."
+        : "Compare repeated prompts and decide which Artifact response is strongest.";
+    }
+    if (trialsFocusTarget === "export") {
+      return selectedTrialIds.length === 0
+        ? "Select Trial rows to promote into a JSONL Material."
+        : selectedHasUnreviewedTrials
+          ? "Review selected needs-review Trials before exporting them to JSONL."
+        : "Export selected Trials so weak or proven examples can feed the Forge loop.";
+    }
+    return needsReviewTrials.length > 0
+      ? "Review auto-captured Construct replies, then export useful verdicts back into Materials."
+      : "Review saved verdicts and export useful failures back into Materials for the next Forge.";
+  }, [
+    needsReviewTrials.length,
+    selectedTrialIds.length,
+    selectedHasUnreviewedTrials,
+    trialComparisonSummary.promptGroups,
+    trials.length,
+    trialsFocusTarget,
+  ]);
 
   const sortedEvaluationReports = useMemo(
     () =>
@@ -241,6 +525,14 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
   const weakSampleAcademyAction = findAcademyAction(
     academyActions,
     ACADEMY_ACTION_IDS.trialsReviewWeakSamples
+  );
+  const runtimeSourceAcademyAction = findAcademyAction(
+    academyActions,
+    ACADEMY_ACTION_IDS.trialsRuntimeSources
+  );
+  const promptComparisonAcademyAction = findAcademyAction(
+    academyActions,
+    ACADEMY_ACTION_IDS.trialsComparePrompts
   );
 
   const reportComparison = useMemo(() => {
@@ -278,6 +570,39 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
     );
   };
 
+  const reviewTrial = async (trial: Trial, verdict: ReviewedTrialVerdict) => {
+    setReviewingTrialId(trial.id);
+    setError(null);
+    setExportState(null);
+    try {
+      const reviewedTrial = await repository.createTrial(workshop.id, {
+        artifactId: trial.artifactId,
+        constructId: trial.constructId,
+        messageId: trial.messageId,
+        prompt: trial.prompt,
+        response: trial.response,
+        verdict,
+        runtimeMode: trial.runtimeMode,
+        tokenCount: trial.tokenCount,
+        generationSettings: trial.generationSettings,
+      });
+      setTrials((current) =>
+        current.map((item) => (item.id === reviewedTrial.id ? reviewedTrial : item))
+      );
+      setExportState(`Trial ${reviewedTrial.id} marked ${verdictLabels[reviewedTrial.verdict]}.`);
+      if (reviewedTrial.verdict === "pass") {
+        setSelectedTrialIds((current) =>
+          current.includes(reviewedTrial.id) ? current : [...current, reviewedTrial.id]
+        );
+      }
+      onLoopEvidenceRefresh?.();
+    } catch (reviewError: unknown) {
+      setError(reviewError instanceof Error ? reviewError.message : "Could not review Trial.");
+    } finally {
+      setReviewingTrialId(null);
+    }
+  };
+
   const exportSelectedTrials = async () => {
     if (selectedTrialIds.length === 0) {
       return;
@@ -294,6 +619,7 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
       setExportState(
         `Exported ${exportResult.trialCount.toLocaleString()} Trials to ${exportResult.exportUri}`
       );
+      onLoopEvidenceRefresh?.();
     } catch (exportError: unknown) {
       setError(exportError instanceof Error ? exportError.message : "Could not export Trials.");
     } finally {
@@ -372,6 +698,7 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
       setReviewTarget(null);
       setReviewSamples([]);
       setReviewExportOpensForge(false);
+      onLoopEvidenceRefresh?.();
       if (openForge ?? reviewExportOpensForge) {
         onOpenForgePreset(
           createForgePreset(reviewTarget.forgeRun, exportResult.material.id, "training")
@@ -401,6 +728,8 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
         <p>{summary.body}</p>
       </div>
 
+      <LoopFocusCallout focus={loopFocus} nextAction={trialsNextAction} section="trials" />
+
       <div className="workbench-grid">
         <article className="stat-card panel-glass">
           <span>Saved Trials</span>
@@ -419,6 +748,10 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
           <strong>{verdictCounts["needs-work"]}</strong>
         </article>
         <article className="stat-card panel-glass">
+          <span>Needs review</span>
+          <strong>{verdictCounts["needs-review"]}</strong>
+        </article>
+        <article className="stat-card panel-glass">
           <span>Fail</span>
           <strong>{verdictCounts.fail}</strong>
         </article>
@@ -426,6 +759,104 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
 
       {error && <p className="save-state error-state">{error}</p>}
       {exportState && <p className="save-state success-state">{exportState}</p>}
+
+      <section
+        className={`trial-comparison-panel panel-glass ${trialsFocusTarget === "comparison" ? "is-loop-focused" : ""}`}
+        aria-label="Saved Trial comparisons"
+        ref={trialComparisonRef}
+      >
+        <div className="panel-heading">
+          <div>
+            <p className="panel-kicker">Saved Trial comparison</p>
+            <h2>Prompt Variants</h2>
+          </div>
+          <div className="trial-comparison-actions">
+            <span className="status-badge">
+              {trialComparisonSummary.promptGroups} comparable prompts
+            </span>
+            <AcademyActionTooltip
+              action={promptComparisonAcademyAction}
+              label="Why compare prompts?"
+            />
+          </div>
+        </div>
+        <p className="trial-guidance">
+          Compare repeated prompts across Artifacts and runtime sources before promoting an
+          Artifact. The steadier the prompt, the clearer the signal.
+        </p>
+        <div className="trial-comparison-summary">
+          <div>
+            <span>Compared Trials</span>
+            <strong>{trialComparisonSummary.comparedTrials}</strong>
+          </div>
+          <div>
+            <span>Live local</span>
+            <strong>{trialComparisonSummary.liveLocal}</strong>
+          </div>
+          <div>
+            <span>Adapter-backed</span>
+            <strong>{trialComparisonSummary.adapterBacked}</strong>
+          </div>
+          <div>
+            <span>Base-only</span>
+            <strong>{trialComparisonSummary.baseOnly}</strong>
+          </div>
+          <div>
+            <span>Simulated</span>
+            <strong>{trialComparisonSummary.simulated}</strong>
+          </div>
+        </div>
+        {trialComparisons.length === 0 ? (
+          <p className="empty-state">
+            Save two or more Trials with the same prompt to compare Artifacts and runtime sources.
+          </p>
+        ) : (
+          <div className="trial-comparison-list">
+            {trialComparisons.slice(0, 6).map((comparison) => (
+              <article className="trial-comparison-card" key={comparison.key}>
+                <div className="trial-comparison-header">
+                  <div>
+                    <p className="panel-kicker">{comparison.variants.length} variants</p>
+                    <h3>{comparison.prompt}</h3>
+                  </div>
+                  <span className={`trial-verdict verdict-${comparison.best.verdict}`}>
+                    Best {verdictLabels[comparison.best.verdict]}
+                  </span>
+                </div>
+                <div className="trial-comparison-facts">
+                  <span>{comparison.artifacts.length} Artifacts</span>
+                  <span>{comparison.sources.map(runtimeSourceLabel).join(" / ")}</span>
+                  <span>
+                    {comparison.minTokens === comparison.maxTokens
+                      ? `${comparison.minTokens} tokens`
+                      : `${comparison.minTokens}-${comparison.maxTokens} tokens`}
+                  </span>
+                </div>
+                <div className="trial-variant-list">
+                  {comparison.variants.slice(0, 4).map((trial) => (
+                    <div className="trial-variant-row" key={trial.id}>
+                      <span className={`trial-verdict verdict-${trial.verdict}`}>
+                        {verdictLabels[trial.verdict]}
+                      </span>
+                      <strong>
+                        {runtimeModeLabel(trial.runtimeProfile?.runtimeMode || trial.runtimeMode)}
+                      </strong>
+                      <span>{runtimeSourceLabel(trial.runtimeProfile?.source)}</span>
+                      <span>{shortValue(trial.artifactId, 22)}</span>
+                      <span>
+                        {trial.runtimeProfile?.adapterLoaded
+                          ? shortValue(trial.runtimeProfile.adapterPath || "adapter", 32)
+                          : "no adapter"}
+                      </span>
+                      <span>{trial.tokenCount} tokens</span>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="evaluation-report-panel panel-glass" aria-label="Forge Trial Reports">
         <div className="panel-heading">
@@ -519,37 +950,69 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
             )}
 
             <div className="evaluation-report-list">
-              {sortedEvaluationReports.map(({ forgeRun, report }) => (
-                <article className="evaluation-report-card" key={report.forgeRunId}>
+              {sortedEvaluationReports.map((summary) => (
+                <article className="evaluation-report-card" key={summary.report.forgeRunId}>
                   <div className="evaluation-report-card-header">
                     <div>
-                      <p className="panel-kicker">{forgeRun.method} evaluation</p>
-                      <h3>{forgeRun.label}</h3>
-                      <span>{report.rowCount.toLocaleString()} rows / {report.materialId}</span>
+                      <p className="panel-kicker">{summary.forgeRun.method} evaluation</p>
+                      <h3>{summary.forgeRun.label}</h3>
+                      <span>
+                        {summary.report.rowCount.toLocaleString()} rows /{" "}
+                        {summary.report.materialId}
+                      </span>
                     </div>
-                    <strong>{report.passRate}%</strong>
+                    <strong>{summary.report.passRate}%</strong>
                   </div>
-                  <span className={`readiness-badge readiness-${getReadinessState(report)}`}>
-                    {readinessLabels[getReadinessState(report)]}
+                  <span
+                    className={`readiness-badge readiness-${getReadinessState(summary.report)}`}
+                  >
+                    {readinessLabels[getReadinessState(summary.report)]}
                   </span>
-                  <div className="forge-progress-track" aria-label={`${forgeRun.label} pass rate`}>
-                    <span style={{ width: `${report.passRate}%` }} />
+                  <div
+                    className="forge-progress-track"
+                    aria-label={`${summary.forgeRun.label} pass rate`}
+                  >
+                    <span style={{ width: `${summary.report.passRate}%` }} />
                   </div>
                   <div className="trial-report-counts">
-                    <span className="verdict-pass">{report.passCount} pass</span>
+                    <span className="verdict-pass">{summary.report.passCount} pass</span>
                     <span className="verdict-needs-work">
-                      {report.needsWorkCount} needs work
+                      {summary.report.needsWorkCount} needs work
                     </span>
-                    <span className="verdict-fail">{report.failCount} fail</span>
+                    <span className="verdict-fail">{summary.report.failCount} fail</span>
                   </div>
                   <div className="evaluation-rubric-strip">
-                    {report.rubric.map((item) => (
+                    {summary.report.rubric.map((item) => (
                       <span key={item.label}>
                         {item.label}: {item.score}%
                       </span>
                     ))}
                   </div>
-                  <p>{report.recommendations[0]}</p>
+                  <p>{summary.report.recommendations[0]}</p>
+                  <div className="evaluation-report-actions">
+                    <button
+                      className="button-secondary button-compact"
+                      disabled={
+                        activeReportActionId === summary.report.forgeRunId ||
+                        weakSampleCount(summary.report) === 0
+                      }
+                      onClick={() => openWeakSampleReview(summary)}
+                      type="button"
+                    >
+                      Review weak samples
+                    </button>
+                    <button
+                      className="button-primary button-compact"
+                      disabled={
+                        activeReportActionId === summary.report.forgeRunId ||
+                        weakSampleCount(summary.report) === 0
+                      }
+                      onClick={() => openWeakSampleReview(summary, { openForge: true })}
+                      type="button"
+                    >
+                      Export and Train
+                    </button>
+                  </div>
                 </article>
               ))}
             </div>
@@ -557,7 +1020,10 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
         )}
       </section>
 
-      <div className="trial-export-panel panel-glass">
+      <div
+        className={`trial-export-panel panel-glass ${trialsFocusTarget === "export" ? "is-loop-focused" : ""}`}
+        ref={trialExportRef}
+      >
         <div>
           <p className="panel-kicker">Trial export</p>
           <h2>Promote reviewed replies into Material</h2>
@@ -570,8 +1036,8 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
           <button className="button-secondary button-compact" onClick={() => selectTrialsByVerdict("pass")} type="button">
             Select pass
           </button>
-          <button className="button-secondary button-compact" onClick={() => setSelectedTrialIds(trials.map((trial) => trial.id))} type="button">
-            Select all
+          <button className="button-secondary button-compact" onClick={() => setSelectedTrialIds(visibleTrials.map((trial) => trial.id))} type="button">
+            Select visible
           </button>
           <button className="button-secondary button-compact" onClick={() => setSelectedTrialIds([])} type="button">
             Clear
@@ -586,7 +1052,7 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
         />
         <button
           className="button-primary"
-          disabled={selectedTrialIds.length === 0 || isExporting}
+          disabled={selectedTrialIds.length === 0 || selectedHasUnreviewedTrials || isExporting}
           onClick={() => void exportSelectedTrials()}
           type="button"
         >
@@ -594,8 +1060,40 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
           {isExporting ? "Exporting" : `Export ${selectedTrials.length} JSONL`}
         </button>
       </div>
+      {selectedHasUnreviewedTrials && (
+        <p className="save-state warning-state">
+          Review selected needs-review Trials before exporting them as JSONL.
+        </p>
+      )}
 
-      <div className="trial-list">
+      <div
+        className={`trial-list ${trialsFocusTarget === "list" ? "is-loop-focused" : ""}`}
+        ref={trialListRef}
+      >
+        {trials.length > 0 && (
+          <LearningCard
+            title="Read the runtime evidence"
+            body="A Trial is strongest when it records the loaded base model, device, and whether the Artifact adapter was applied. Simulated Trials are useful for demos, but should not be treated as proof of model quality."
+            academyAction={runtimeSourceAcademyAction}
+            onAction={() => onOpenAcademyAction(ACADEMY_ACTION_IDS.trialsRuntimeSources)}
+          />
+        )}
+        {trials.length > 0 && (
+          <div className="trial-filter-bar" role="group" aria-label="Filter Trials">
+            {trialFilterOrder.map((filter) => (
+              <button
+                aria-pressed={activeTrialFilter === filter}
+                className={`trial-filter-button ${activeTrialFilter === filter ? "is-active" : ""}`}
+                key={filter}
+                onClick={() => setActiveTrialFilter(filter)}
+                type="button"
+              >
+                <span>{trialFilterLabels[filter]}</span>
+                <strong>{trialFilterCounts[filter] ?? 0}</strong>
+              </button>
+            ))}
+          </div>
+        )}
         {isLoading ? (
           <article className="trial-card panel-glass">
             <p className="empty-state">Loading saved Trials...</p>
@@ -609,35 +1107,114 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
               an evaluation record for the active Artifact.
             </p>
           </article>
+        ) : visibleTrials.length === 0 ? (
+          <article className="trial-card panel-glass">
+            <p className="panel-kicker">No matching Trials</p>
+            <h2>No {trialFilterLabels[activeTrialFilter]} evidence yet.</h2>
+            <p>
+              Change the filter or run another Construct prompt to capture this kind of Trial.
+            </p>
+          </article>
         ) : (
-          trials.map((trial) => (
-            <article className="trial-card panel-glass" key={trial.id}>
-              <div className="trial-card-header">
-                <label className="trial-select" htmlFor={`trial-${trial.id}`}>
-                  <input
-                    checked={selectedTrialIds.includes(trial.id)}
-                    id={`trial-${trial.id}`}
-                    onChange={() => toggleTrialSelection(trial.id)}
-                    type="checkbox"
-                  />
-                  <span className="sr-only">Select Trial {trial.id}</span>
-                </label>
-                <div>
-                  <p className="panel-kicker">{trial.runtimeMode}</p>
-                  <h2>{trial.prompt}</h2>
+          visibleTrials.map((trial) => {
+            const evidence = trialRuntimeEvidence(trial);
+            return (
+              <article className="trial-card panel-glass" key={trial.id}>
+                <div className="trial-card-header">
+                  <label className="trial-select" htmlFor={`trial-${trial.id}`}>
+                    <input
+                      checked={selectedTrialIds.includes(trial.id)}
+                      id={`trial-${trial.id}`}
+                      onChange={() => toggleTrialSelection(trial.id)}
+                      type="checkbox"
+                    />
+                    <span className="sr-only">Select Trial {trial.id}</span>
+                  </label>
+                  <div>
+                    <p className="panel-kicker">{evidence.kicker}</p>
+                    <h2>{trial.prompt}</h2>
+                  </div>
+                  <span className={`trial-verdict verdict-${trial.verdict}`}>
+                    {verdictLabels[trial.verdict]}
+                  </span>
                 </div>
-                <span className={`trial-verdict verdict-${trial.verdict}`}>
-                  {verdictLabels[trial.verdict]}
-                </span>
-              </div>
-              <p className="trial-response">{trial.response}</p>
-              <div className="trial-meta">
-                <span>Artifact {trial.artifactId}</span>
-                <span>{trial.tokenCount} tokens</span>
-                <span>{new Date(trial.createdAt).toLocaleString()}</span>
-              </div>
-            </article>
-          ))
+                <p className="trial-response">{trial.response}</p>
+                <div className={`trial-runtime-evidence evidence-${evidence.tone}`}>
+                  <i className={`fas ${evidence.icon}`} aria-hidden="true" />
+                  <div>
+                    <strong>{evidence.title}</strong>
+                    <span>{evidence.detail}</span>
+                  </div>
+                </div>
+                <div className="trial-meta">
+                  <span>Artifact {trial.artifactId}</span>
+                  <span>{trial.tokenCount} tokens</span>
+                  <span>{new Date(trial.createdAt).toLocaleString()}</span>
+                </div>
+                {trial.runtimeProfile && (
+                  <div className={`trial-runtime-profile source-${trial.runtimeProfile.source}`}>
+                    <div>
+                      <span>
+                        Runtime source
+                        <AcademyActionTooltip
+                          action={runtimeSourceAcademyAction}
+                          label="?"
+                        />
+                      </span>
+                      <strong>{runtimeSourceLabel(trial.runtimeProfile.source)}</strong>
+                    </div>
+                    <div>
+                      <span>Runtime</span>
+                      <strong>{runtimeModeLabel(trial.runtimeProfile.runtimeMode)}</strong>
+                    </div>
+                    <div>
+                      <span>Model</span>
+                      <strong>
+                        {trial.runtimeProfile.modelId || trial.runtimeProfile.baseModel || "unknown"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Base model</span>
+                      <strong>{trial.runtimeProfile.baseModel || "unknown"}</strong>
+                    </div>
+                    <div>
+                      <span>Adapter</span>
+                      <strong>
+                        {trial.runtimeProfile.adapterLoaded
+                          ? trial.runtimeProfile.adapterPath || trial.runtimeProfile.artifactId
+                          : "not applied"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Device</span>
+                      <strong>{trial.runtimeProfile.device || "n/a"}</strong>
+                    </div>
+                  </div>
+                )}
+                {trial.verdict === "needs-review" && (
+                  <div className="trial-review-queue" aria-label={`Review Trial ${trial.id}`}>
+                    <div>
+                      <strong>Review captured reply</strong>
+                      <span>Choose a verdict before this Trial can become JSONL training Material.</span>
+                    </div>
+                    <div className="trial-review-actions">
+                      {reviewedTrialVerdicts.map((verdict) => (
+                        <button
+                          className="button-secondary button-compact"
+                          disabled={reviewingTrialId === trial.id}
+                          key={verdict}
+                          onClick={() => void reviewTrial(trial, verdict)}
+                          type="button"
+                        >
+                          {reviewingTrialId === trial.id ? "Saving" : verdictLabels[verdict]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </article>
+            );
+          })
         )}
       </div>
 

@@ -1,6 +1,6 @@
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
-.PHONY: setup-runtime smoke backend-test build lint test check dev-backend dev-frontend health mvp-demo
+.PHONY: setup-runtime smoke backend-test build lint test check dev-backend dev-frontend health mvp-demo ml-proof-preflight ml-proof construct-adapter-proof
 
 setup-runtime:
 	sh scripts/setup_runtime_dirs.sh
@@ -37,3 +37,12 @@ health:
 mvp-demo:
 	$(PYTHON) scripts/health_check.py
 	$(PYTHON) scripts/run_mvp_manual_rehearsal.py
+
+ml-proof-preflight:
+	$(PYTHON) scripts/run_local_forge_smoke.py
+
+ml-proof:
+	$(PYTHON) scripts/run_local_forge_smoke.py --run
+
+construct-adapter-proof:
+	$(PYTHON) scripts/run_construct_adapter_proof.py

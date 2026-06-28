@@ -28,6 +28,8 @@ complexity.
 - Add a local LoRA/QLoRA worker behind the adapter.
 - Emit durable job events and metrics.
 - Produce Artifact metadata from real trainer output.
+- Add RAG as an explicit Forge learning path so developing engineers can compare
+  fine-tuning, retrieval, and hybrid approaches before committing compute.
 
 ## Phase 4: Ingestion Workers
 
@@ -67,6 +69,8 @@ complexity.
 
 - Add contextual tooltips and deep links from every major workflow step.
 - Add token visualizers and chunk visualizers.
+- Add a model activation heat map for attention/QKV learning so users can see
+  how token relationships move through query, key, and value projections.
 - Add LoRA/QLoRA explainers tied to actual Forge configuration.
 - Add training metric explainers for loss, epochs, learning rate, and evals.
 
@@ -84,6 +88,6 @@ complexity.
 - Vision model workflows.
 - Speech model workflows.
 - Agent prototypes.
-- RAG experiments.
+- RAG experiments and retrieval-augmented Forge comparisons.
 - Multi-modal Materials.
 - Robotics and sensor-driven Constructs.

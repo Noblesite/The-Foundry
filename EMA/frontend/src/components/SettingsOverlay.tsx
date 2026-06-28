@@ -15,6 +15,7 @@ import {
   ModelPreparationActivity,
   SystemReadinessModelAction,
 } from "../domain/systemReadiness";
+import { ConceptTooltip } from "./LearningComponents";
 import SystemReadinessPanel from "./SystemReadinessPanel";
 
 export type { WorkspaceSettings };
@@ -39,10 +40,12 @@ interface HelpTooltipProps {
 }
 
 const HelpTooltip: React.FC<HelpTooltipProps> = ({ text }) => (
-  <span className="help-tooltip" tabIndex={0} aria-label={text}>
-    <i className="fas fa-circle-question" aria-hidden="true" />
-    <span className="help-tooltip-content">{text}</span>
-  </span>
+  <ConceptTooltip
+    label={<i className="fas fa-circle-question" aria-hidden="true" />}
+    title="Setting help"
+  >
+    {text}
+  </ConceptTooltip>
 );
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({

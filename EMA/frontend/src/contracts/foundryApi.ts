@@ -37,6 +37,7 @@ import {
   ModelSearchResult,
   TrainingMethod,
   Trial,
+  ReviewedTrialVerdict,
   TrialVerdict,
   NavigationSection,
   WebsiteMaterialPreview,
@@ -50,6 +51,8 @@ export const foundryApiRoutes = {
   readiness: `${FOUNDRY_API_VERSION}/foundry/readiness`,
   bootstrap: `${FOUNDRY_API_VERSION}/foundry/bootstrap`,
   dashboard: `${FOUNDRY_API_VERSION}/foundry/dashboard`,
+  dashboardEvidence: (workshopId: string) =>
+    `${FOUNDRY_API_VERSION}/workshops/${workshopId}/dashboard/evidence`,
   navigation: `${FOUNDRY_API_VERSION}/foundry/navigation`,
   sectionSummaries: `${FOUNDRY_API_VERSION}/foundry/sections`,
   uiCatalog: `${FOUNDRY_API_VERSION}/foundry/ui-catalog`,
@@ -68,6 +71,8 @@ export const foundryApiRoutes = {
     `${FOUNDRY_API_VERSION}/workshops/${workshopId}/qa-pairs/${qaPairId}`,
   exportQAPairs: (workshopId: string) =>
     `${FOUNDRY_API_VERSION}/workshops/${workshopId}/qa-pairs/export`,
+  previewQAPairsExport: (workshopId: string) =>
+    `${FOUNDRY_API_VERSION}/workshops/${workshopId}/qa-pairs/export/preview`,
   exportTrials: (workshopId: string) =>
     `${FOUNDRY_API_VERSION}/workshops/${workshopId}/trials/export`,
   forgeRuns: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/forges`,
@@ -251,6 +256,67 @@ export interface ExportQAPairsDto {
     blockedRows: number;
     confidenceThreshold: number;
     override: boolean;
+  };
+  trainingReadiness?: QATrainingReadinessDto;
+}
+
+export interface QATrainingReadinessDto {
+  contractVersion: "foundry.qa-training-readiness.v1";
+  status: "ready" | "caution" | "blocked" | string;
+  forgeReady: boolean;
+  defaultTrainingSafe: boolean;
+  rowCount: number;
+  reviewedRows: number;
+  sourceReferencedRows: number;
+  qualityPassedRows: number;
+  qualityBlockedRows: number;
+  deterministicRows: number;
+  fallbackRows: number;
+  generatorModels: string[];
+  generatorModes: string[];
+  promptVersions: string[];
+  checks: Array<{
+    id: string;
+    label: string;
+    status: "pass" | "warn" | "fail" | string;
+    detail: string;
+  }>;
+  recommendation: string;
+}
+
+export interface ExportQAPairsPreviewDto {
+  contractVersion: "foundry.qa-jsonl.preview.v1";
+  assemblyLineRunId: string;
+  format: "jsonl";
+  rowCount: number;
+  sampleRows: Array<Record<string, unknown>>;
+  sampleLimit: number;
+  jsonlPreview: string[];
+  validation: {
+    status: "ready" | "caution" | "blocked" | string;
+    forgeReady: boolean;
+    checks: Array<{
+      id: string;
+      label: string;
+      status: "pass" | "warn" | "fail" | string;
+      detail: string;
+    }>;
+    warnings: string[];
+    errors: string[];
+    rowCount: number;
+    duplicateInstructionCount: number;
+  };
+  qualityGate: {
+    status: "ready" | "caution" | "blocked" | "passed" | "override" | string;
+    checkedRows: number;
+    blockedRows: number;
+    confidenceThreshold: number;
+    override: boolean;
+  };
+  trainingReadiness?: QATrainingReadinessDto;
+  options: {
+    includeDrafts: boolean;
+    includeLowQuality: boolean;
   };
 }
 
@@ -441,7 +507,7 @@ export interface CreateTrialRequest {
   messageId: string;
   prompt: string;
   response: string;
-  verdict: TrialVerdict;
+  verdict: ReviewedTrialVerdict;
   runtimeMode: string;
   tokenCount: number;
   generationSettings: Record<string, unknown>;
@@ -449,7 +515,7 @@ export interface CreateTrialRequest {
 
 export interface ExportTrialsRequest {
   trialIds: string[];
-  verdicts?: TrialVerdict[];
+  verdicts?: ReviewedTrialVerdict[];
   name?: string;
 }
 
@@ -459,7 +525,7 @@ export interface ExportEvaluationSamplesRequest {
     instruction: string;
     expected: string;
     observed: string;
-    verdict: Exclude<TrialVerdict, "pass">;
+    verdict: Exclude<ReviewedTrialVerdict, "pass">;
     note: string;
   }>;
 }
@@ -472,6 +538,8 @@ export interface ConfigureConstructRuntimeRequest {
 
 export interface LoadConstructRuntimeRequest {
   modelId?: string;
+  adapterPath?: string;
+  artifactId?: string;
 }
 
 export interface FoundryReadinessGateRequest {

@@ -142,6 +142,19 @@ POST /api/v1/workshops/{workshop_id}/forges
 POST /api/v1/forges/{forge_run_id}/simulate
 ```
 
+The optional local proof targets are:
+
+```bash
+make ml-proof-preflight
+make ml-proof
+make construct-adapter-proof
+```
+
+`ml-proof-preflight` is safe for baseline diagnostics and does not download
+models. `ml-proof` runs the tiny LoRA worker only after preflight passes.
+`construct-adapter-proof` continues from the tiny worker output, applies the
+adapter in Construct with PEFT, streams one reply, and saves a Trial.
+
 The `POST /api/v1/workshops/{workshop_id}/forges` response includes
 `trainingContract` so the frontend and future workers can inspect exactly what
 will be executed.

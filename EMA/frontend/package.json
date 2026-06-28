@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "test": "npm run test:readiness && npm run test:runtime-events",
+    "test": "npm run test:readiness && npm run test:runtime-events && npm run test:archive-handoff && npm run test:trials-review",
     "test:readiness": "node scripts/test-construct-readiness.mjs",
     "test:runtime-events": "node scripts/test-construct-runtime-events.mjs",
+    "test:archive-handoff": "node scripts/test-archive-handoff.mjs",
+    "test:trials-review": "node scripts/test-trials-review.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

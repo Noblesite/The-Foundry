@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AcademyAction,
   ArchiveModelHandoff,
   Artifact,
   Construct,
+  FoundryLoopFocus,
   ModelArchiveEntry,
   ModelDownloadJob,
   ModelSearchResult,
@@ -11,12 +12,18 @@ import {
   Workshop,
   WorkspaceSettings,
 } from "../domain/foundry";
+import {
+  ACADEMY_ACTION_IDS,
+  findAcademyAction,
+} from "../domain/academyRegistry";
 import { ArchiveModelPreflightDto } from "../contracts/foundryApi";
 import { FoundryRepository } from "../services/foundryRepository";
-import { AcademyActionTooltip, ConceptTooltip, LearningCard } from "./LearningComponents";
+import { AcademyActionTooltip, LearningCard } from "./LearningComponents";
+import LoopFocusCallout from "./LoopFocusCallout";
 
 interface ArtifactsWorkbenchProps {
   activeArtifactId: string;
+  academyActions: AcademyAction[];
   defaultBaseModel: string;
   repository: FoundryRepository;
   summary: SectionSummary;
@@ -27,13 +34,44 @@ interface ArtifactsWorkbenchProps {
   settings: WorkspaceSettings;
   onConstructLoaded: (construct: Construct, artifact: Artifact) => void;
   onArchiveEntriesChanged: (entries: ModelArchiveEntry[]) => void;
+  onModelDownloadJobStarted?: (job: ModelDownloadJob) => void;
   onBaseModelSelected: (modelId: string) => void;
   onOpenConstructWithModel: (modelId: string, label?: string) => void;
   onOpenAcademy: () => void;
+  onOpenAcademyAction: (actionId: string) => void;
+  onLoopEvidenceRefresh?: () => void;
+  loopFocus?: FoundryLoopFocus | null;
 }
 
 const isActiveDownloadJob = (job: ModelDownloadJob) =>
   job.status === "queued" || job.status === "running";
+
+type ArtifactLoopFocusTarget = "catalog" | "detail";
+
+const artifactLoopFocusTarget = (
+  focus?: FoundryLoopFocus | null
+): ArtifactLoopFocusTarget | null => {
+  if (!focus || focus.section !== "artifacts") {
+    return null;
+  }
+  return focus.targetLabel === "Artifact Catalog" ? "catalog" : "detail";
+};
+
+const artifactKindLabel = (kind?: string) => {
+  if (kind === "lora-adapter") {
+    return "LoRA adapter";
+  }
+  if (kind === "full-checkpoint") {
+    return "Full checkpoint";
+  }
+  if (kind === "metadata-only") {
+    return "Metadata-only";
+  }
+  if (kind === "unknown-output") {
+    return "Unknown output";
+  }
+  return "Unclassified";
+};
 
 const mergeDownloadJobs = (
   currentJobs: ModelDownloadJob[],
@@ -50,6 +88,7 @@ const mergeDownloadJobs = (
 
 const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   activeArtifactId,
+  academyActions,
   defaultBaseModel,
   repository,
   summary,
@@ -60,9 +99,13 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   settings,
   onConstructLoaded,
   onArchiveEntriesChanged,
+  onModelDownloadJobStarted,
   onBaseModelSelected,
   onOpenConstructWithModel,
   onOpenAcademy,
+  onOpenAcademyAction,
+  onLoopEvidenceRefresh,
+  loopFocus,
 }) => {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [downloadJobs, setDownloadJobs] = useState<ModelDownloadJob[]>([]);
@@ -82,6 +125,12 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   const [defaultBaseModelTarget, setDefaultBaseModelTarget] = useState(defaultBaseModel);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const artifactFocusTarget = useMemo(
+    () => artifactLoopFocusTarget(loopFocus),
+    [loopFocus]
+  );
+  const artifactCatalogRef = useRef<HTMLElement | null>(null);
+  const artifactDetailRef = useRef<HTMLElement | null>(null);
   const huggingFaceAuth = useMemo(
     () => ({
       username: settings.huggingFaceUsername || undefined,
@@ -89,6 +138,20 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     }),
     [settings.huggingFaceToken, settings.huggingFaceUsername]
   );
+
+  useEffect(() => {
+    if (!artifactFocusTarget || loopFocus?.section !== "artifacts") {
+      return undefined;
+    }
+
+    const target =
+      artifactFocusTarget === "detail" ? artifactDetailRef.current : artifactCatalogRef.current;
+    const timeoutId = window.setTimeout(() => {
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [artifactFocusTarget, loopFocus?.requestedAt, loopFocus?.section]);
   const huggingFaceAuthLabel = huggingFaceAuth.username
     ? `Using Hugging Face auth for ${huggingFaceAuth.username}`
     : "Using anonymous Hugging Face access";
@@ -173,6 +236,31 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     [artifacts, selectedArtifactId]
   );
   const selectedArtifactReadiness = selectedArtifact?.readiness;
+  const artifactsNextAction = useMemo(() => {
+    if (!artifactFocusTarget) {
+      return undefined;
+    }
+    if (artifactFocusTarget === "catalog") {
+      return artifacts.length === 0
+        ? "Complete a Forge so the Artifact registry has a model output to inspect."
+        : "Select the Artifact you want to verify, promote, or load into Construct.";
+    }
+    if (!selectedArtifact) {
+      return "Select an Artifact from the catalog before loading it into Construct.";
+    }
+    if (selectedArtifactReadiness && !selectedArtifactReadiness.canLoad) {
+      return selectedArtifactReadiness.message || "Resolve Artifact readiness blockers before loading.";
+    }
+    return "Load this Artifact into Construct and confirm adapter/runtime evidence before Trial.";
+  }, [artifactFocusTarget, artifacts.length, selectedArtifact, selectedArtifactReadiness]);
+  const artifactReadinessAcademyAction = findAcademyAction(
+    academyActions,
+    ACADEMY_ACTION_IDS.artifactsReadiness
+  );
+  const promotionGateAcademyAction = findAcademyAction(
+    academyActions,
+    ACADEMY_ACTION_IDS.artifactsPromotionGate
+  );
 
   const selectedModel = useMemo(
     () => modelResults.find((model) => model.repoId === selectedModelId) || modelResults[0],
@@ -195,11 +283,6 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     },
     [archiveEntries, selectedModel]
   );
-
-  useEffect(() => {
-    setModelPreflight(null);
-    setAllowPreflightOverride(false);
-  }, [selectedModel?.repoId, selectedModel?.revision]);
 
   const downloadGateState = useMemo(() => {
     if (!selectedModel) {
@@ -376,6 +459,8 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   const searchModels = async (queryOverride?: string) => {
     setIsSearchingModels(true);
     setError(null);
+    setModelPreflight(null);
+    setAllowPreflightOverride(false);
 
     try {
       const query = queryOverride ?? modelQuery;
@@ -449,6 +534,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
         ...huggingFaceAuth,
       });
       setDownloadJobs((currentJobs) => mergeDownloadJobs(currentJobs, [job]));
+      onModelDownloadJobStarted?.(job);
       setStatusText(`${job.repoId} added to Archive Jobs.`);
     } catch (downloadError: unknown) {
       setError(downloadError instanceof Error ? downloadError.message : "Could not download model.");
@@ -509,10 +595,12 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     setStatusText(
       `${handoff.label || handoff.modelId} arrived from Materials. Archive will verify cache and download readiness.`
     );
-    void searchModels(handoff.modelId);
-    if (handoff.preflightOnOpen) {
-      void preflightArchiveTarget(handoff.modelId, handoff.revision);
-    }
+    void (async () => {
+      await searchModels(handoff.modelId);
+      if (handoff.preflightOnOpen) {
+        await preflightArchiveTarget(handoff.modelId, handoff.revision);
+      }
+    })();
     // Handoffs are one-shot route intents keyed by requestedAt.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handoff?.requestedAt]);
@@ -528,6 +616,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
         ...huggingFaceAuth,
       });
       setDownloadJobs((currentJobs) => mergeDownloadJobs(currentJobs, [nextJob]));
+      onModelDownloadJobStarted?.(nextJob);
       setStatusText(`${nextJob.repoId} queued again for Archive download.`);
     } catch (retryError: unknown) {
       setError(retryError instanceof Error ? retryError.message : "Could not retry Archive job.");
@@ -586,6 +675,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
         ...huggingFaceAuth,
       });
       setDownloadJobs((currentJobs) => mergeDownloadJobs(currentJobs, [job]));
+      onModelDownloadJobStarted?.(job);
       setStatusText(`${job.repoId} added to Archive Jobs for cache refresh.`);
     } catch (downloadError: unknown) {
       setError(downloadError instanceof Error ? downloadError.message : "Could not refresh cache.");
@@ -648,8 +738,13 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
       const construct = await repository.loadArtifactIntoConstruct(workshop.id, {
         artifactId: selectedArtifact.id,
       });
-      setStatusText(`${selectedArtifact.name} loaded into ${construct.name}.`);
+      setStatusText(
+        selectedArtifact.readiness?.artifactKind === "lora-adapter"
+          ? `${selectedArtifact.name} loaded into ${construct.name}. Construct runtime will apply the adapter during local load.`
+          : `${selectedArtifact.name} loaded into ${construct.name}.`
+      );
       onConstructLoaded(construct, selectedArtifact);
+      onLoopEvidenceRefresh?.();
     } catch (loadError: unknown) {
       setError(loadError instanceof Error ? loadError.message : "Could not load Construct.");
     } finally {
@@ -668,8 +763,18 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
         <div className="status-badge is-forging">{workshop.name}</div>
       </div>
 
+      <LoopFocusCallout
+        focus={loopFocus}
+        nextAction={artifactsNextAction}
+        section="artifacts"
+      />
+
       <div className="artifact-layout">
-        <section className="artifacts-catalog panel-glass" aria-label="Artifact catalog">
+        <section
+          className={`artifacts-catalog panel-glass ${artifactFocusTarget === "catalog" ? "is-loop-focused" : ""}`}
+          aria-label="Artifact catalog"
+          ref={artifactCatalogRef}
+        >
           <div className="panel-heading">
             <div>
               <p className="panel-kicker">Models out</p>
@@ -709,7 +814,11 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
           </div>
         </section>
 
-        <aside className="artifact-detail panel-glass" aria-label="Artifact detail">
+        <aside
+          className={`artifact-detail panel-glass ${artifactFocusTarget === "detail" ? "is-loop-focused" : ""}`}
+          aria-label="Artifact detail"
+          ref={artifactDetailRef}
+        >
           <div className="panel-heading">
             <div>
               <p className="panel-kicker">Construct handoff</p>
@@ -733,11 +842,24 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                       <strong>Artifact readiness</strong>
                       <span>{selectedArtifactReadiness.message}</span>
                     </div>
-                    <span className={`status-badge readiness-${selectedArtifactReadiness.status}`}>
-                      {selectedArtifactReadiness.status}
-                    </span>
+                    <div className="runtime-load-actions">
+                      <span className={`status-badge readiness-${selectedArtifactReadiness.status}`}>
+                        {selectedArtifactReadiness.status}
+                      </span>
+                      <AcademyActionTooltip
+                        action={artifactReadinessAcademyAction}
+                        label="What is readiness?"
+                      />
+                    </div>
                   </div>
                   <div className="runtime-readiness-items">
+                    <div className="readiness-item is-pass">
+                      <i className="fas fa-diagram-project" aria-hidden="true" />
+                      <div>
+                        <span>Artifact kind</span>
+                        <strong>{artifactKindLabel(selectedArtifactReadiness.artifactKind)}</strong>
+                      </div>
+                    </div>
                     <div className={`readiness-item is-${selectedArtifactReadiness.canLoad ? "pass" : "fail"}`}>
                       <i
                         className={`fas ${selectedArtifactReadiness.canLoad ? "fa-check" : "fa-triangle-exclamation"}`}
@@ -745,7 +867,13 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                       />
                       <div>
                         <span>Construct load</span>
-                        <strong>{selectedArtifactReadiness.canLoad ? "Allowed" : "Blocked"}</strong>
+                        <strong>
+                          {selectedArtifactReadiness.canLoad ? "Allowed" : "Blocked"}
+                          <AcademyActionTooltip
+                            action={promotionGateAcademyAction}
+                            label="?"
+                          />
+                        </strong>
                       </div>
                     </div>
                     <div className="readiness-item is-pass">
@@ -755,10 +883,51 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                         <strong>{selectedArtifactReadiness.presentFiles.length}</strong>
                       </div>
                     </div>
+                    {selectedArtifactReadiness.compatibility && (
+                      <div
+                        className={`readiness-item is-${
+                          selectedArtifactReadiness.compatibility.status === "mismatch" ? "fail" : "pass"
+                        }`}
+                      >
+                        <i className="fas fa-link" aria-hidden="true" />
+                        <div>
+                          <span>Base compatibility</span>
+                          <strong>{selectedArtifactReadiness.compatibility.status}</strong>
+                        </div>
+                      </div>
+                    )}
                   </div>
+                  {selectedArtifactReadiness.compatibility && (
+                    <p className="artifact-readiness-copy">
+                      {selectedArtifactReadiness.compatibility.message}
+                    </p>
+                  )}
+                  {selectedArtifactReadiness.trainerResult && (
+                    <div className="artifact-trainer-summary">
+                      <div>
+                        <span>Device</span>
+                        <strong>{selectedArtifactReadiness.trainerResult.device || "unknown"}</strong>
+                      </div>
+                      <div>
+                        <span>Rows used</span>
+                        <strong>{selectedArtifactReadiness.trainerResult.rowsUsed ?? "n/a"}</strong>
+                      </div>
+                      <div>
+                        <span>Loss</span>
+                        <strong>{selectedArtifactReadiness.trainerResult.loss ?? "n/a"}</strong>
+                      </div>
+                    </div>
+                  )}
                   {selectedArtifactReadiness.presentFiles.length > 0 && (
                     <div className="runtime-readiness-warnings">
-                      <span>{selectedArtifactReadiness.presentFiles.slice(0, 3).join(", ")}</span>
+                      {(selectedArtifactReadiness.outputFiles || []).slice(0, 5).map((file) => (
+                        <span key={file.path}>
+                          {file.role}: {file.path}
+                        </span>
+                      ))}
+                      {!selectedArtifactReadiness.outputFiles?.length && (
+                        <span>{selectedArtifactReadiness.presentFiles.slice(0, 3).join(", ")}</span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -775,6 +944,10 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                 <i className="fas fa-play" aria-hidden="true" />
                 {isLoadingConstruct ? "Loading" : "Load into Construct"}
               </button>
+              <AcademyActionTooltip
+                action={promotionGateAcademyAction}
+                label="Why gate loading?"
+              />
             </article>
           ) : (
             <p className="empty-state">Select an Artifact to load into a Construct.</p>
@@ -783,10 +956,10 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
           {statusText && <p className="save-state success-state">{statusText}</p>}
           {error && <p className="save-state error-state">{error}</p>}
 
-          <ConceptTooltip label="Why load Artifacts?" title="Artifact to Construct">
-            An Artifact is saved model output. A Construct is the runtime surface
-            that loads that output so you can run inference and test behavior.
-          </ConceptTooltip>
+          <AcademyActionTooltip
+            action={promotionGateAcademyAction}
+            label="Why load Artifacts?"
+          />
         </aside>
       </div>
 
@@ -838,7 +1011,11 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                 <button
                   className={`model-result-row ${selectedModel?.repoId === model.repoId ? "is-active" : ""}`}
                   key={model.repoId}
-                  onClick={() => setSelectedModelId(model.repoId)}
+                  onClick={() => {
+                    setSelectedModelId(model.repoId);
+                    setModelPreflight(null);
+                    setAllowPreflightOverride(false);
+                  }}
                   type="button"
                 >
                   <div>
@@ -1219,6 +1396,18 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
         body={summary.concept.body}
         academyAction={academyAction}
         onAction={onOpenAcademy}
+      />
+      <LearningCard
+        title="Readiness separates output types"
+        body="Artifacts can be metadata-only, LoRA adapters, full checkpoints, or blocked outputs. Readiness tells users which kind they are about to promote."
+        academyAction={artifactReadinessAcademyAction}
+        onAction={() => onOpenAcademyAction(ACADEMY_ACTION_IDS.artifactsReadiness)}
+      />
+      <LearningCard
+        title="Promotion is evidence, not hope"
+        body="Load into Construct only when output files, base-model compatibility, and Trial evidence are clear enough to make the result worth testing."
+        academyAction={promotionGateAcademyAction}
+        onAction={() => onOpenAcademyAction(ACADEMY_ACTION_IDS.artifactsPromotionGate)}
       />
       <div className="dashboard-note">
         <AcademyActionTooltip action={academyAction} label="What should I learn before promotion?" />

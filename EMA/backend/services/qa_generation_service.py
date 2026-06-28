@@ -2,22 +2,28 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import re
 from collections.abc import Callable
 from datetime import datetime, timezone
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any, Dict, List
 from uuid import uuid4
 
+import psutil
+
 from .qa_quality_service import QAQualityEvaluator
 
 QA_GENERATION_CONTRACT_VERSION = "foundry.qa-generation.v1"
-QA_PROMPT_TEMPLATE_VERSION = "foundry.qa-prompt.source-context.v2"
+QA_PROMPT_TEMPLATE_VERSION = "foundry.qa-prompt.source-context.v3"
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_QA_MODEL_ARCHIVE_DIR = BASE_DIR / "runtime" / "models" / "huggingface"
+SMOKE_QA_GENERATOR_MODEL_ID = "sshleifer/tiny-gpt2"
+QUALITY_QA_GENERATOR_MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct"
+DEFAULT_QA_GENERATOR_MODEL_ID = QUALITY_QA_GENERATOR_MODEL_ID
 QA_TYPE_SEQUENCE = (
     "factual",
     "behavior",
@@ -26,6 +32,14 @@ QA_TYPE_SEQUENCE = (
     "correction",
     "safety-boundary",
 )
+QA_TYPE_GUIDANCE = {
+    "factual": "Ask for a concrete fact that is explicitly stated in the source.",
+    "behavior": "Ask how the target model should act or respond when the source situation appears.",
+    "style": "Ask about voice, tone, phrasing, or persona cues grounded in the source.",
+    "cause-effect": "Ask why one source detail affects another source detail or target behavior.",
+    "correction": "Ask for a misconception the source can correct without inventing new facts.",
+    "safety-boundary": "Ask what boundary, constraint, or uncertainty the model should preserve.",
+}
 
 
 @dataclass(frozen=True)
@@ -37,6 +51,7 @@ class QAGenerationRequest:
     qa_pair_count: int
     workshop_subject: str = ""
     voice_target: str = ""
+    source_metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 class QAGenerationService:
@@ -44,15 +59,20 @@ class QAGenerationService:
 
     def __init__(self) -> None:
         self.mode = os.getenv("FOUNDRY_QA_GENERATOR_MODE", "deterministic").strip().lower()
-        self.model_id = os.getenv("FOUNDRY_QA_GENERATOR_MODEL", "sshleifer/tiny-gpt2").strip()
+        self.model_id = os.getenv("FOUNDRY_QA_GENERATOR_MODEL", DEFAULT_QA_GENERATOR_MODEL_ID).strip()
         self.max_new_tokens = int(os.getenv("FOUNDRY_QA_GENERATOR_MAX_NEW_TOKENS", "320"))
         self.temperature = float(os.getenv("FOUNDRY_QA_GENERATOR_TEMPERATURE", "0.2"))
         self.quality_evaluator = QAQualityEvaluator()
         self._model_text_backend: Callable[[str, bool], str] | None = None
 
     def runtime_payload(self) -> Dict[str, Any]:
-        transformers_available = find_spec("transformers") is not None
+        transformers_available = self._transformers_available()
         ready = self.mode == "deterministic" or transformers_available
+        selection = self.selection_plan(
+            mode=self.mode,
+            model_id=self.model_id,
+            max_new_tokens=self.max_new_tokens,
+        )
         return {
             "mode": self.mode,
             "modelId": self.model_id,
@@ -64,6 +84,8 @@ class QAGenerationService:
             "dependencies": {
                 "transformers": transformers_available,
             },
+            "platform": selection["platform"],
+            "selection": selection,
             "contractVersion": "foundry.qa-generator.runtime.v1",
         }
 
@@ -79,7 +101,7 @@ class QAGenerationService:
         if normalized_mode not in {"deterministic", "transformers", "local"}:
             raise ValueError("QA generator mode must be deterministic or transformers.")
         self.mode = "transformers" if normalized_mode == "local" else normalized_mode
-        self.model_id = model_id.strip() or "sshleifer/tiny-gpt2"
+        self.model_id = model_id.strip() or DEFAULT_QA_GENERATOR_MODEL_ID
         self.max_new_tokens = max(24, min(2048, int(max_new_tokens)))
         self.temperature = max(0.0, min(1.5, float(temperature)))
         return self.runtime_payload()
@@ -95,11 +117,16 @@ class QAGenerationService:
         normalized_mode = (mode or self.mode).strip().lower()
         if normalized_mode == "local":
             normalized_mode = "transformers"
-        target_model_id = (model_id or self.model_id or "sshleifer/tiny-gpt2").strip()
+        target_model_id = (model_id or self.model_id or DEFAULT_QA_GENERATOR_MODEL_ID).strip()
         target_max_tokens = max(24, min(2048, int(max_new_tokens or self.max_new_tokens)))
         target_temperature = max(0.0, min(1.5, float(self.temperature if temperature is None else temperature)))
 
         if normalized_mode == "deterministic":
+            selection = self.selection_plan(
+                mode="deterministic",
+                model_id=target_model_id,
+                max_new_tokens=target_max_tokens,
+            )
             checks = [
                 self._preflight_check(
                     "runtime-mode",
@@ -121,13 +148,22 @@ class QAGenerationService:
                 "checks": checks,
                 "warnings": [],
                 "memory": self._qa_memory_estimate(None),
+                "platform": selection["platform"],
+                "selection": selection,
                 "createdAt": datetime.now(timezone.utc).isoformat(),
                 "contractVersion": "foundry.qa-generator.preflight.v1",
             }
 
-        transformers_available = find_spec("transformers") is not None
+        transformers_available = self._transformers_available()
         model_probe = self._qa_model_probe(target_model_id)
         memory = self._qa_memory_estimate(model_probe.get("path"))
+        selection = self.selection_plan(
+            mode="transformers",
+            model_id=target_model_id,
+            max_new_tokens=target_max_tokens,
+            model_probe=model_probe,
+            memory=memory,
+        )
         checks = [
             self._preflight_check(
                 "runtime-mode",
@@ -190,10 +226,128 @@ class QAGenerationService:
             "temperature": target_temperature,
             "model": model_probe,
             "memory": memory,
+            "platform": selection["platform"],
+            "selection": selection,
             "checks": checks,
             "warnings": warnings,
             "createdAt": datetime.now(timezone.utc).isoformat(),
             "contractVersion": "foundry.qa-generator.preflight.v1",
+        }
+
+    def selection_plan(
+        self,
+        *,
+        mode: str | None = None,
+        model_id: str | None = None,
+        max_new_tokens: int | None = None,
+        model_probe: Dict[str, Any] | None = None,
+        memory: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        normalized_mode = (mode or self.mode).strip().lower()
+        if normalized_mode == "local":
+            normalized_mode = "transformers"
+        target_model_id = (model_id or self.model_id or DEFAULT_QA_GENERATOR_MODEL_ID).strip()
+        target_max_tokens = max(24, min(2048, int(max_new_tokens or self.max_new_tokens)))
+        platform_profile = self._platform_profile()
+        transformers_available = self._transformers_available()
+        endpoint_url = os.getenv("FOUNDRY_QA_GENERATOR_ENDPOINT_URL", "").strip()
+        probe = model_probe if model_probe is not None else self._qa_model_probe(target_model_id)
+        memory_estimate = memory if memory is not None else self._qa_memory_estimate(probe.get("path"))
+
+        tiers = [
+            self._qa_tier(
+                tier=0,
+                label="Deterministic offline fallback",
+                provider="deterministic",
+                mode="deterministic",
+                model_id="deterministic-context-generator",
+                status="ready",
+                fit_status="fits",
+                quality="smoke",
+                speed="fast",
+                reason="Always available for smoke tests, demos, CI, and no-download first-run workflows.",
+                next_action="Use for baseline validation, then switch to a model-backed tier for training data.",
+            ),
+            self._qa_tier(
+                tier=1,
+                label="Small cached local model",
+                provider="transformers",
+                mode="transformers",
+                model_id=target_model_id,
+                status=(
+                    "ready"
+                    if transformers_available and probe.get("cached") and memory_estimate.get("fitStatus") in {"fits", "tight", "unknown"}
+                    else "blocked"
+                ),
+                fit_status=str(memory_estimate.get("fitStatus") or "unknown"),
+                quality="modest",
+                speed=self._latency_class(platform_profile, small_model=True),
+                reason=(
+                    "Configured model is cached and can run locally."
+                    if transformers_available and probe.get("cached")
+                    else "Requires optional Transformers dependencies and a cached local model."
+                ),
+                next_action=(
+                    "Run Quality proof with the cached model."
+                    if transformers_available and probe.get("cached")
+                    else "Cache a small instruction model in Archive, then preflight again."
+                ),
+            ),
+            self._qa_tier(
+                tier=2,
+                label="Stronger local model",
+                provider="transformers",
+                mode="transformers",
+                model_id=target_model_id,
+                status=(
+                    "candidate"
+                    if platform_profile["accelerator"] in {"cuda", "mps"} and platform_profile["availableMemoryBytes"] >= 12 * 1024**3
+                    else "blocked"
+                ),
+                fit_status=str(memory_estimate.get("fitStatus") or "unknown"),
+                quality="higher",
+                speed=self._latency_class(platform_profile, small_model=False),
+                reason=(
+                    "This machine has accelerator headroom for a stronger local QA generator if one is cached."
+                    if platform_profile["accelerator"] in {"cuda", "mps"}
+                    else "No CUDA or Apple Metal runtime was detected for a stronger local generator."
+                ),
+                next_action="Choose and cache a stronger instruction model, then preflight it before use.",
+            ),
+            self._qa_tier(
+                tier=3,
+                label="User-provided inference endpoint",
+                provider="openai-compatible-endpoint",
+                mode="endpoint",
+                model_id=target_model_id,
+                status="candidate" if endpoint_url else "not-configured",
+                fit_status="external",
+                quality="user-selected",
+                speed="endpoint-dependent",
+                reason=(
+                    "Endpoint URL is configured; The Foundry can route future QA generation through it."
+                    if endpoint_url
+                    else "Optional endpoint tier for Ollama, LM Studio, vLLM, local Transformers servers, or OpenAI-compatible servers."
+                ),
+                next_action=(
+                    "Validate endpoint health before enabling endpoint generation."
+                    if endpoint_url
+                    else "Set FOUNDRY_QA_GENERATOR_ENDPOINT_URL when endpoint adapters are enabled."
+                ),
+            ),
+        ]
+        selected = self._select_qa_tier(normalized_mode, tiers)
+        return {
+            "contractVersion": "foundry.qa-generator.selection.v1",
+            "selectedTier": selected["tier"],
+            "selectedProvider": selected["provider"],
+            "selectedMode": selected["mode"],
+            "selectedModelId": selected["modelId"],
+            "qualityPreference": os.getenv("FOUNDRY_QA_GENERATOR_QUALITY_PREFERENCE", "balanced").strip() or "balanced",
+            "contextWindowRequirement": self._context_window_requirement(target_max_tokens),
+            "fallbackPolicy": "fall back to deterministic rows with fallbackReason metadata; block fallback rows from default export",
+            "tiers": tiers,
+            "platform": platform_profile,
         }
 
     def set_model_text_backend(
@@ -246,44 +400,82 @@ class QAGenerationService:
         )
 
         model_service = QAGenerationService()
+        model_service.set_model_text_backend(self._model_text_backend)
         model_service.configure(
             mode="transformers",
             model_id=self.model_id,
             max_new_tokens=min(self.max_new_tokens, 160),
             temperature=self.temperature,
         )
-        try:
-            model_rows = model_service._generate_with_transformers(
-                request,
-                local_files_only=True,
-            )
-            model_result = self._quality_proof_result(
-                label="Cached local model",
-                status="passed" if model_rows else "warning",
-                rows=model_rows,
-                source_text=request.chunk_text,
-                detail=(
-                    "Cached model generated a parseable QA row."
-                    if model_rows
-                    else "Cached model responded, but did not return parseable QA JSON."
-                ),
-            )
-        except Exception as error:
+        model_preflight = self.preflight(
+            mode="transformers",
+            model_id=self.model_id,
+            max_new_tokens=min(self.max_new_tokens, 160),
+            temperature=self.temperature,
+        )
+        if not model_preflight["ok"]:
             model_result = self._quality_proof_result(
                 label="Cached local model",
                 status="warning",
                 rows=[],
                 source_text=request.chunk_text,
                 detail=(
-                    "Cached model proof could not run without downloading or loading "
-                    f"the configured model: {type(error).__name__}: {error}"
+                    "Backend model proof is blocked until preflight passes: "
+                    f"{model_preflight['summary']}"
                 ),
+                proof_source="backend-local-model",
+                local_files_only=True,
+                preflight_status=str(model_preflight["status"]),
             )
+        else:
+            try:
+                model_rows = model_service._generate_with_transformers(
+                    request,
+                    local_files_only=True,
+                )
+                model_result = self._quality_proof_result(
+                    label="Cached local model",
+                    status="passed" if model_rows else "warning",
+                    rows=model_rows,
+                    source_text=request.chunk_text,
+                    detail=(
+                        "Backend cached local model generated a parseable QA row."
+                        if model_rows
+                        else "Backend cached local model responded, but did not return parseable QA JSON."
+                    ),
+                    proof_source="backend-local-model",
+                    local_files_only=True,
+                    preflight_status=str(model_preflight["status"]),
+                )
+            except Exception as error:
+                model_result = self._quality_proof_result(
+                    label="Cached local model",
+                    status="warning",
+                    rows=[],
+                    source_text=request.chunk_text,
+                    detail=(
+                        "Backend cached model proof could not run without downloading or loading "
+                        f"the configured model: {type(error).__name__}: {error}"
+                    ),
+                    proof_source="backend-local-model",
+                    local_files_only=True,
+                    preflight_status=str(model_preflight["status"]),
+                )
 
         results = [deterministic_result, model_result]
         return {
             "contractVersion": "foundry.qa-generator.quality-proof.v1",
             "runtime": self.runtime_payload(),
+            "proofMode": {
+                "source": "backend",
+                "mode": self.mode,
+                "modelId": self.model_id,
+                "localFilesOnly": True,
+                "simulated": False,
+                "preflightStatus": model_preflight["status"],
+                "modelCached": bool((model_preflight.get("model") or {}).get("cached")),
+                "modelPath": (model_preflight.get("model") or {}).get("path"),
+            },
             "request": {
                 "materialName": request.material_name,
                 "materialKind": request.material_kind,
@@ -345,30 +537,62 @@ class QAGenerationService:
         if self._model_text_backend:
             return self._model_text_backend(prompt, local_files_only)
 
-        from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
 
+        model_reference = self._model_load_reference(local_files_only=local_files_only)
         tokenizer = AutoTokenizer.from_pretrained(
-            self.model_id,
+            model_reference,
             local_files_only=local_files_only,
         )
         model = AutoModelForCausalLM.from_pretrained(
-            self.model_id,
+            model_reference,
             local_files_only=local_files_only,
         )
+        model.eval()
+        prepared_prompt = self._prepare_model_prompt(tokenizer, prompt)
+        model_inputs = tokenizer([prepared_prompt], return_tensors="pt")
+        generation_kwargs: Dict[str, Any] = {
+            **model_inputs,
+            "max_new_tokens": self.max_new_tokens,
+            "do_sample": self.temperature > 0,
+            "pad_token_id": tokenizer.pad_token_id or tokenizer.eos_token_id,
+        }
+        if self.temperature > 0:
+            generation_kwargs["temperature"] = self.temperature
+        with torch.no_grad():
+            output_ids = model.generate(**generation_kwargs)
+        prompt_length = model_inputs["input_ids"].shape[-1]
+        generated_ids = output_ids[0][prompt_length:]
+        return tokenizer.decode(generated_ids, skip_special_tokens=True)
 
-        generator = pipeline(
-            "text-generation",
-            model=model,
-            tokenizer=tokenizer,
-            device=-1,
-        )
-        return generator(
-            prompt,
-            max_new_tokens=self.max_new_tokens,
-            temperature=self.temperature,
-            do_sample=self.temperature > 0,
-            return_full_text=False,
-        )[0]["generated_text"]
+    def _prepare_model_prompt(self, tokenizer: Any, prompt: str) -> str:
+        if getattr(tokenizer, "chat_template", None) and hasattr(tokenizer, "apply_chat_template"):
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are The Foundry QA generator. Return only a valid JSON "
+                        "array. Do not use markdown fences or commentary."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ]
+            return str(
+                tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            )
+        return prompt
+
+    def _model_load_reference(self, *, local_files_only: bool) -> str:
+        if local_files_only:
+            probe = self._qa_model_probe(self.model_id)
+            if probe.get("cached") and probe.get("path"):
+                return str(probe["path"])
+        return self.model_id
 
     def _generate_deterministic(
         self,
@@ -417,6 +641,13 @@ class QAGenerationService:
     ) -> Dict[str, Any]:
         prompt = self._prompt(request)
         compact_source = " ".join(request.chunk_text.split())
+        source_metadata = request.source_metadata if isinstance(request.source_metadata, dict) else {}
+        source_reference = source_metadata.get("source") if isinstance(source_metadata.get("source"), dict) else {}
+        source_location = (
+            source_metadata.get("sourceLocation")
+            if isinstance(source_metadata.get("sourceLocation"), dict)
+            else {}
+        )
         metadata = {
             "contractVersion": QA_GENERATION_CONTRACT_VERSION,
             "mode": self.mode,
@@ -429,6 +660,16 @@ class QAGenerationService:
                 "fingerprint": sha256(prompt.encode("utf-8")).hexdigest()[:16],
                 "maxContextCharacters": 4000,
                 "requestedRows": request.qa_pair_count,
+                "requestedQaTypes": [
+                    self._qa_type_for_index(index)
+                    for index in range(max(1, request.qa_pair_count))
+                ],
+                "qualityTargets": {
+                    "groundedOnly": True,
+                    "avoidTrivialQuestions": True,
+                    "answerMustBeSupportedBySource": True,
+                    "preferCoverageAcrossDefinitionsProceduresComparisonsConstraints": True,
+                },
             },
             "source": {
                 "chunkId": request.chunk_id,
@@ -439,8 +680,17 @@ class QAGenerationService:
                 "characterCount": len(request.chunk_text),
                 "tokenEstimate": len(request.chunk_text.split()),
                 "fingerprint": sha256(compact_source.encode("utf-8")).hexdigest()[:16],
+                "materialId": source_reference.get("materialId"),
+                "sourceTitle": source_reference.get("sourceTitle"),
+                "sourceUri": source_reference.get("sourceUri"),
+                "sourceLocation": source_location,
+                "chunkFingerprint": source_metadata.get("fingerprint"),
+                "chunkIndex": source_location.get("chunkIndex"),
             },
+            "qaTypeGuidance": QA_TYPE_GUIDANCE.get(qa_type, ""),
         }
+        if source_metadata:
+            metadata["sourceMetadata"] = source_metadata
         if fallback_reason:
             metadata["fallbackReason"] = fallback_reason
             metadata["requestedModelId"] = requested_model_id
@@ -457,7 +707,15 @@ class QAGenerationService:
     def _prompt(self, request: QAGenerationRequest) -> str:
         subject = request.workshop_subject or "the Workshop subject"
         voice_target = request.voice_target or "the target behavior"
-        requested_types = ", ".join(QA_TYPE_SEQUENCE)
+        requested_types = [
+            self._qa_type_for_index(index)
+            for index in range(max(1, request.qa_pair_count))
+        ]
+        requested_type_text = ", ".join(requested_types)
+        type_guidance = "\n".join(
+            f"- {qa_type}: {QA_TYPE_GUIDANCE[qa_type]}"
+            for qa_type in QA_TYPE_SEQUENCE
+        )
         return (
             "You are The Foundry QA generator. Create high quality, grounded "
             "instruction-tuning examples from the source context. The examples "
@@ -466,14 +724,23 @@ class QAGenerationService:
             "review.\n\n"
             "Return only JSON as an array of objects. Each object must contain "
             "question, answer, confidence, and qaType fields. Use concise answers "
-            "grounded only in the source. Do not invent facts. Prefer a diverse "
-            f"mix of qaType values: {requested_types}.\n\n"
+            "grounded only in the source. Do not invent facts. Avoid trivial "
+            "questions whose answer is obvious from a single copied phrase. Each "
+            "answer must be complete enough to train from, but it must stay within "
+            "the source evidence.\n\n"
+            "QA type guidance:\n"
+            f"{type_guidance}\n\n"
             f"Prompt template: {QA_PROMPT_TEMPLATE_VERSION}\n"
             f"Workshop subject: {subject}\n"
             f"Target voice/persona: {voice_target}\n"
             f"Material: {request.material_name}\n"
             f"Material kind: {request.material_kind}\n"
             f"Requested rows: {request.qa_pair_count}\n"
+            f"Requested qaType sequence: {requested_type_text}\n"
+            "Quality checklist: factual correctness, source grounding, clear question, "
+            "complete answer, low duplication, no unsupported claims, useful coverage "
+            "of definitions, procedures, comparisons, constraints, edge cases, examples, "
+            "cause/effect, troubleshooting, or domain terminology when present.\n"
             f"Source context:\n{request.chunk_text[:4000]}\n"
         )
 
@@ -598,16 +865,26 @@ class QAGenerationService:
         rows: List[Dict[str, Any]],
         source_text: str,
         detail: str | None = None,
+        proof_source: str | None = None,
+        local_files_only: bool | None = None,
+        preflight_status: str | None = None,
     ) -> Dict[str, Any]:
         public_rows = [self._public_row(row) for row in rows]
         quality = self._score_quality(rows[0], source_text) if rows else self.quality_evaluator.empty()
-        return {
+        result = {
             "label": label,
             "status": status,
             "detail": detail or self._quality_detail(status, quality),
             "rows": public_rows,
             "quality": quality,
         }
+        if proof_source:
+            result["proofSource"] = proof_source
+        if local_files_only is not None:
+            result["localFilesOnly"] = local_files_only
+        if preflight_status:
+            result["preflightStatus"] = preflight_status
+        return result
 
     def _score_quality(self, row: Dict[str, Any], source_text: str) -> Dict[str, Any]:
         question = str(row.get("question", ""))
@@ -645,6 +922,9 @@ class QAGenerationService:
             return f"Transformers QA generator is configured for {self.model_id}."
         return "Transformers is not importable, so generation will fall back to deterministic drafts."
 
+    def _transformers_available(self) -> bool:
+        return self._model_text_backend is not None or find_spec("transformers") is not None
+
     def _preflight_check(
         self,
         check_id: str,
@@ -657,6 +937,104 @@ class QAGenerationService:
             "label": label,
             "status": status,
             "detail": detail,
+        }
+
+    def _platform_profile(self) -> Dict[str, Any]:
+        memory = psutil.virtual_memory()
+        accelerator = "cpu"
+        accelerator_memory_bytes = 0
+        torch_details: Dict[str, Any] = {}
+        try:
+            import torch
+
+            torch_details = {
+                "torchVersion": torch.__version__,
+                "cudaAvailable": torch.cuda.is_available(),
+                "mpsBuilt": bool(hasattr(torch.backends, "mps") and torch.backends.mps.is_built()),
+                "mpsAvailable": bool(hasattr(torch.backends, "mps") and torch.backends.mps.is_available()),
+            }
+            if torch.cuda.is_available():
+                props = torch.cuda.get_device_properties(0)
+                accelerator = "cuda"
+                accelerator_memory_bytes = int(props.total_memory)
+                torch_details["cudaDevice"] = props.name
+            elif torch_details["mpsAvailable"]:
+                accelerator = "mps"
+                accelerator_memory_bytes = int(memory.available)
+        except Exception as error:
+            torch_details["torchError"] = str(error)
+        return {
+            "os": platform.system() or "Unknown",
+            "machine": platform.machine() or "unknown",
+            "python": platform.python_version(),
+            "accelerator": accelerator,
+            "systemMemoryBytes": int(memory.total),
+            "availableMemoryBytes": int(memory.available),
+            "acceleratorMemoryBytes": accelerator_memory_bytes,
+            "unifiedMemory": accelerator == "mps",
+            "torch": torch_details,
+        }
+
+    def _qa_tier(
+        self,
+        *,
+        tier: int,
+        label: str,
+        provider: str,
+        mode: str,
+        model_id: str,
+        status: str,
+        fit_status: str,
+        quality: str,
+        speed: str,
+        reason: str,
+        next_action: str,
+    ) -> Dict[str, Any]:
+        return {
+            "tier": tier,
+            "label": label,
+            "provider": provider,
+            "mode": mode,
+            "modelId": model_id,
+            "status": status,
+            "fitStatus": fit_status,
+            "quality": quality,
+            "speed": speed,
+            "reason": reason,
+            "nextAction": next_action,
+        }
+
+    def _select_qa_tier(self, mode: str, tiers: List[Dict[str, Any]]) -> Dict[str, Any]:
+        if mode == "deterministic":
+            return tiers[0]
+        if mode == "transformers":
+            for tier in tiers:
+                if tier["tier"] == 1 and tier["status"] == "ready":
+                    return tier
+            return tiers[0]
+        if mode == "endpoint":
+            for tier in tiers:
+                if tier["tier"] == 3 and tier["status"] == "candidate":
+                    return tier
+        return tiers[0]
+
+    def _latency_class(self, platform_profile: Dict[str, Any], *, small_model: bool) -> str:
+        accelerator = platform_profile.get("accelerator")
+        if accelerator in {"cuda", "mps"}:
+            return "interactive" if small_model else "moderate"
+        return "moderate" if small_model else "slow"
+
+    def _context_window_requirement(self, max_new_tokens: int) -> Dict[str, Any]:
+        prompt_context_tokens = 2048
+        estimated_required_context = prompt_context_tokens + max_new_tokens
+        return {
+            "promptContextTokens": prompt_context_tokens,
+            "maxNewTokens": max_new_tokens,
+            "estimatedRequiredContextTokens": estimated_required_context,
+            "reason": (
+                "QA generation currently caps source context at roughly 4,000 characters; "
+                "future model tiers should prefer at least this context plus requested output tokens."
+            ),
         }
 
     def _qa_model_probe(self, model_id: str) -> Dict[str, Any]:

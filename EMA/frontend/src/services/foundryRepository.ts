@@ -30,6 +30,7 @@ import {
   ExportConstructRuntimeEventsDto,
   ExportConstructRuntimeValidationsDto,
   ExportQAPairsDto,
+  ExportQAPairsPreviewDto,
   ExportQAPairsRequest,
   ExportTrialsDto,
   ExportTrialsRequest,
@@ -84,6 +85,7 @@ import {
   ConstructRuntimeProbeResult,
   CreateConstructRuntimeEventRequest,
   CreateConstructRuntimeValidationRequest,
+  DashboardLoopEvidence,
   DashboardSummary,
   FoundryNavigationItem,
   ForgeEvaluationReport,
@@ -120,6 +122,9 @@ import {
   foundrySectionSummaries,
   mockDashboardSummary,
 } from "../mocks/foundryMockData";
+
+const DEFAULT_QA_GENERATOR_MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct";
+const SMOKE_QA_GENERATOR_MODEL_ID = "sshleifer/tiny-gpt2";
 
 type SectionSummaryMap = Record<
   Exclude<NavigationSection, "workshop" | "settings" | "construct">,
@@ -281,6 +286,7 @@ export interface FoundryRepository {
   checkReadinessGate: (request: FoundryReadinessGateRequest) => Promise<FoundryReadinessGate>;
   createWorkshop: (request: CreateWorkshopRequest) => Promise<Workshop>;
   getDashboard: () => Promise<DashboardSummary>;
+  getDashboardEvidence: (workshopId: string) => Promise<DashboardLoopEvidence>;
   getNavigationItems: () => Promise<FoundryNavigationItem[]>;
   getSectionSummaries: () => Promise<SectionSummaryMap>;
   getUiCatalog: () => Promise<UiCatalogItem[]>;
@@ -326,6 +332,10 @@ export interface FoundryRepository {
     workshopId: string,
     request: ExportQAPairsRequest
   ) => Promise<ExportQAPairsDto>;
+  previewQAPairsExport: (
+    workshopId: string,
+    request: ExportQAPairsRequest
+  ) => Promise<ExportQAPairsPreviewDto>;
   listForgeRuns: (workshopId: string) => Promise<ForgeRun[]>;
   startForge: (workshopId: string, request: StartForgeRequest) => Promise<ForgeRun>;
   advanceForgeSimulation: (forgeRunId: string) => Promise<ForgeRun>;
@@ -475,7 +485,7 @@ const mockQAPairs: QAPair[] = [];
 let mockQAGeneratorRuntime: QAGeneratorRuntime = {
   contractVersion: "foundry.qa-generator.runtime.v1",
   mode: "deterministic",
-  modelId: "sshleifer/tiny-gpt2",
+  modelId: DEFAULT_QA_GENERATOR_MODEL_ID,
   maxNewTokens: 320,
   temperature: 0.2,
   ready: true,
@@ -504,6 +514,263 @@ const mockPlatformProfile: ModelPlatformProfile = {
     cudaAvailable: false,
     mpsAvailable: true,
   },
+};
+
+const mockArtifactReadiness = (
+  kind: "metadata-only" | "lora-adapter",
+  adapterPath: string,
+  baseModel: string
+): Artifact["readiness"] => {
+  const isAdapter = kind === "lora-adapter";
+  return {
+    status: isAdapter ? "verified" : "simulated",
+    canLoad: true,
+    message: isAdapter
+      ? "Mock local trainer produced adapter metadata for UI rehearsal."
+      : "Metadata-only Artifact from a simulated Forge; Construct load will stay simulated until real adapter files exist.",
+    artifactKind: kind,
+    checkedPath: adapterPath,
+    requiredFiles: [
+      "trainer-result.json",
+      "adapter_model.safetensors",
+      "adapter_model.bin",
+      "adapter_config.json",
+      "config.json",
+    ],
+    presentFiles: isAdapter ? ["trainer-result.json", "adapter_model.safetensors"] : [],
+    outputFiles: isAdapter
+      ? [
+          { path: "trainer-result.json", role: "trainer-summary", sizeBytes: 256 },
+          { path: "adapter_model.safetensors", role: "adapter-weights", sizeBytes: 1024 },
+        ]
+      : [],
+    trainerResult: isAdapter
+      ? {
+          adapterPath,
+          baseModel,
+          device: "mock",
+          loss: 0.1234,
+          rowsUsed: 1,
+          datasetRows: 1,
+          targetModules: ["c_attn"],
+          createdAt: new Date().toISOString(),
+        }
+      : null,
+    compatibility: {
+      status: isAdapter ? "matched" : "simulated",
+      message: isAdapter
+        ? "Mock trainer result base model matches the Artifact base model."
+        : "No adapter compatibility check is possible for metadata-only simulated output.",
+      baseModel,
+      trainedBaseModel: isAdapter ? baseModel : null,
+      adapterAppliesToBase: isAdapter ? true : null,
+    },
+  };
+};
+
+mockDashboardSummary.currentArtifact.readiness = mockArtifactReadiness(
+  "metadata-only",
+  mockDashboardSummary.currentArtifact.adapterPath || "runtime/artifacts/mock/metadata-only",
+  mockDashboardSummary.currentArtifact.baseModel
+);
+
+const mockTrialRuntimeProfile = (
+  artifact: Artifact | undefined,
+  constructId: string,
+  runtimeMode: string,
+  generationSettings: Record<string, unknown>
+): Trial["runtimeProfile"] => {
+  const runtime = generationSettings.runtime as { diagnostics?: Record<string, unknown>; modelId?: string; device?: string } | undefined;
+  const loadedModel = (runtime?.diagnostics?.loadedModel || {}) as Record<string, unknown>;
+  const artifactKind = artifact?.readiness?.artifactKind || "metadata-only";
+  const adapterLoaded = Boolean(loadedModel.adapterLoaded) || (runtimeMode === "transformers" && artifactKind === "lora-adapter");
+  const source =
+    runtimeMode === "simulated" || artifact?.readiness?.status === "simulated"
+      ? "simulated"
+      : adapterLoaded
+        ? "adapter-backed"
+        : "base-only";
+  return {
+    source,
+    runtimeMode,
+    baseModel: artifact?.baseModel || String(loadedModel.baseModelId || ""),
+    modelId: String(loadedModel.modelId || runtime?.modelId || generationSettings.modelId || ""),
+    artifactId: artifact?.id || "",
+    artifactKind,
+    adapterPath: artifactKind === "lora-adapter" ? artifact?.adapterPath || null : null,
+    adapterLoaded,
+    constructId,
+    readinessStatus: artifact?.readiness?.status || null,
+    device: String(loadedModel.device || runtime?.device || generationSettings.device || ""),
+  };
+};
+
+const upsertMockTrialForMessage = (
+  workshopId: string,
+  request: {
+    artifact: Artifact;
+    constructId: string;
+    messageId: string;
+    prompt: string;
+    response: string;
+    verdict: Trial["verdict"];
+    runtimeMode: string;
+    tokenCount: number;
+    generationSettings: Record<string, unknown>;
+  }
+): Trial => {
+  const runtimeProfile = mockTrialRuntimeProfile(
+    request.artifact,
+    request.constructId,
+    request.runtimeMode,
+    request.generationSettings
+  );
+  const existingIndex = mockTrials.findIndex(
+    (trial) => trial.workshopId === workshopId && trial.messageId === request.messageId
+  );
+  const generationSettings = {
+    contextWindow: Number(request.generationSettings.contextWindow || mockConstruct.contextWindow),
+    maxNewTokens: Number(request.generationSettings.maxNewTokens || mockConstruct.maxNewTokens),
+    temperature: Number(request.generationSettings.temperature || mockConstruct.temperature),
+    includeLibraryContext: Boolean(request.generationSettings.includeLibraryContext),
+    ...request.generationSettings,
+    runtimeProfile,
+  };
+  const trial: Trial = {
+    id: existingIndex >= 0 ? mockTrials[existingIndex].id : `trl-${Date.now()}`,
+    workshopId,
+    artifactId: request.artifact.id,
+    constructId: request.constructId,
+    messageId: request.messageId,
+    prompt: request.prompt,
+    response: request.response,
+    verdict: request.verdict,
+    runtimeMode: request.runtimeMode,
+    tokenCount: request.tokenCount,
+    generationSettings:
+      request.verdict === "needs-review"
+        ? {
+            ...generationSettings,
+            autoTrial: {
+              contractVersion: "foundry.construct.auto-trial.v1",
+              verdict: "needs-review",
+              reviewRequired: true,
+            },
+          }
+        : generationSettings,
+    runtimeProfile,
+    createdAt: existingIndex >= 0 ? mockTrials[existingIndex].createdAt : new Date().toISOString(),
+  };
+  if (existingIndex >= 0) {
+    mockTrials.splice(existingIndex, 1, trial);
+  } else {
+    mockTrials.unshift(trial);
+  }
+  const reviewedTrials = mockTrials.filter(
+    (item) =>
+      item.artifactId === request.artifact.id &&
+      (item.verdict === "pass" || item.verdict === "needs-work" || item.verdict === "fail")
+  );
+  const passCount = reviewedTrials.filter((item) => item.verdict === "pass").length;
+  request.artifact.trialScore = reviewedTrials.length
+    ? Math.round((passCount / reviewedTrials.length) * 100)
+    : 0;
+  mockDashboardSummary.currentArtifact = request.artifact;
+  return trial;
+};
+
+const mockQAGeneratorSelection = (
+  mode: QAGeneratorRuntime["mode"],
+  modelId: string,
+  maxNewTokens: number,
+  archiveModelCached = false
+): QAGeneratorRuntime["selection"] => {
+  const isDeterministic = mode === "deterministic";
+  const selectedTier = isDeterministic ? 0 : 1;
+  return {
+    contractVersion: "foundry.qa-generator.selection.v1",
+    selectedTier,
+    selectedProvider: isDeterministic ? "deterministic" : "transformers",
+    selectedMode: mode,
+    selectedModelId: isDeterministic ? "deterministic-context-generator" : modelId,
+    qualityPreference: "balanced",
+    fallbackPolicy: "fall back to deterministic rows with fallbackReason metadata; block fallback rows from default export",
+    contextWindowRequirement: {
+      promptContextTokens: 2048,
+      maxNewTokens,
+      estimatedRequiredContextTokens: 2048 + maxNewTokens,
+      reason: "Mock mode does not inspect local model context windows.",
+    },
+    platform: mockPlatformProfile,
+    tiers: [
+      {
+        tier: 0,
+        label: "Deterministic offline fallback",
+        provider: "deterministic",
+        mode: "deterministic",
+        modelId: "deterministic-context-generator",
+        status: "ready",
+        fitStatus: "fits",
+        quality: "smoke",
+        speed: "fast",
+        reason: "Always available for smoke tests, demos, CI, and no-download first-run workflows.",
+        nextAction: "Use for baseline validation, then switch to API mode for model-backed QA checks.",
+      },
+      {
+        tier: 1,
+        label: "Small cached local model",
+        provider: "transformers",
+        mode: "transformers",
+        modelId,
+        status: archiveModelCached ? "ready" : "blocked",
+        fitStatus: archiveModelCached ? "fits" : "unknown",
+        quality: "modest",
+        speed: archiveModelCached ? "simulated-proof" : "backend-dependent",
+        reason: archiveModelCached
+          ? "Mock Archive has a cached model entry, so the UI can rehearse the model-backed QA proof loop."
+          : "Mock mode cannot verify optional ML dependencies until the model is cached in Archive.",
+        nextAction: archiveModelCached
+          ? "Run the model-backed proof simulation, then use API mode for the real Transformers path."
+          : "Cache the generator model in Archive before running the model-backed proof.",
+      },
+      {
+        tier: 2,
+        label: "Stronger local model",
+        provider: "transformers",
+        mode: "transformers",
+        modelId,
+        status: "candidate",
+        fitStatus: "unknown",
+        quality: "higher",
+        speed: "moderate",
+        reason: "This is a planning candidate; backend preflight decides fit.",
+        nextAction: "Use Archive and backend preflight before selecting a stronger generator.",
+      },
+      {
+        tier: 3,
+        label: "User-provided inference endpoint",
+        provider: "openai-compatible-endpoint",
+        mode: "endpoint",
+        modelId,
+        status: "not-configured",
+        fitStatus: "external",
+        quality: "user-selected",
+        speed: "endpoint-dependent",
+        reason: "Endpoint adapters are optional and not active in mock mode.",
+        nextAction: "Configure an endpoint when endpoint adapters are enabled.",
+      },
+    ],
+  };
+};
+
+mockQAGeneratorRuntime = {
+  ...mockQAGeneratorRuntime,
+  platform: mockPlatformProfile,
+  selection: mockQAGeneratorSelection(
+    mockQAGeneratorRuntime.mode,
+    mockQAGeneratorRuntime.modelId,
+    mockQAGeneratorRuntime.maxNewTokens
+  ),
 };
 
 const readMockStorage = <T,>(key: string, fallback: T): T => {
@@ -558,9 +825,41 @@ const persistMockArchiveEntries = () => {
 const persistMockDownloadJobs = () => {
   writeMockStorage(MOCK_DOWNLOAD_JOBS_STORAGE_KEY, mockModelDownloadJobs);
 };
+
+const findMockCachedArchiveEntry = (modelId: string): ModelArchiveEntry | undefined =>
+  mockModelArchiveEntries.find(
+    (entry) =>
+      entry.repoId === modelId &&
+      Boolean(entry.localPath) &&
+      (entry.status === "cached" || entry.status === "ready")
+  );
+
 const mockArchiveModels: ModelSearchResult[] = [
   {
-    repoId: "sshleifer/tiny-gpt2",
+    repoId: DEFAULT_QA_GENERATOR_MODEL_ID,
+    author: "Qwen",
+    sha: "mock",
+    lastModified: new Date().toISOString(),
+    downloads: 7600000,
+    likes: 6200,
+    libraryName: "transformers",
+    pipelineTag: "text-generation",
+    tags: ["transformers", "pytorch", "qwen", "instruct", "qa-quality-preset"],
+    gated: false,
+    private: false,
+    parameterCount: 500_000_000,
+    sizeBytes: 1_000_000_000,
+    fitEstimate: {
+      status: "fits",
+      recommendedRuntime: "mps",
+      estimatedBytes: 1_350_000_000,
+      availableBytes: mockPlatformProfile.availableMemoryBytes,
+      assumedQuantization: "fp16",
+      reason: "Estimated memory fits with comfortable runtime headroom for local QA proof.",
+    },
+  },
+  {
+    repoId: SMOKE_QA_GENERATOR_MODEL_ID,
     author: "sshleifer",
     sha: "mock",
     lastModified: new Date().toISOString(),
@@ -994,6 +1293,7 @@ export const mockFoundryRepository: FoundryRepository = {
     activeConstructId: "con-draft",
   }),
   getDashboard: async () => mockDashboardSummary,
+  getDashboardEvidence: async () => mockDashboardSummary.loopEvidence!,
   getNavigationItems: async () => foundryNavigationItems,
   getSectionSummaries: async () => foundrySectionSummaries,
   getUiCatalog: async () => mockUiCatalog,
@@ -1049,26 +1349,47 @@ export const mockFoundryRepository: FoundryRepository = {
   listAssemblyLineRuns: async () => mockAssemblyLineRuns,
   getQAGeneratorRuntime: async () => mockQAGeneratorRuntime,
   configureQAGeneratorRuntime: async (request) => {
+    const modelId = request.modelId || DEFAULT_QA_GENERATOR_MODEL_ID;
+    const isDeterministic = request.mode === "deterministic";
+    const cachedArchiveEntry = findMockCachedArchiveEntry(modelId);
+    const modelReady = isDeterministic || Boolean(cachedArchiveEntry);
     mockQAGeneratorRuntime = {
       ...mockQAGeneratorRuntime,
       mode: request.mode,
-      modelId: request.modelId || "sshleifer/tiny-gpt2",
+      modelId,
       maxNewTokens: request.maxNewTokens,
       temperature: request.temperature,
-      ready: request.mode === "deterministic",
-      status: request.mode === "deterministic" ? "ready" : "blocked",
+      ready: modelReady,
+      status: modelReady ? "ready" : "blocked",
       detail:
-        request.mode === "deterministic"
+        isDeterministic
           ? "Using the offline deterministic QA generator for fast smoke tests."
-          : "Mock Transformers mode is visible but not available without the backend runtime.",
+          : cachedArchiveEntry
+            ? `Using cached mock Archive model ${modelId} for model-backed QA proof simulation.`
+            : "Cache this QA generator model in Archive before running the model-backed proof.",
       dependencies: {
-        transformers: false,
+        transformers: !isDeterministic && Boolean(cachedArchiveEntry),
       },
+      platform: mockPlatformProfile,
+      selection: mockQAGeneratorSelection(
+        request.mode,
+        modelId,
+        request.maxNewTokens,
+        Boolean(cachedArchiveEntry)
+      ),
     };
     return mockQAGeneratorRuntime;
   },
   preflightQAGenerator: async (request) => {
     const isDeterministic = request.mode === "deterministic";
+    const modelId = request.modelId || DEFAULT_QA_GENERATOR_MODEL_ID;
+    const cachedArchiveEntry = findMockCachedArchiveEntry(modelId);
+    const archiveModelCached = Boolean(cachedArchiveEntry);
+    const estimatedLoadBytes = isDeterministic
+      ? 0
+      : Math.max(512 * 1024 ** 2, Math.round((cachedArchiveEntry?.sizeOnDiskBytes || 0) * 2.2));
+    const memoryFits =
+      isDeterministic || estimatedLoadBytes < mockPlatformProfile.availableMemoryBytes * 0.85;
     const checks = isDeterministic
       ? [
           {
@@ -1088,56 +1409,79 @@ export const mockFoundryRepository: FoundryRepository = {
           {
             id: "dependencies",
             label: "Transformers dependency",
-            status: "fail" as const,
-            detail: "Mock mode cannot verify optional ML dependencies.",
+            status: archiveModelCached ? ("pass" as const) : ("warn" as const),
+            detail: archiveModelCached
+              ? "Mock mode is simulating a cached local Transformers generator; use API mode for real dependency checks."
+              : "Mock mode cannot verify optional ML dependencies until the model is cached in Archive.",
           },
           {
             id: "archive-cache",
             label: "Local model cache",
-            status: "fail" as const,
-            detail: "Use the live API backend to check whether the generator model is cached.",
+            status: archiveModelCached ? ("pass" as const) : ("fail" as const),
+            detail: archiveModelCached
+              ? `Mock Archive cache is ready at ${cachedArchiveEntry?.localPath}.`
+              : "Cache the QA generator model in Archive before running model-backed QA proof.",
           },
           {
             id: "memory-fit",
             label: "Memory fit",
-            status: "warn" as const,
-            detail: "Memory fit is checked by the backend runtime.",
+            status: memoryFits ? ("pass" as const) : ("warn" as const),
+            detail: memoryFits
+              ? "Mock memory estimate fits the current platform profile."
+              : "Mock memory estimate may exceed the conservative local budget.",
           },
         ];
-    const status = isDeterministic ? "ready" : "blocked";
+    const status = isDeterministic || archiveModelCached ? "ready" : "blocked";
     return {
       contractVersion: "foundry.qa-generator.preflight.v1",
-      ok: isDeterministic,
+      ok: isDeterministic || archiveModelCached,
       status,
       title: isDeterministic
         ? "Deterministic QA generator ready"
-        : "Local QA generator blocked in mock mode",
+        : archiveModelCached
+          ? "Local QA generator ready"
+          : "Local QA generator waiting on Archive cache",
       summary: isDeterministic
         ? "Smoke-test QA generation can run offline."
-        : "Switch to API mode to verify dependencies, cache, and memory before model-backed QA generation.",
+        : archiveModelCached
+          ? "Mock Archive cache is ready for model-backed QA proof simulation."
+          : "Cache this tiny generator model in Archive before model-backed QA generation.",
       nextAction: isDeterministic
         ? "Run Smoke proof or start the Assembly Line."
-        : "Start the backend and use VITE_FOUNDRY_DATA_SOURCE=api.",
+        : archiveModelCached
+          ? "Configure Local Transformers, then run Quality proof."
+          : "Open Archive and cache this generator model.",
       mode: request.mode,
-      modelId: request.modelId || "sshleifer/tiny-gpt2",
+      modelId,
       maxNewTokens: request.maxNewTokens,
       temperature: request.temperature,
       model: {
-        modelId: request.modelId || "sshleifer/tiny-gpt2",
-        path: null,
-        cached: false,
-        sizeOnDiskBytes: 0,
-        message: "Mock mode does not inspect the local Archive.",
+        modelId,
+        path: cachedArchiveEntry?.localPath || null,
+        cached: archiveModelCached,
+        sizeOnDiskBytes: cachedArchiveEntry?.sizeOnDiskBytes || 0,
+        message: archiveModelCached
+          ? "Mock Archive cache is ready for the QA generator proof loop."
+          : "Mock Archive does not have this QA generator cached yet.",
       },
       memory: {
-        fitStatus: "unknown",
-        checkStatus: isDeterministic ? "pass" : "warn",
-        estimatedLoadBytes: 0,
+        fitStatus: memoryFits ? "fits" : "tight",
+        checkStatus: isDeterministic || memoryFits ? "pass" : "warn",
+        estimatedLoadBytes,
         availableBytes: mockPlatformProfile.availableMemoryBytes,
         message: isDeterministic
           ? "No model memory needed for deterministic QA generation."
-          : "Memory fit is checked by the backend runtime.",
+          : memoryFits
+            ? "Mock memory estimate fits the local profile; API mode performs the real runtime check."
+            : "Mock memory estimate needs review before loading a larger generator.",
       },
+      platform: mockPlatformProfile,
+      selection: mockQAGeneratorSelection(
+        request.mode,
+        modelId,
+        request.maxNewTokens,
+        archiveModelCached
+      ),
       checks,
       warnings: checks.filter((check) => check.status !== "pass").map((check) => check.detail),
       createdAt: new Date().toISOString(),
@@ -1185,6 +1529,11 @@ export const mockFoundryRepository: FoundryRepository = {
     };
   },
   runQAGeneratorQualityProof: async () => {
+    const cachedArchiveEntry = findMockCachedArchiveEntry(mockQAGeneratorRuntime.modelId);
+    const modelBackedReady =
+      mockQAGeneratorRuntime.mode === "transformers" &&
+      mockQAGeneratorRuntime.ready &&
+      Boolean(cachedArchiveEntry);
     const deterministic = {
       id: `qa-proof-det-${Date.now()}`,
       question: "What should a model learn about Marshall from the proof material?",
@@ -1199,9 +1548,35 @@ export const mockFoundryRepository: FoundryRepository = {
       reviewStatus: "draft" as const,
       reviewedAt: null,
     };
+    const modelBacked = {
+      id: `qa-proof-model-${Date.now()}`,
+      question: "Which emergency roles does Marshall handle in Adventure Bay?",
+      answer:
+        "Marshall helps the Paw Patrol as a fire pup and supports medical emergencies when the team needs rescue help.",
+      generatorModel: mockQAGeneratorRuntime.modelId,
+      confidence: 0.78,
+      generationMetadata: {
+        contractVersion: "foundry.qa-generation.v1",
+        mode: "transformers",
+        strategy: "mock-cached-model-context-synthesis",
+        archivePath: cachedArchiveEntry?.localPath || null,
+      },
+      reviewStatus: "draft" as const,
+      reviewedAt: null,
+    };
     return {
       contractVersion: "foundry.qa-generator.quality-proof.v1",
       runtime: mockQAGeneratorRuntime,
+      proofMode: {
+        source: "mock",
+        mode: mockQAGeneratorRuntime.mode,
+        modelId: mockQAGeneratorRuntime.modelId,
+        localFilesOnly: true,
+        simulated: true,
+        preflightStatus: modelBackedReady ? "ready" : "blocked",
+        modelCached: Boolean(cachedArchiveEntry),
+        modelPath: cachedArchiveEntry?.localPath || null,
+      },
       request: {
         materialName: "Foundry QA Proof Material",
         materialKind: "text",
@@ -1227,21 +1602,27 @@ export const mockFoundryRepository: FoundryRepository = {
         },
         {
           label: "Cached local model",
-          status: "warning",
-          detail: "Mock mode cannot load a cached Transformers model.",
-          rows: [],
+          status: modelBackedReady ? "passed" : "warning",
+          detail: modelBackedReady
+            ? `Mock Archive cache produced a model-backed QA proof from ${mockQAGeneratorRuntime.modelId}.`
+            : "Cache a tiny generator model in Archive before running the model-backed proof.",
+          proofSource: "mock-simulated",
+          localFilesOnly: true,
+          preflightStatus: modelBackedReady ? "ready" : "blocked",
+          rows: modelBackedReady ? [modelBacked] : [],
           quality: {
-            score: 0,
-            confidence: 0,
-            sourceOverlap: 0,
-            answerLength: 0,
-            questionFormed: false,
-            fallback: true,
+            score: modelBackedReady ? 0.78 : 0,
+            confidence: modelBackedReady ? 0.78 : 0,
+            sourceOverlap: modelBackedReady ? 0.82 : 0,
+            answerLength: modelBackedReady ? 16 : 0,
+            questionFormed: modelBackedReady,
+            fallback: !modelBackedReady,
           },
         },
       ],
-      recommendation:
-        "Cache a tiny generator model first, then rerun the proof to compare model-aware QA against deterministic drafts.",
+      recommendation: modelBackedReady
+        ? "Model-backed QA proof is ready in mock mode; switch to API mode for the real Transformers run."
+        : "Cache a tiny generator model first, then rerun the proof to compare model-aware QA against deterministic drafts.",
       createdAt: new Date().toISOString(),
     };
   },
@@ -1342,6 +1723,99 @@ export const mockFoundryRepository: FoundryRepository = {
     qaPair.reviewedAt = request.reviewStatus === "draft" ? null : new Date().toISOString();
     return qaPair;
   },
+  previewQAPairsExport: async (_workshopId, request) => {
+    const qaPairs = mockQAPairs.filter(
+      (qaPair) =>
+        qaPair.workshopId === _workshopId &&
+        qaPair.assemblyLineRunId === request.assemblyLineRunId &&
+        (request.includeDrafts ||
+          qaPair.reviewStatus === "accepted" ||
+          qaPair.reviewStatus === "edited")
+    );
+    if (qaPairs.length === 0) {
+      throw new Error("This Assembly Line run has no accepted QA pairs to preview.");
+    }
+    const blockedRows = qaPairs.filter((qaPair) => qaPair.qualityGate?.status === "blocked");
+    const sampleRows = qaPairs.slice(0, 5).map((qaPair, index) => ({
+      id: qaPair.id,
+      instruction: qaPair.question,
+      input: "",
+      output: qaPair.answer,
+      question: qaPair.question,
+      answer: qaPair.answer,
+      source: {
+        workshopId: qaPair.workshopId,
+        assemblyLineRunId: qaPair.assemblyLineRunId,
+        materialId: qaPair.materialId,
+        chunkId: qaPair.chunkId,
+      },
+      metadata: {
+        format: "foundry.qa.v1",
+        rowIndex: index,
+        generatorModel: qaPair.generatorModel,
+        confidence: qaPair.confidence,
+        generation: qaPair.generationMetadata || {},
+        reviewStatus: qaPair.reviewStatus,
+        reviewedAt: qaPair.reviewedAt,
+        draftOverride: Boolean(request.includeDrafts),
+        lowQualityOverride: Boolean(request.includeLowQuality),
+        qualityGate: qaPair.qualityGate,
+      },
+    }));
+    const warnings: string[] = [];
+    const errors: string[] = [];
+    if (blockedRows.length > 0 && !request.includeLowQuality) {
+      errors.push(`${blockedRows.length} row(s) are blocked by the QA quality gate.`);
+    } else if (blockedRows.length > 0) {
+      warnings.push(`${blockedRows.length} quality-blocked row(s) are included by override.`);
+    }
+    const status = errors.length ? "blocked" : warnings.length ? "caution" : "ready";
+    return {
+      contractVersion: "foundry.qa-jsonl.preview.v1",
+      assemblyLineRunId: request.assemblyLineRunId,
+      format: "jsonl",
+      rowCount: qaPairs.length,
+      sampleRows,
+      sampleLimit: 5,
+      jsonlPreview: sampleRows.map((row) => JSON.stringify(row)),
+      validation: {
+        status,
+        forgeReady: errors.length === 0,
+        checks: [
+          {
+            id: "schema-fields",
+            label: "Required JSONL fields",
+            status: "pass",
+            detail: "instruction, output, source, and metadata are present.",
+          },
+          {
+            id: "quality-gate",
+            label: "QA quality gate",
+            status: errors.length ? "fail" : warnings.length ? "warn" : "pass",
+            detail:
+              blockedRows.length > 0
+                ? "Quality-blocked rows are present; override is required before export."
+                : "All included rows passed the QA quality gate.",
+          },
+        ],
+        warnings,
+        errors,
+        rowCount: qaPairs.length,
+        duplicateInstructionCount: 0,
+      },
+      qualityGate: {
+        status: blockedRows.length > 0 && request.includeLowQuality ? "override" : status,
+        checkedRows: qaPairs.length,
+        blockedRows: blockedRows.length,
+        confidenceThreshold: 0.6,
+        override: Boolean(request.includeLowQuality),
+      },
+      options: {
+        includeDrafts: Boolean(request.includeDrafts),
+        includeLowQuality: Boolean(request.includeLowQuality),
+      },
+    };
+  },
   exportQAPairs: async (_workshopId, request) => {
     const qaPairs = mockQAPairs.filter(
       (qaPair) =>
@@ -1360,29 +1834,91 @@ export const mockFoundryRepository: FoundryRepository = {
         `QA quality gate blocked export for ${blockedRows.length} row(s). Review rows or enable the low-quality override.`
       );
     }
+    const sourceUri = `runtime/materials/exports/${_workshopId}/${request.assemblyLineRunId}.jsonl`;
+    const qualityGate = {
+      status: blockedRows.length > 0 ? "override" : "passed",
+      checkedRows: qaPairs.length,
+      blockedRows: blockedRows.length,
+      confidenceThreshold: 0.6,
+      override: Boolean(request.includeLowQuality),
+    };
+    const trainingReadiness = {
+      contractVersion: "foundry.qa-training-readiness.v1" as const,
+      status: blockedRows.length > 0 ? "caution" : "ready",
+      forgeReady: true,
+      defaultTrainingSafe: blockedRows.length === 0 && !request.includeLowQuality,
+      rowCount: qaPairs.length,
+      reviewedRows: qaPairs.filter(
+        (qaPair) => qaPair.reviewStatus === "accepted" || qaPair.reviewStatus === "edited"
+      ).length,
+      sourceReferencedRows: qaPairs.length,
+      qualityPassedRows: qaPairs.length - blockedRows.length,
+      qualityBlockedRows: blockedRows.length,
+      deterministicRows: 0,
+      fallbackRows: 0,
+      generatorModels: Array.from(
+        new Set(qaPairs.map((qaPair) => qaPair.generatorModel || "mock-generator"))
+      ),
+      generatorModes: ["mock"],
+      promptVersions: ["mock"],
+      checks: [
+        {
+          id: "qa-quality",
+          label: "QA quality",
+          status: blockedRows.length > 0 ? "warn" : "pass",
+          detail:
+            blockedRows.length > 0
+              ? "Quality-blocked rows are included by override; review before real training."
+              : "Every row passed the QA quality gate.",
+        },
+      ],
+      recommendation:
+        blockedRows.length > 0
+          ? "Quality override is enabled; proceed only for tiny proofs or after human review."
+          : "Ready for default Forge training with reviewed, grounded, model-backed QA rows.",
+    };
     const material: MaterialSource = {
-      id: `mat-export-${Date.now()}`,
+      id:
+        mockMaterialSources.find(
+          (source) => source.kind === "jsonl" && source.sourceUri === sourceUri
+        )?.id || `mat-export-${Date.now()}`,
       name: request.name || "Training QA Dataset",
       kind: "jsonl",
       status: "qa-ready",
-      sourceUri: `runtime/materials/exports/${_workshopId}/${request.assemblyLineRunId}.jsonl`,
+      sourceUri,
+      metadata: {
+        export: {
+          contractVersion: "foundry.material.qa-export.v1",
+          assemblyLineRunId: request.assemblyLineRunId,
+          format: "jsonl",
+          rowCount: qaPairs.length,
+          qualityGate,
+          trainingReadiness,
+          options: {
+            includeDrafts: Boolean(request.includeDrafts),
+            includeLowQuality: Boolean(request.includeLowQuality),
+          },
+        },
+      },
       chunkCount: qaPairs.length,
       qaPairCount: qaPairs.length,
     };
-    mockMaterialSources.unshift(material);
+    const existingMaterialIndex = mockMaterialSources.findIndex(
+      (source) => source.kind === "jsonl" && source.sourceUri === sourceUri
+    );
+    if (existingMaterialIndex >= 0) {
+      mockMaterialSources.splice(existingMaterialIndex, 1, material);
+    } else {
+      mockMaterialSources.unshift(material);
+    }
     return {
       material,
       exportUri: material.sourceUri,
       format: "jsonl",
       qaPairCount: qaPairs.length,
       assemblyLineRunId: request.assemblyLineRunId,
-      qualityGate: {
-        status: blockedRows.length > 0 ? "override" : "passed",
-        checkedRows: qaPairs.length,
-        blockedRows: blockedRows.length,
-        confidenceThreshold: 0.6,
-        override: Boolean(request.includeLowQuality),
-      },
+      qualityGate,
+      trainingReadiness,
     };
   },
   listForgeRuns: async (_workshopId) =>
@@ -1562,6 +2098,7 @@ export const mockFoundryRepository: FoundryRepository = {
     forgeRun.workerState = workerState;
     if (forgeRun.status === "completed" && forgeRun.purpose !== "evaluation" && !forgeRun.artifactId) {
       forgeRun.artifactId = `art-${forgeRun.id.replace(/^frg-/, "")}`;
+      const adapterPath = `runtime/artifacts/${forgeRun.artifactId}/adapter`;
       const artifact: Artifact = {
         id: forgeRun.artifactId,
         workshopId: forgeRun.workshopId,
@@ -1569,10 +2106,11 @@ export const mockFoundryRepository: FoundryRepository = {
         name: `${forgeRun.method} Artifact`,
         version: `v0.${mockArtifacts.length + 1}.0`,
         baseModel: forgeRun.baseModel || "unknown",
-        adapterPath: `runtime/artifacts/${forgeRun.artifactId}/adapter`,
+        adapterPath,
         status: "ready",
         trainingMethod: forgeRun.method === "LoRA" ? "LoRA" : "QLoRA",
         trialScore: 0,
+        readiness: mockArtifactReadiness("metadata-only", adapterPath, forgeRun.baseModel || "unknown"),
       };
       mockArtifacts.unshift(artifact);
       mockDashboardSummary.currentArtifact = artifact;
@@ -1660,6 +2198,7 @@ export const mockFoundryRepository: FoundryRepository = {
     }
     if (forgeRun.status === "completed" && forgeRun.purpose !== "evaluation" && !forgeRun.artifactId) {
       forgeRun.artifactId = `art-${forgeRun.id.replace(/^frg-/, "")}`;
+      const adapterPath = `runtime/artifacts/${forgeRun.artifactId}/adapter`;
       const artifact: Artifact = {
         id: forgeRun.artifactId,
         workshopId: forgeRun.workshopId,
@@ -1667,10 +2206,11 @@ export const mockFoundryRepository: FoundryRepository = {
         name: `${forgeRun.method} Artifact`,
         version: `v0.${mockArtifacts.length + 1}.0`,
         baseModel: forgeRun.baseModel || "unknown",
-        adapterPath: `runtime/artifacts/${forgeRun.artifactId}/adapter`,
+        adapterPath,
         status: "ready",
         trainingMethod: forgeRun.method === "LoRA" ? "LoRA" : "QLoRA",
         trialScore: 0,
+        readiness: mockArtifactReadiness("metadata-only", adapterPath, forgeRun.baseModel || "unknown"),
       };
       mockArtifacts.unshift(artifact);
       mockDashboardSummary.currentArtifact = artifact;
@@ -1875,6 +2415,7 @@ export const mockFoundryRepository: FoundryRepository = {
     forgeRun.workerState = workerState;
     if (!forgeRun.artifactId) {
       forgeRun.artifactId = `art-${forgeRun.id.replace(/^frg-/, "")}`;
+      const adapterPath = forgeRun.trainingContract.outputDir;
       const artifact: Artifact = {
         id: forgeRun.artifactId,
         workshopId: forgeRun.workshopId,
@@ -1882,10 +2423,11 @@ export const mockFoundryRepository: FoundryRepository = {
         name: `${forgeRun.method} Artifact`,
         version: `v0.${mockArtifacts.length + 1}.0`,
         baseModel: forgeRun.baseModel || "unknown",
-        adapterPath: forgeRun.trainingContract.outputDir,
+        adapterPath,
         status: "ready",
         trainingMethod: forgeRun.method === "LoRA" ? "LoRA" : "QLoRA",
         trialScore: 0,
+        readiness: mockArtifactReadiness("lora-adapter", adapterPath, forgeRun.baseModel || "unknown"),
       };
       mockArtifacts.unshift(artifact);
       mockDashboardSummary.currentArtifact = artifact;
@@ -1979,10 +2521,19 @@ export const mockFoundryRepository: FoundryRepository = {
   listTrials: async (_workshopId) =>
     mockTrials.filter((trial) => trial.workshopId === _workshopId),
   createTrial: async (_workshopId, request) => {
-    const trial: Trial = {
-      id: `trl-${Date.now()}`,
-      workshopId: _workshopId,
-      artifactId: request.artifactId,
+    const artifact = mockArtifacts.find((item) => item.id === request.artifactId);
+    const generationSettings = {
+      contextWindow: Number(request.generationSettings.contextWindow || mockConstruct.contextWindow),
+      maxNewTokens: Number(request.generationSettings.maxNewTokens || mockConstruct.maxNewTokens),
+      temperature: Number(request.generationSettings.temperature || mockConstruct.temperature),
+      includeLibraryContext: Boolean(request.generationSettings.includeLibraryContext),
+      ...request.generationSettings,
+    };
+    if (!artifact) {
+      throw new Error("Artifact was not found for this Workshop.");
+    }
+    return upsertMockTrialForMessage(_workshopId, {
+      artifact,
       constructId: request.constructId,
       messageId: request.messageId,
       prompt: request.prompt,
@@ -1990,35 +2541,22 @@ export const mockFoundryRepository: FoundryRepository = {
       verdict: request.verdict,
       runtimeMode: request.runtimeMode,
       tokenCount: request.tokenCount,
-      generationSettings: {
-        contextWindow: Number(request.generationSettings.contextWindow || mockConstruct.contextWindow),
-        maxNewTokens: Number(request.generationSettings.maxNewTokens || mockConstruct.maxNewTokens),
-        temperature: Number(request.generationSettings.temperature || mockConstruct.temperature),
-        includeLibraryContext: Boolean(request.generationSettings.includeLibraryContext),
-        ...request.generationSettings,
-      },
-      createdAt: new Date().toISOString(),
-    };
-    mockTrials.unshift(trial);
-    const artifact = mockArtifacts.find((item) => item.id === request.artifactId);
-    if (artifact) {
-      const artifactTrials = mockTrials.filter((item) => item.artifactId === artifact.id);
-      const passCount = artifactTrials.filter((item) => item.verdict === "pass").length;
-      artifact.trialScore = Math.round((passCount / Math.max(1, artifactTrials.length)) * 100);
-      mockDashboardSummary.currentArtifact = artifact;
-    }
-    return trial;
+      generationSettings,
+    });
   },
   exportTrials: async (_workshopId, request) => {
     const selectedTrials = mockTrials.filter((trial) => {
       const isSelected = request.trialIds.includes(trial.id);
       const matchesVerdict = request.verdicts?.length
-        ? request.verdicts.includes(trial.verdict)
+        ? trial.verdict !== "needs-review" && request.verdicts.includes(trial.verdict)
         : true;
       return trial.workshopId === _workshopId && isSelected && matchesVerdict;
     });
     if (selectedTrials.length === 0) {
       throw new Error("No Trials matched this export selection.");
+    }
+    if (selectedTrials.some((trial) => trial.verdict === "needs-review")) {
+      throw new Error("Review auto-captured Trials before exporting them to JSONL.");
     }
     const material: MaterialSource = {
       id: `mat-trials-${Date.now()}`,
@@ -2096,6 +2634,28 @@ export const mockFoundryRepository: FoundryRepository = {
       throw new Error("Construct was not found.");
     }
     const artifact = mockDashboardSummary.currentArtifact;
+    const messageId = `msg-${Date.now()}`;
+    const responseText = `Simulated response from ${mockConstruct.name} using ${artifact.name} ${artifact.version}. You asked: "${request.message}". Generation settings are max_new_tokens=${request.maxNewTokens ?? mockConstruct.maxNewTokens}, temperature=${request.temperature ?? mockConstruct.temperature}, context_window=${mockConstruct.contextWindow}.`;
+    const generation = {
+      contextWindow: mockConstruct.contextWindow,
+      maxNewTokens: request.maxNewTokens ?? mockConstruct.maxNewTokens,
+      temperature: request.temperature ?? mockConstruct.temperature,
+      includeLibraryContext: request.includeLibraryContext,
+    };
+    const trial = upsertMockTrialForMessage(artifact.workshopId, {
+      artifact,
+      constructId,
+      messageId,
+      prompt: request.message,
+      response: responseText,
+      verdict: "needs-review",
+      runtimeMode: mockConstructRuntime.mode,
+      tokenCount: responseText.split(/\s+/).length,
+      generationSettings: {
+        ...generation,
+        runtime: mockConstructRuntime,
+      },
+    });
     return {
       conversationId: request.conversationId,
       construct: {
@@ -2104,17 +2664,13 @@ export const mockFoundryRepository: FoundryRepository = {
       },
       artifact,
       message: {
-        id: `msg-${Date.now()}`,
+        id: messageId,
         sender: "assistant",
-        text: `Simulated response from ${mockConstruct.name} using ${artifact.name} ${artifact.version}. You asked: "${request.message}". Generation settings are max_new_tokens=${request.maxNewTokens ?? mockConstruct.maxNewTokens}, temperature=${request.temperature ?? mockConstruct.temperature}, context_window=${mockConstruct.contextWindow}.`,
-        tokenCount: 32,
+        text: responseText,
+        tokenCount: responseText.split(/\s+/).length,
       },
-      generation: {
-        contextWindow: mockConstruct.contextWindow,
-        maxNewTokens: request.maxNewTokens ?? mockConstruct.maxNewTokens,
-        temperature: request.temperature ?? mockConstruct.temperature,
-        includeLibraryContext: request.includeLibraryContext,
-      },
+      trial,
+      generation,
     };
   },
   streamConstructChat: async (constructId, request, onEvent) => {
@@ -2134,6 +2690,7 @@ export const mockFoundryRepository: FoundryRepository = {
       construct: response.construct,
       artifact: response.artifact,
       generation: response.generation,
+      trial: response.trial,
       runtime: {
         mode: mockConstructRuntime.mode,
         status: mockConstructRuntime.status,
@@ -2225,9 +2782,12 @@ export const mockFoundryRepository: FoundryRepository = {
   },
   loadConstructRuntime: async (request) => {
     const startedAt = new Date();
+    const displayModelId = request.adapterPath
+      ? `${request.modelId || mockConstructRuntime.modelId} + adapter:${request.artifactId || "active"}`
+      : request.modelId || mockConstructRuntime.modelId;
     const nextRuntime = {
       ...mockConstructRuntime,
-      modelId: request.modelId || mockConstructRuntime.modelId,
+      modelId: displayModelId,
       status: "loaded",
       loaded: true,
       device: mockConstructRuntime.device === "auto" ? "mps" : mockConstructRuntime.device,
@@ -2243,16 +2803,35 @@ export const mockFoundryRepository: FoundryRepository = {
     };
     mockConstructRuntime = {
       ...nextRuntime,
-      diagnostics: mockRuntimeDiagnostics(nextRuntime),
+      diagnostics: {
+        ...mockRuntimeDiagnostics(nextRuntime),
+        loadedModel: {
+          modelId: displayModelId,
+          baseModelId: request.modelId || mockConstructRuntime.modelId,
+          adapterPath: request.adapterPath,
+          artifactId: request.artifactId,
+          adapterLoaded: Boolean(request.adapterPath),
+          loaded: true,
+          device: nextRuntime.device,
+          cacheSize: 1,
+        },
+      },
     };
     recordMockConstructRuntimeEvent({
       type: "load",
       status: "passed",
-      title: "Mock runtime loaded model",
-      detail: `${nextRuntime.modelId} is loaded on ${nextRuntime.device}.`,
+      title: request.adapterPath ? "Mock runtime loaded model and adapter" : "Mock runtime loaded model",
+      detail: request.adapterPath
+        ? `${request.modelId || mockConstructRuntime.modelId} loaded with adapter ${request.adapterPath}.`
+        : `${nextRuntime.modelId} is loaded on ${nextRuntime.device}.`,
       modelId: nextRuntime.modelId,
       runtimeStatus: mockConstructRuntime.status,
       source: "mock",
+      metadata: {
+        baseModel: request.modelId,
+        adapterPath: request.adapterPath,
+        artifactId: request.artifactId,
+      },
     });
     return mockConstructRuntime;
   },
@@ -2293,7 +2872,7 @@ export const mockFoundryRepository: FoundryRepository = {
   }),
   probeConstructRuntime: async (request) => ({
     ok: true,
-    modelId: request.modelId || "sshleifer/tiny-gpt2",
+    modelId: request.modelId || SMOKE_QA_GENERATOR_MODEL_ID,
     prompt: request.prompt,
     output: `${request.prompt} a tiny simulated local-model smoke test.`,
     device: request.device === "auto" ? "cpu" : request.device,
@@ -2693,6 +3272,12 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(await apiClient.post<ApiEnvelope<Workshop>>(foundryApiRoutes.workshops, request)),
   getDashboard: async () =>
     unwrap(await apiClient.get<ApiEnvelope<DashboardSummary>>(foundryApiRoutes.dashboard)),
+  getDashboardEvidence: async (workshopId) =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<DashboardLoopEvidence>>(
+        foundryApiRoutes.dashboardEvidence(workshopId)
+      )
+    ),
   getNavigationItems: async () =>
     unwrap(await apiClient.get<ApiEnvelope<FoundryNavigationItem[]>>(foundryApiRoutes.navigation)),
   getSectionSummaries: async () =>
@@ -2811,6 +3396,13 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.post<ApiEnvelope<ExportQAPairsDto>>(
         foundryApiRoutes.exportQAPairs(workshopId),
+        request
+      )
+    ),
+  previewQAPairsExport: async (workshopId, request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<ExportQAPairsPreviewDto>>(
+        foundryApiRoutes.previewQAPairsExport(workshopId),
         request
       )
     ),
@@ -3256,6 +3848,11 @@ const constructApiOverrides: Pick<
   | "listConstructRuntimeValidations"
   | "exportConstructRuntimeValidations"
   | "createConstructRuntimeValidation"
+  | "getQAGeneratorRuntime"
+  | "configureQAGeneratorRuntime"
+  | "preflightQAGenerator"
+  | "runQAGeneratorSmokeProof"
+  | "runQAGeneratorQualityProof"
   | "configureConstructRuntime"
   | "loadConstructRuntime"
   | "preflightConstructRuntime"
@@ -3288,6 +3885,11 @@ const constructApiOverrides: Pick<
   listConstructRuntimeValidations: apiFoundryRepository.listConstructRuntimeValidations,
   exportConstructRuntimeValidations: apiFoundryRepository.exportConstructRuntimeValidations,
   createConstructRuntimeValidation: apiFoundryRepository.createConstructRuntimeValidation,
+  getQAGeneratorRuntime: apiFoundryRepository.getQAGeneratorRuntime,
+  configureQAGeneratorRuntime: apiFoundryRepository.configureQAGeneratorRuntime,
+  preflightQAGenerator: apiFoundryRepository.preflightQAGenerator,
+  runQAGeneratorSmokeProof: apiFoundryRepository.runQAGeneratorSmokeProof,
+  runQAGeneratorQualityProof: apiFoundryRepository.runQAGeneratorQualityProof,
   configureConstructRuntime: apiFoundryRepository.configureConstructRuntime,
   loadConstructRuntime: apiFoundryRepository.loadConstructRuntime,
   preflightConstructRuntime: apiFoundryRepository.preflightConstructRuntime,

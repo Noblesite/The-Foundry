@@ -124,6 +124,7 @@ class ForgeTrainingService:
             "purpose": purpose,
             "materialId": material["id"],
             "datasetUri": material["sourceUri"],
+            "datasetMetadata": material.get("metadata") or {},
             "baseModel": forge_run.get("baseModel") or "unknown",
             "method": forge_run["method"],
             "epochs": forge_run.get("epoch", {}).get("total") or 1,
@@ -294,6 +295,16 @@ class ForgeTrainingService:
                 if ok
                 else "Fix the blocked checks, then preflight again."
             ),
+            "proofMode": {
+                "baselineSafe": True,
+                "downloadRequired": False,
+                "remoteDownloadAllowed": remote_allowed,
+                "requiresCachedModel": not remote_allowed,
+                "note": (
+                    "Preflight never downloads model files. The trainer only fetches remote model "
+                    "files when FOUNDRY_FORGE_ALLOW_REMOTE_MODEL_DOWNLOAD=1 is set explicitly."
+                ),
+            },
             "contract": contract,
             "validation": validation,
             "runtime": self.runtime_payload(),
@@ -677,6 +688,8 @@ class ForgeTrainingService:
             }
 
         row_count = 0
+        quality_blocked_rows = 0
+        low_quality_override_rows = 0
         with dataset_path.open("r", encoding="utf-8") as dataset_file:
             for line_number, line in enumerate(dataset_file, start=1):
                 stripped = line.strip()
@@ -701,6 +714,16 @@ class ForgeTrainingService:
                             f"fields. Missing at line {line_number}."
                         ),
                     }
+                metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+                quality_gate = (
+                    metadata.get("qualityGate")
+                    if isinstance(metadata.get("qualityGate"), dict)
+                    else {}
+                )
+                if quality_gate.get("status") == "blocked":
+                    quality_blocked_rows += 1
+                if metadata.get("lowQualityOverride") is True:
+                    low_quality_override_rows += 1
                 row_count += 1
 
         if row_count < 1:
@@ -711,11 +734,47 @@ class ForgeTrainingService:
                 "message": "Dataset file has no training rows.",
             }
 
+        dataset_metadata = (
+            contract.get("datasetMetadata")
+            if isinstance(contract.get("datasetMetadata"), dict)
+            else {}
+        )
+        export_metadata = (
+            dataset_metadata.get("export")
+            if isinstance(dataset_metadata.get("export"), dict)
+            else {}
+        )
+        training_readiness = (
+            export_metadata.get("trainingReadiness")
+            if isinstance(export_metadata.get("trainingReadiness"), dict)
+            else {}
+        )
+        warnings = []
+        if quality_blocked_rows:
+            warnings.append(
+                f"{quality_blocked_rows} row(s) were exported with blocked QA quality."
+            )
+        if low_quality_override_rows:
+            warnings.append(
+                f"{low_quality_override_rows} row(s) used low-quality override metadata."
+            )
+        if training_readiness.get("defaultTrainingSafe") is False:
+            recommendation = training_readiness.get("recommendation")
+            warnings.append(
+                str(recommendation)
+                if recommendation
+                else "Dataset is Forge-ready with caution, not default-training safe."
+            )
+
         return {
             "valid": True,
             "rowCount": row_count,
             "datasetPath": str(dataset_path),
             "message": "Dataset is training-contract ready.",
+            "warnings": warnings,
+            "qualityBlockedRows": quality_blocked_rows,
+            "lowQualityOverrideRows": low_quality_override_rows,
+            "trainingReadiness": training_readiness or None,
         }
 
     def build_evaluation_report(self, contract: Dict[str, Any]) -> Dict[str, Any]:

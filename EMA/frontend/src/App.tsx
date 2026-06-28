@@ -5,6 +5,7 @@ import ConstructWorkbench from "./components/ConstructWorkbench";
 import Dashboard from "./components/Dashboard";
 import ForgeWorkbench from "./components/ForgeWorkbench";
 import FoundryLogo from "./components/FoundryLogo";
+import HeaderWorkshopMenu from "./components/HeaderWorkshopMenu";
 import { LearningCard, LayerVisualizer, TokenPreview } from "./components/LearningComponents";
 import MaterialsWorkbench from "./components/MaterialsWorkbench";
 import Metrics from "./components/Metrics";
@@ -24,6 +25,7 @@ import {
   Construct,
   ConstructModelHandoff,
   ConstructRuntime,
+  FoundryLoopFocus,
   FoundryRuntimeStatus,
   ModelArchiveEntry,
   ModelDownloadJob,
@@ -77,6 +79,16 @@ const wait = (durationMs: number) =>
   new Promise((resolve) => {
     window.setTimeout(resolve, durationMs);
   });
+
+const RUNTIME_INSPECTOR_STORAGE_KEY = "foundry.runtimeInspector.open";
+
+const loadRuntimeInspectorOpen = () => {
+  const savedPreference = window.localStorage.getItem(RUNTIME_INSPECTOR_STORAGE_KEY);
+  if (savedPreference !== null) {
+    return savedPreference === "true";
+  }
+  return window.innerWidth >= 1280;
+};
 
 const isActiveModelDownloadJob = (job: ModelDownloadJob) =>
   job.status === "queued" || job.status === "running";
@@ -201,6 +213,7 @@ const deriveRuntimeMetrics = (
 const App: React.FC = () => {
   const repository = useMemo(() => getFoundryRepository(), []);
   const [activeSection, setActiveSection] = useState<NavigationSection>("workshop");
+  const [loopFocus, setLoopFocus] = useState<FoundryLoopFocus | null>(null);
   const [settings, setSettings] = useState<WorkspaceSettings>(loadWorkspaceSettings);
   const [createError, setCreateError] = useState<string | null>(null);
   const [statusToast, setStatusToast] = useState<string | null>(null);
@@ -217,10 +230,14 @@ const App: React.FC = () => {
   const [forgePreset, setForgePreset] = useState<StartForgeRequest | null>(null);
   const [academyFocusConceptId, setAcademyFocusConceptId] = useState<string | null>(null);
   const [archiveHandoff, setArchiveHandoff] = useState<ArchiveModelHandoff | null>(null);
+  const [materialsArchiveHandoff, setMaterialsArchiveHandoff] =
+    useState<ArchiveModelHandoff | null>(null);
   const [constructHandoff, setConstructHandoff] = useState<ConstructModelHandoff | null>(null);
   const [constructRuntime, setConstructRuntime] = useState<ConstructRuntime | null>(null);
   const [foundryStatus, setFoundryStatus] = useState<FoundryRuntimeStatus | null>(null);
   const [archiveEntries, setArchiveEntries] = useState<ModelArchiveEntry[]>([]);
+  const [loopEvidenceRefreshCount, setLoopEvidenceRefreshCount] = useState(0);
+  const [isRuntimeInspectorOpen, setIsRuntimeInspectorOpen] = useState(loadRuntimeInspectorOpen);
   const [workshops, setWorkshops] = useState<Workshop[]>([mockDashboardSummary.workshop]);
   const [foundryData, setFoundryData] = useState<FoundryBootstrap>({
     dashboard: mockDashboardSummary,
@@ -269,6 +286,11 @@ const App: React.FC = () => {
     window.localStorage.setItem("foundry.workspaceSettings", JSON.stringify(nextSettings));
   };
 
+  const setRuntimeInspectorOpen = (isOpen: boolean) => {
+    setIsRuntimeInspectorOpen(isOpen);
+    window.localStorage.setItem(RUNTIME_INSPECTOR_STORAGE_KEY, String(isOpen));
+  };
+
   const upsertArchiveEntry = useCallback((entry: ModelArchiveEntry) => {
     setArchiveEntries((current) => {
       const withoutDuplicate = current.filter(
@@ -278,6 +300,27 @@ const App: React.FC = () => {
       return [entry, ...withoutDuplicate];
     });
   }, []);
+
+  const refreshDashboardLoopEvidence = useCallback(async (workshopId?: string) => {
+    const targetWorkshopId = workshopId || foundryData.dashboard.workshop.id;
+    setLoopEvidenceRefreshCount((current) => current + 1);
+    try {
+      const loopEvidence = await repository.getDashboardEvidence(targetWorkshopId);
+      setFoundryData((current) => ({
+        ...current,
+        dashboard: {
+          ...current.dashboard,
+          loopEvidence:
+            current.dashboard.workshop.id === targetWorkshopId
+              ? loopEvidence
+              : current.dashboard.loopEvidence,
+        },
+      }));
+      return loopEvidence;
+    } finally {
+      setLoopEvidenceRefreshCount((current) => Math.max(0, current - 1));
+    }
+  }, [foundryData.dashboard.workshop.id, repository]);
 
   const refreshFoundryData = async () => {
     const [bootstrap, savedWorkshops, status, modelArchiveEntries] = await Promise.all([
@@ -303,6 +346,21 @@ const App: React.FC = () => {
     setConstructRuntime(runtime);
     void refreshFoundryStatus();
   }, [refreshFoundryStatus]);
+
+  const refreshActiveLoopEvidence = useCallback(() => {
+    void refreshDashboardLoopEvidence().catch((error: unknown) => {
+      console.error("[Foundry Dashboard Evidence]", error);
+    });
+  }, [refreshDashboardLoopEvidence]);
+
+  useEffect(() => {
+    if (activeSection !== "workshop") {
+      return;
+    }
+    void refreshDashboardLoopEvidence().catch((error: unknown) => {
+      console.error("[Foundry Dashboard Evidence]", error);
+    });
+  }, [activeSection, refreshDashboardLoopEvidence]);
 
   const handleArchiveEntriesChanged = useCallback((entries: ModelArchiveEntry[]) => {
     setArchiveEntries(entries);
@@ -333,7 +391,27 @@ const App: React.FC = () => {
         updateModelPreparation(modelDownloadJobToActivity(job));
         if (job.archiveEntry) {
           upsertArchiveEntry(job.archiveEntry);
-          setStatusToast(`${job.archiveEntry.repoId} cached in Archive.`);
+          const shouldReturnToMaterials =
+            archiveHandoff?.source === "materials" &&
+            archiveHandoff.purpose === "qa-generator" &&
+            archiveHandoff.returnTo === "materials" &&
+            job.repoId === archiveHandoff.modelId &&
+            (!archiveHandoff.revision || job.revision === archiveHandoff.revision);
+
+          if (shouldReturnToMaterials) {
+            setMaterialsArchiveHandoff({
+              ...archiveHandoff,
+              revision: job.archiveEntry.revision,
+              requestedAt: Date.now(),
+            });
+            setArchiveHandoff(null);
+            setActiveSection("materials");
+            setStatusToast(
+              `${job.archiveEntry.repoId} cached. Returning to Materials for QA generator preflight.`
+            );
+          } else {
+            setStatusToast(`${job.archiveEntry.repoId} cached in Archive.`);
+          }
         }
         setActiveModelDownloadJobId(null);
       } catch (error: unknown) {
@@ -356,7 +434,7 @@ const App: React.FC = () => {
     return () => {
       isCurrent = false;
     };
-  }, [activeModelDownloadJobId, repository, upsertArchiveEntry]);
+  }, [activeModelDownloadJobId, archiveHandoff, repository, upsertArchiveEntry]);
 
   const handleCancelPreparation = async () => {
     if (!activeModelDownloadJobId) {
@@ -570,6 +648,7 @@ const App: React.FC = () => {
         },
       },
     }));
+    refreshActiveLoopEvidence();
     setActiveSection("construct");
   };
 
@@ -583,11 +662,43 @@ const App: React.FC = () => {
       modelId,
       label,
       source: "materials",
+      purpose: label === "QA Generator" ? "qa-generator" : "base-model",
+      returnTo: label === "QA Generator" ? "materials" : undefined,
       requestedAt: Date.now(),
       preflightOnOpen: true,
     });
     setActiveSection("artifacts");
     setStatusToast(`${label || modelId} needs Archive cache before model-backed QA generation.`);
+  };
+
+  const handleArchiveDownloadJobStarted = (job: ModelDownloadJob) => {
+    updateModelPreparation(modelDownloadJobToActivity(job));
+    const isActiveJob = isActiveModelDownloadJob(job);
+    setActiveModelDownloadJobId(isActiveJob ? job.id : null);
+    if (!isActiveJob && job.archiveEntry) {
+      upsertArchiveEntry(job.archiveEntry);
+      const shouldReturnToMaterials =
+        archiveHandoff?.source === "materials" &&
+        archiveHandoff.purpose === "qa-generator" &&
+        archiveHandoff.returnTo === "materials" &&
+        job.repoId === archiveHandoff.modelId &&
+        (!archiveHandoff.revision || job.revision === archiveHandoff.revision);
+
+      if (shouldReturnToMaterials) {
+        setMaterialsArchiveHandoff({
+          ...archiveHandoff,
+          revision: job.archiveEntry.revision,
+          requestedAt: Date.now(),
+        });
+        setArchiveHandoff(null);
+        setActiveSection("materials");
+        setStatusToast(
+          `${job.archiveEntry.repoId} cached. Returning to Materials for QA generator preflight.`
+        );
+        return;
+      }
+    }
+    setStatusToast(`${job.repoId} added to Archive Jobs.`);
   };
 
   const handleBaseModelSelected = (modelId: string) => {
@@ -681,11 +792,17 @@ const App: React.FC = () => {
     }),
     [activeArtifact, activeConstruct, foundryData.dashboard]
   );
+  const isLoopEvidenceRefreshing = loopEvidenceRefreshCount > 0;
 
   const activeNavLabel = useMemo(
     () => navigationItems.find((item) => item.id === activeSection)?.label ?? "Workshop",
     [activeSection, navigationItems]
   );
+
+  const handleOpenLoopFocus = useCallback((focus: FoundryLoopFocus) => {
+    setLoopFocus(focus);
+    setActiveSection(focus.section);
+  }, []);
 
   const renderMain = () => {
     if (activeSection === "settings") {
@@ -708,6 +825,7 @@ const App: React.FC = () => {
     if (activeSection === "construct") {
       return (
         <ConstructWorkbench
+          academyActions={academyActions}
           artifact={activeArtifact}
           construct={activeConstruct}
           handoff={constructHandoff}
@@ -718,7 +836,10 @@ const App: React.FC = () => {
           preparationActivity={modelPreparationActivity}
           onPrepareModel={handlePrepareModel}
           onCancelPreparation={handleCancelPreparation}
+          onOpenAcademyAction={handleOpenAcademyAction}
           onRuntimeChanged={handleConstructRuntimeChanged}
+          onLoopEvidenceRefresh={refreshActiveLoopEvidence}
+          loopFocus={loopFocus}
         />
       );
     }
@@ -727,12 +848,19 @@ const App: React.FC = () => {
       return (
         <Dashboard
           summary={dashboardSummary}
+          loopEvidence={dashboardSummary.loopEvidence ?? null}
+          isLoopEvidenceRefreshing={isLoopEvidenceRefreshing}
           runtime={constructRuntime}
           onCreateWorkshop={openWorkshopModal}
           onRunConstruct={() => setActiveSection("construct")}
           onViewQueue={() => setActiveSection("forge")}
           academyAction={getAcademyAction(ACADEMY_ACTION_IDS.dashboardResumeLesson)}
+          learningLoopAction={getAcademyAction(ACADEMY_ACTION_IDS.dashboardLearningLoop)}
           onResumeLesson={() => handleOpenAcademyAction(ACADEMY_ACTION_IDS.dashboardResumeLesson)}
+          onOpenLearningLoop={() =>
+            handleOpenAcademyAction(ACADEMY_ACTION_IDS.dashboardLearningLoop)
+          }
+          onOpenLoopStep={handleOpenLoopFocus}
         />
       );
     }
@@ -740,14 +868,19 @@ const App: React.FC = () => {
     if (activeSection === "materials") {
       return (
         <MaterialsWorkbench
+          academyActions={academyActions}
           repository={repository}
           summary={foundryData.sectionSummaries.materials}
           workshop={dashboardSummary.workshop}
           academyAction={getAcademyAction(ACADEMY_ACTION_IDS.materialsOpenAssemblyLine)}
+          qaGeneratorArchiveHandoff={materialsArchiveHandoff}
           onOpenArchiveModel={handleOpenArchiveWithModel}
           onOpenAcademy={() =>
             handleOpenAcademyAction(ACADEMY_ACTION_IDS.materialsOpenAssemblyLine)
           }
+          onOpenAcademyAction={handleOpenAcademyAction}
+          onLoopEvidenceRefresh={refreshActiveLoopEvidence}
+          loopFocus={loopFocus}
         />
       );
     }
@@ -755,6 +888,7 @@ const App: React.FC = () => {
     if (activeSection === "forge") {
       return (
         <ForgeWorkbench
+          academyActions={academyActions}
           repository={repository}
           settings={settings}
           summary={foundryData.sectionSummaries.forge}
@@ -763,6 +897,9 @@ const App: React.FC = () => {
           academyAction={getAcademyAction(ACADEMY_ACTION_IDS.forgeOpenTraining)}
           onConstructLoaded={handleConstructLoaded}
           onOpenAcademy={() => handleOpenAcademyAction(ACADEMY_ACTION_IDS.forgeOpenTraining)}
+          onOpenAcademyAction={handleOpenAcademyAction}
+          onLoopEvidenceRefresh={refreshActiveLoopEvidence}
+          loopFocus={loopFocus}
         />
       );
     }
@@ -771,6 +908,7 @@ const App: React.FC = () => {
       return (
         <ArtifactsWorkbench
           activeArtifactId={dashboardSummary.workshop.activeArtifactId}
+          academyActions={academyActions}
           defaultBaseModel={defaultBaseModel}
           repository={repository}
           summary={foundryData.sectionSummaries.artifacts}
@@ -781,11 +919,15 @@ const App: React.FC = () => {
           settings={settings}
           onConstructLoaded={handleConstructLoaded}
           onArchiveEntriesChanged={handleArchiveEntriesChanged}
+          onModelDownloadJobStarted={handleArchiveDownloadJobStarted}
           onBaseModelSelected={handleBaseModelSelected}
           onOpenConstructWithModel={handleOpenConstructWithModel}
           onOpenAcademy={() =>
             handleOpenAcademyAction(ACADEMY_ACTION_IDS.artifactsOpenPromotion)
           }
+          onOpenAcademyAction={handleOpenAcademyAction}
+          onLoopEvidenceRefresh={refreshActiveLoopEvidence}
+          loopFocus={loopFocus}
         />
       );
     }
@@ -810,6 +952,8 @@ const App: React.FC = () => {
           onOpenAcademy={handleOpenAcademy}
           onOpenAcademyAction={handleOpenAcademyAction}
           onOpenForgePreset={handleOpenForgePreset}
+          onLoopEvidenceRefresh={refreshActiveLoopEvidence}
+          loopFocus={loopFocus}
         />
       );
     }
@@ -841,7 +985,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="foundry-shell">
+    <div className={`foundry-shell ${isRuntimeInspectorOpen ? "inspector-open" : "inspector-collapsed"}`}>
       <aside className="foundry-sidebar">
         <div className="sidebar-brand">
           <FoundryLogo variant="horizontal" />
@@ -857,6 +1001,7 @@ const App: React.FC = () => {
                 if (item.id === "academy") {
                   setAcademyFocusConceptId(null);
                 }
+                setLoopFocus(null);
                 setActiveSection(item.id);
               }}
               aria-current={activeSection === item.id ? "page" : undefined}
@@ -886,19 +1031,47 @@ const App: React.FC = () => {
 
       <main className="foundry-main">
         <header className="foundry-topbar">
-          <div>
+          <div className="foundry-topbar-title">
             <p className="section-eyebrow">{activeNavLabel}</p>
             <h1>Build Intelligence. Understand Everything.</h1>
           </div>
-          <button className="button-primary" onClick={openWorkshopModal}>
-            <i className="fas fa-plus" aria-hidden="true" />
-            New Workshop
-          </button>
+          <div className="foundry-topbar-actions">
+            <HeaderWorkshopMenu
+              activeWorkshop={dashboardSummary.workshop}
+              workshops={workshops}
+              onCreateWorkshop={openWorkshopModal}
+              onSelectWorkshop={handleSelectWorkshop}
+            />
+            <button
+              aria-expanded={isRuntimeInspectorOpen}
+              aria-label="Toggle runtime metrics drawer"
+              className="button-secondary button-compact runtime-drawer-toggle"
+              onClick={() => setRuntimeInspectorOpen(!isRuntimeInspectorOpen)}
+              type="button"
+            >
+              <i className="fas fa-gauge-high" aria-hidden="true" />
+              Runtime Metrics
+            </button>
+          </div>
         </header>
         {renderMain()}
       </main>
 
-      <aside className="foundry-inspector">
+      <aside className="foundry-inspector" aria-label="Runtime metrics drawer" aria-hidden={!isRuntimeInspectorOpen}>
+        <div className="inspector-drawer-header">
+          <div>
+            <p className="panel-kicker">Runtime Drawer</p>
+            <strong>Metrics and learning aids</strong>
+          </div>
+          <button
+            aria-label="Close runtime metrics drawer"
+            className="icon-button"
+            onClick={() => setRuntimeInspectorOpen(false)}
+            type="button"
+          >
+            <i className="fas fa-xmark" aria-hidden="true" />
+          </button>
+        </div>
         <Metrics
           contextWindow={settings.contextWindow}
           maxNewTokens={settings.maxNewTokens}

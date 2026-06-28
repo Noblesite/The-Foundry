@@ -31,10 +31,23 @@ async def prepare_smoke_forge(*, run_training: bool) -> dict:
 def _print_summary(result: dict) -> None:
     preflight = result["preflight"]
     print("Local Forge smoke fixture")
+    print("  Contract: foundry.forge.local-smoke-proof.v1")
     print(f"  Workshop: {result['workshop']['id']} ({result['workshop']['name']})")
     print(f"  Material: {result['material']['id']} -> {result['material']['sourceUri']}")
     print(f"  Forge:    {result['forgeRun']['id']} ({result['forgeRun']['status']})")
     print(f"  Model:    {preflight['model']['baseModel']}")
+    print(f"  Cached:   {preflight['model']['cached']} ({preflight['model']['message']})")
+    proof_mode = preflight.get("proofMode", {})
+    if proof_mode:
+        print(
+            "  Downloads: "
+            + (
+                "explicitly allowed for the trainer"
+                if proof_mode.get("remoteDownloadAllowed")
+                else "disabled; cache the model in the Archive first"
+            )
+        )
+        print(f"  Proof note: {proof_mode.get('note')}")
     print(f"  Preflight: {preflight['status']} / ok={preflight['ok']}")
     for check in preflight["checks"]:
         print(f"    [{check['status']}] {check['label']}: {check['detail']}")
@@ -51,6 +64,7 @@ def _print_summary(result: dict) -> None:
             print(f"  Artifact: {artifact['id']} adapter={artifact.get('adapterPath')}")
     else:
         print("  Training not run. Re-run with --run after preflight passes.")
+        print("  Baseline check is complete; no model download was attempted.")
 
 
 def main() -> int:
@@ -64,7 +78,7 @@ def main() -> int:
 
     result = asyncio.run(prepare_smoke_forge(run_training=args.run))
     _print_summary(result)
-    return 1 if result.get("blocked") else 0
+    return 1 if args.run and result.get("blocked") else 0
 
 
 if __name__ == "__main__":

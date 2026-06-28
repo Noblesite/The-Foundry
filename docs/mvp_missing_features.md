@@ -62,8 +62,8 @@ The project already has a strong product shell:
 - Forge contracts, runtime event files, worker reconciliation, simulated progress, local trainer adapter contracts, verified Artifact readiness, and automatic Artifact metadata for completed training runs.
 - Hugging Face search, auth test, model preflight, download jobs, Archive cataloging, and local cache tracking.
 - Unified Foundry readiness gate for Archive download, Construct load, and Forge start decisions.
-- Construct runtime controls, local model preflight/load/probe, cached-model streaming proof, no-silent-fallback stream errors, runtime history, validation history, memory release, and diagnostics bundle preview/export.
-- An isolated MVP rehearsal test that proves Material -> reviewed QA -> JSONL -> Forge simulation -> Artifact -> Construct reply -> Trial scoring.
+- Construct runtime controls, local model preflight/load/probe, PEFT LoRA adapter load context, cached-model streaming proof, no-silent-fallback stream errors, runtime history, validation history, memory release, and diagnostics bundle preview/export.
+- An isolated MVP rehearsal test that proves Material -> reviewed QA -> JSONL -> Forge simulation -> Artifact -> Construct reply -> Trial scoring, including Trial runtime-profile metadata.
 - An isolated FastAPI v1 contract rehearsal that proves the same MVP handoffs through public `/api/v1` endpoints.
 - A mocked Archive/Hugging Face API contract rehearsal that proves auth, search, preflight, register, cache, evict, and download-job lifecycle without network calls.
 - A Construct diagnostics API contract rehearsal that proves runtime events, validation history, filtered exports, diagnostics bundle shape, and redaction policy metadata.
@@ -172,13 +172,13 @@ MVP can defer:
 
 Status: covered for MVP contract rehearsal.
 
-Artifacts are cataloged and can be created when simulated or local worker-backed Forges complete. Artifact DTOs now include live readiness checks that distinguish verified output files, caution paths, simulated metadata-only Artifacts, and blocked real-output paths with missing files. Construct load is blocked when a real Forge output path lacks adapter/checkpoint files.
+Artifacts are cataloged and can be created when simulated or local worker-backed Forges complete. Artifact DTOs now include live readiness checks that distinguish verified output files, caution paths, simulated metadata-only Artifacts, and blocked real-output paths with missing files. Readiness also reports whether the output is metadata-only, a LoRA adapter, a full checkpoint, or unknown output; includes trainer-result summaries when present; and carries base-model compatibility evidence. Construct load is blocked when a real Forge output path lacks adapter/checkpoint files.
 
 MVP needs:
 
 - Keep Artifact records tied to output path, base model, adapter path or checkpoint path, source Material, Forge id, and creation status.
 - Keep Artifact readiness checks before Construct can load real worker output.
-- Keep UI distinction between verified, simulated, caution, and blocked Artifact states.
+- Keep UI distinction between verified, simulated, caution, and blocked Artifact states, plus adapter vs full-checkpoint vs metadata-only semantics.
 - Keep failed or incomplete Forge runs from producing ready Artifacts.
 
 MVP can defer:
@@ -191,11 +191,12 @@ MVP can defer:
 
 Status: covered for MVP contract rehearsal; real dependency smoke remains manual.
 
-Construct has a real Transformers streaming path, local Archive checks, preflight, load, probe, unload, memory release, and diagnostics. The default remains simulated for first-run friendliness. In Transformers mode, stream failures now produce explicit error events instead of silently returning simulator text. The API rehearsal proves a cached local-model stream through the public SSE endpoint with an injected tiny backend, then proves an uncached model fails loudly.
+Construct has a real Transformers streaming path, local Archive checks, preflight, load, PEFT LoRA adapter context, probe, unload, memory release, and diagnostics. The default remains simulated for first-run friendliness. In Transformers mode, stream failures now produce explicit error events instead of silently returning simulator text. The API rehearsal proves a cached local-model stream through the public SSE endpoint with an injected tiny backend, proves adapter-backed runtime load context reaches the loader, then proves an uncached model fails loudly.
 
 MVP needs:
 
 - Keep one documented, repeatable small model path from Archive download to Construct streaming.
+- Keep adapter-backed Artifact loads explicit in runtime diagnostics so users can see base model plus adapter.
 - Keep UI mode labeling that makes simulation versus real Transformers unmistakable.
 - Keep the no-surprise fallback policy: if real local inference fails during MVP validation, show failure and recovery steps instead of silently acting like success.
 - Keep automated contract coverage for the cached-model stream path and add optional full dependency smoke notes.
@@ -232,7 +233,7 @@ MVP can defer:
 
 Status: covered for MVP contract rehearsal; keep protected.
 
-The current public checks compile Python, run frontend sentinel tests, lint, build, run isolated MVP rehearsals through both the catalog services and FastAPI v1 endpoints, cover Archive/Hugging Face acquisition contracts with network-free mocks, and exercise Construct diagnostics exports. Those rehearsals prove the product handoffs from Material ingestion to Trial scoring without touching the developer's main runtime catalog.
+The current public checks compile Python, run frontend sentinel tests, lint, build, run isolated MVP rehearsals through both the catalog services and FastAPI v1 endpoints, cover Archive/Hugging Face acquisition contracts with network-free mocks, and exercise Construct diagnostics exports. Those rehearsals prove the product handoffs from Material ingestion to Trial scoring without touching the developer's main runtime catalog. The Dashboard now shows an actionable Academy progress map for the Material -> Assembly Line -> QA Review -> JSONL -> Forge -> Artifact -> Construct -> Trial loop using real catalog evidence, destination stations show Dashboard focus callouts with the intended next action, active stations deep-focus the exact working panel across Materials, Forge, Artifacts, Construct, and Trials, and focused stations surface local "Next required action" guidance. Materials explains source ingestion, chunking, QA generation mode, and QA quality gates beside the Assembly Line workflow. Forge explains training method choice, adapter boundaries, and tiny proof mode; Artifacts explains readiness and promotion/load gates. Trial records retain runtime-profile metadata so users can distinguish simulated, base-only, and adapter-backed responses, and the Trials UI compares repeated prompts across Artifacts and runtime sources with Academy guidance explaining what those signals mean. Construct also explains runtime loading, adapter evidence, and memory cleanup directly beside the live runtime controls.
 
 MVP needs:
 

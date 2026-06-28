@@ -120,12 +120,18 @@ def run_forge_adapter_boundary_check() -> int:
     api_server = PACKAGE_ROOT / "backend" / "api_server.py"
     forge_service = PACKAGE_ROOT / "backend" / "services" / "forge_training_service.py"
     smoke_service = PACKAGE_ROOT / "backend" / "services" / "forge_smoke_service.py"
+    forge_workbench = PACKAGE_ROOT / "frontend" / "src" / "components" / "ForgeWorkbench.tsx"
+    artifacts_workbench = PACKAGE_ROOT / "frontend" / "src" / "components" / "ArtifactsWorkbench.tsx"
     smoke_script = REPO_ROOT / "scripts" / "run_local_forge_smoke.py"
+    construct_adapter_script = REPO_ROOT / "scripts" / "run_construct_adapter_proof.py"
     worker_script = REPO_ROOT / "scripts" / "run_forge_contract_worker.py"
     api_source = api_server.read_text(encoding="utf-8")
     service_source = forge_service.read_text(encoding="utf-8")
     smoke_service_source = smoke_service.read_text(encoding="utf-8")
+    forge_workbench_source = forge_workbench.read_text(encoding="utf-8")
+    artifacts_workbench_source = artifacts_workbench.read_text(encoding="utf-8")
     smoke_source = smoke_script.read_text(encoding="utf-8")
+    construct_adapter_source = construct_adapter_script.read_text(encoding="utf-8")
     worker_source = worker_script.read_text(encoding="utf-8")
 
     required_api_patterns = (
@@ -207,6 +213,23 @@ def run_forge_adapter_boundary_check() -> int:
             + ", ".join(missing_smoke)
         )
 
+    required_construct_adapter_patterns = (
+        "foundry.construct.adapter-proof.v1",
+        "ConstructInferenceService",
+        "adapterLoaded",
+        "stream_tokens",
+        "create_trial",
+    )
+    missing_construct_adapter = [
+        pattern for pattern in required_construct_adapter_patterns
+        if pattern not in construct_adapter_source
+    ]
+    if missing_construct_adapter:
+        return fail(
+            "Construct adapter proof script markers are missing: "
+            + ", ".join(missing_construct_adapter)
+        )
+
     required_worker_patterns = (
         "FOUNDRY_FORGE_RUNTIME_MODE",
         "FOUNDRY_FORGE_TRAIN_DEVICE",
@@ -222,6 +245,28 @@ def run_forge_adapter_boundary_check() -> int:
             + ", ".join(missing_worker)
         )
 
+    required_frontend_patterns = (
+        "forgeTrainingMethod",
+        "forgeAdapterBoundary",
+        "forgeProofMode",
+        "artifactsReadiness",
+        "artifactsPromotionGate",
+        "Choose the adapter strategy",
+        "Tiny proof keeps training honest",
+        "Readiness separates output types",
+        "Promotion is evidence, not hope",
+    )
+    missing_frontend = [
+        pattern
+        for pattern in required_frontend_patterns
+        if pattern not in forge_workbench_source and pattern not in artifacts_workbench_source
+    ]
+    if missing_frontend:
+        return fail(
+            "Forge/Artifact Academy guidance frontend contract is missing: "
+            + ", ".join(missing_frontend)
+        )
+
     print("OK: Forge runtime adapter contract is present.")
     return 0
 
@@ -229,8 +274,10 @@ def run_forge_adapter_boundary_check() -> int:
 def run_trial_contract_check() -> int:
     api_server = PACKAGE_ROOT / "backend" / "api_server.py"
     catalog_service = PACKAGE_ROOT / "backend" / "services" / "foundry_catalog_service.py"
+    trials_workbench = PACKAGE_ROOT / "frontend" / "src" / "components" / "TrialsWorkbench.tsx"
     api_source = api_server.read_text(encoding="utf-8")
     service_source = catalog_service.read_text(encoding="utf-8")
+    trials_source = trials_workbench.read_text(encoding="utf-8")
 
     required_api_patterns = (
         "CreateTrialInput",
@@ -255,10 +302,20 @@ def run_trial_contract_check() -> int:
         "export_evaluation_samples_to_material",
         "foundry.evaluation.weak-sample.v1",
         "\"reviewed\": bool(reviewed_samples)",
+        "_trial_runtime_profile",
+        "\"runtimeProfile\": runtime_profile",
+        "\"source\": source",
+        "\"adapterLoaded\": adapter_loaded",
         "_refresh_artifact_trial_score",
         "_artifact_readiness",
         "_artifact_present_files",
+        "_artifact_output_files",
+        "_artifact_trainer_result",
+        "_artifact_compatibility",
         "\"readiness\": readiness",
+        "\"artifactKind\": artifact_kind",
+        "\"trainerResult\": trainer_result",
+        "\"compatibility\": compatibility",
         "\"status\": \"verified\"",
         "\"status\": \"simulated\"",
         "\"canLoad\": False",
@@ -269,7 +326,151 @@ def run_trial_contract_check() -> int:
     if missing_service:
         return fail("Trial catalog contract is missing: " + ", ".join(missing_service))
 
+    required_frontend_patterns = (
+        "trialComparisons",
+        "trialComparisonSummary",
+        "Saved Trial comparison",
+        "trial-comparison-card",
+        "runtimeSourceLabel",
+        "trialsRuntimeSources",
+        "trialsComparePrompts",
+        "Read the runtime evidence",
+        "Why compare prompts?",
+    )
+    missing_frontend = [
+        pattern for pattern in required_frontend_patterns if pattern not in trials_source
+    ]
+    if missing_frontend:
+        return fail("Trial comparison frontend contract is missing: " + ", ".join(missing_frontend))
+
     print("OK: Trial persistence contract is present.")
+    return 0
+
+
+def run_academy_progress_map_check() -> int:
+    dashboard = PACKAGE_ROOT / "frontend" / "src" / "components" / "Dashboard.tsx"
+    focus_callout = PACKAGE_ROOT / "frontend" / "src" / "components" / "LoopFocusCallout.tsx"
+    materials_workbench = PACKAGE_ROOT / "frontend" / "src" / "components" / "MaterialsWorkbench.tsx"
+    forge_workbench = PACKAGE_ROOT / "frontend" / "src" / "components" / "ForgeWorkbench.tsx"
+    artifacts_workbench = PACKAGE_ROOT / "frontend" / "src" / "components" / "ArtifactsWorkbench.tsx"
+    construct_workbench = PACKAGE_ROOT / "frontend" / "src" / "components" / "ConstructWorkbench.tsx"
+    trials_workbench = PACKAGE_ROOT / "frontend" / "src" / "components" / "TrialsWorkbench.tsx"
+    app_shell = PACKAGE_ROOT / "frontend" / "src" / "App.tsx"
+    app_styles = PACKAGE_ROOT / "frontend" / "src" / "App.css"
+    academy_registry = PACKAGE_ROOT / "frontend" / "src" / "domain" / "academyRegistry.ts"
+    catalog_service = PACKAGE_ROOT / "backend" / "services" / "foundry_catalog_service.py"
+    dashboard_source = dashboard.read_text(encoding="utf-8")
+    focus_callout_source = focus_callout.read_text(encoding="utf-8")
+    materials_source = materials_workbench.read_text(encoding="utf-8")
+    forge_source = forge_workbench.read_text(encoding="utf-8")
+    artifacts_source = artifacts_workbench.read_text(encoding="utf-8")
+    construct_source = construct_workbench.read_text(encoding="utf-8")
+    trials_source = trials_workbench.read_text(encoding="utf-8")
+    app_shell_source = app_shell.read_text(encoding="utf-8")
+    app_styles_source = app_styles.read_text(encoding="utf-8")
+    academy_source = academy_registry.read_text(encoding="utf-8")
+    service_source = catalog_service.read_text(encoding="utf-8")
+
+    required_frontend_patterns = (
+        "buildLoopSteps",
+        "DashboardLoopEvidence",
+        "refreshDashboardLoopEvidence",
+        "onLoopEvidenceRefresh",
+        "loopEvidence",
+        "Evidence refreshed",
+        "Refreshing evidence",
+        "isLoopEvidenceRefreshing",
+        "loop-evidence-pulse",
+        "learning-loop-evidence-time",
+        "learning-loop-evidence-popover",
+        "Backend evidence",
+        "Why the loop is where it is",
+        "evidenceReason",
+        "learning-loop-reason",
+        "Pending until",
+        "acceptedQAPairCount",
+        "readyArtifactCount",
+        "Foundry Learning Loop",
+        "Material",
+        "Assembly Line",
+        "QA Review",
+        "JSONL Material",
+        "Forge",
+        "Artifact",
+        "Construct",
+        "Trial",
+        "dashboardLearningLoop",
+        "foundryLoop",
+        "onOpenLoopStep",
+        "Resume next required action",
+        "learning-loop-resume-target",
+        "learning-loop-actions",
+        "LOOP_TOUR_STORAGE_KEY",
+        "First-run tour",
+        "loop-tour-card",
+        "Open tour target",
+        "Start loop tour",
+        "foundry.loopTour.dismissed",
+        "loopStepToFocus",
+        "Dashboard focus",
+        "LoopFocusCallout",
+        "Next required action",
+        "nextAction",
+        "materialsNextAction",
+        "forgeNextAction",
+        "artifactsNextAction",
+        "constructNextAction",
+        "trialsNextAction",
+        "materialsLoopFocusTarget",
+        "jsonlControlsRef",
+        "forgeLoopFocusTarget",
+        "forgeQueueRef",
+        "artifactLoopFocusTarget",
+        "artifactCatalogRef",
+        "constructRuntimeFocusRef",
+        "trialsLoopFocusTarget",
+        "trialListRef",
+        "is-loop-focused",
+    )
+    missing_frontend = [
+        pattern
+        for pattern in required_frontend_patterns
+        if (
+            pattern not in dashboard_source
+            and pattern not in focus_callout_source
+            and pattern not in materials_source
+            and pattern not in forge_source
+            and pattern not in artifacts_source
+            and pattern not in construct_source
+            and pattern not in trials_source
+            and pattern not in app_shell_source
+            and pattern not in app_styles_source
+            and pattern not in academy_source
+        )
+    ]
+    if missing_frontend:
+        return fail(
+            "Academy progress map frontend contract is missing: "
+            + ", ".join(missing_frontend)
+        )
+
+    required_service_patterns = (
+        "_dashboard_loop_evidence",
+        "\"loopEvidence\": self._dashboard_loop_evidence",
+        "acd-foundry-loop",
+        "dashboard.learning-loop",
+        "The Foundry Loop",
+    )
+    missing_service = [
+        pattern for pattern in required_service_patterns if pattern not in service_source
+    ]
+    if missing_service:
+        return fail(
+            "Academy progress map seed data is missing: "
+            + ", ".join(missing_service)
+        )
+
+    print("OK: Academy progress map contract is present.")
     return 0
 
 
@@ -277,15 +478,19 @@ def run_material_import_contract_check() -> int:
     api_server = PACKAGE_ROOT / "backend" / "api_server.py"
     catalog_service = PACKAGE_ROOT / "backend" / "services" / "foundry_catalog_service.py"
     qa_generation_service = PACKAGE_ROOT / "backend" / "services" / "qa_generation_service.py"
+    materials_workbench = PACKAGE_ROOT / "frontend" / "src" / "components" / "MaterialsWorkbench.tsx"
     api_source = api_server.read_text(encoding="utf-8")
     service_source = catalog_service.read_text(encoding="utf-8")
     qa_generation_source = qa_generation_service.read_text(encoding="utf-8")
+    materials_source = materials_workbench.read_text(encoding="utf-8")
 
     required_api_patterns = (
         "/api/v1/workshops/{workshop_id}/materials/import-file",
         "/api/v1/workshops/{workshop_id}/qa-pairs/{qa_pair_id}",
+        "/api/v1/workshops/{workshop_id}/qa-pairs/export/preview",
         "import_foundry_material_file_endpoint",
         "update_foundry_qa_pair_review_endpoint",
+        "preview_foundry_qa_pairs_export_endpoint",
         "/api/v1/workshops/{workshop_id}/materials/website-preview",
         "preview_foundry_website_material_endpoint",
         "/api/v1/assembly-line/qa-generator/runtime",
@@ -325,6 +530,11 @@ def run_material_import_contract_check() -> int:
         "_qa_pair_quality_gate",
         "\"metrics\": metrics",
         "\"qualityGate\": self._qa_pair_quality_gate",
+        "\"trainingReadiness\": training_readiness",
+        "foundry.qa-training-readiness.v1",
+        "_qa_training_readiness",
+        "_qa_payload_has_source_reference",
+        "defaultTrainingSafe",
         "\"lowQualityOverride\": include_low_quality",
         "\"generatorModel\": row[\"generator_model\"]",
         "\"generationMetadata\": generation_metadata",
@@ -351,7 +561,7 @@ def run_material_import_contract_check() -> int:
 
     required_qa_generator_patterns = (
         "foundry.qa-generation.v1",
-        "foundry.qa-prompt.source-context.v2",
+        "foundry.qa-prompt.source-context.v3",
         "qaType",
         "workshopSubject",
         "voiceTarget",
@@ -360,14 +570,26 @@ def run_material_import_contract_check() -> int:
         "foundry.qa-generator.smoke-proof.v1",
         "foundry.qa-generator.quality-proof.v1",
         "FOUNDRY_QA_GENERATOR_MODE",
+        "DEFAULT_QA_GENERATOR_MODEL_ID",
+        "Qwen/Qwen2.5-0.5B-Instruct",
+        "SMOKE_QA_GENERATOR_MODEL_ID",
         "runtime_payload",
         "preflight",
         "smoke_proof",
         "quality_proof",
+        "\"proofMode\"",
+        "\"source\": \"backend\"",
+        "\"simulated\": False",
+        "local_files_only=True",
+        "proof_source=\"backend-local-model\"",
         "configure",
         "set_model_text_backend",
+        "_transformers_available",
         "_generate_with_transformers",
         "_generate_model_text",
+        "_model_load_reference",
+        "_prepare_model_prompt",
+        "apply_chat_template",
         "_generate_deterministic",
         "fallbackReason",
         "confidence",
@@ -380,6 +602,42 @@ def run_material_import_contract_check() -> int:
         return fail(
             "Material QA generation contract is missing: "
             + ", ".join(missing_qa_generator)
+        )
+
+    required_frontend_patterns = (
+        "materialsSourceIngestion",
+        "materialsChunking",
+        "materialsQAGeneration",
+        "materialsQAQualityGate",
+        "qa-training-readiness",
+        "qa-model-proof-card",
+        "Model-backed QA proof",
+        "Run model-backed proof",
+        "qaProofSourceLabel",
+        "proof not run",
+        "local files only",
+        "assembly-generator-warning",
+        "qaGeneratorArchiveHandoff",
+        "Returned from Archive",
+        "QA generator model cached",
+        "Generating smoke-grade QA",
+        "Model-backed generator is unproven",
+        "Configure + preflight",
+        "onOpenArchiveModel(preflight.modelId",
+        "Training readiness",
+        "defaultTrainingSafe",
+        "Source evidence comes first",
+        "Chunks define what the generator can see",
+        "QA generation mode changes data quality",
+        "Quality gates protect the Forge",
+    )
+    missing_frontend = [
+        pattern for pattern in required_frontend_patterns if pattern not in materials_source
+    ]
+    if missing_frontend:
+        return fail(
+            "Material Academy guidance frontend contract is missing: "
+            + ", ".join(missing_frontend)
         )
 
     print("OK: Material file import contract is present.")
@@ -409,6 +667,8 @@ def run_construct_runtime_event_contract_check() -> int:
         "/api/v1/constructs/runtime/diagnostics/export",
         "ConstructRuntimeValidationInput",
         "modelId: str | None = None",
+        "adapterPath: str | None = None",
+        "artifactId: str | None = None",
         "pageSize: int = 25",
         "foundry_construct_runtime_events_endpoint",
         "export_foundry_construct_runtime_events_endpoint",
@@ -438,6 +698,10 @@ def run_construct_runtime_event_contract_check() -> int:
         "record_runtime_event",
         "clear_runtime_events",
         "set_transformers_stream_backend",
+        "PeftModel.from_pretrained",
+        "_resolve_adapter_reference",
+        "_model_cache_key",
+        "\"adapterLoaded\": bool(cached.get(\"adapterPath\"))",
         "_persist_runtime_event",
         "_list_persisted_runtime_events",
         "_clear_persisted_runtime_events",
@@ -484,9 +748,13 @@ def run_construct_runtime_event_contract_check() -> int:
 
 def run_foundry_runtime_status_contract_check() -> int:
     api_server = PACKAGE_ROOT / "backend" / "api_server.py"
+    app_shell = PACKAGE_ROOT / "frontend" / "src" / "App.tsx"
+    app_styles = PACKAGE_ROOT / "frontend" / "src" / "App.css"
     frontend_contract = PACKAGE_ROOT / "frontend" / "src" / "contracts" / "foundryApi.ts"
     frontend_repository = PACKAGE_ROOT / "frontend" / "src" / "services" / "foundryRepository.ts"
     api_source = api_server.read_text(encoding="utf-8")
+    app_source = app_shell.read_text(encoding="utf-8")
+    app_styles_source = app_styles.read_text(encoding="utf-8")
     contract_source = frontend_contract.read_text(encoding="utf-8")
     repository_source = frontend_repository.read_text(encoding="utf-8")
 
@@ -506,11 +774,34 @@ def run_foundry_runtime_status_contract_check() -> int:
         "getFoundryStatus",
         "FoundryRuntimeStatus",
         "buildApiUnavailableStatus",
+        "RUNTIME_INSPECTOR_STORAGE_KEY",
+        "runtime-drawer-toggle",
+        "inspector-collapsed",
+        "Toggle runtime metrics drawer",
+        "Runtime Metrics",
+        "--z-local-popover",
+        "--z-inspector-drawer",
+        "--z-modal-drawer",
+        "--z-tooltip",
+        "tooltip-floating-card",
+        "getQAGeneratorRuntime: apiFoundryRepository.getQAGeneratorRuntime",
+        "configureQAGeneratorRuntime: apiFoundryRepository.configureQAGeneratorRuntime",
+        "preflightQAGenerator: apiFoundryRepository.preflightQAGenerator",
+        "runQAGeneratorSmokeProof: apiFoundryRepository.runQAGeneratorSmokeProof",
+        "runQAGeneratorQualityProof: apiFoundryRepository.runQAGeneratorQualityProof",
+        "findMockCachedArchiveEntry",
+        "Mock Archive cache is ready for model-backed QA proof simulation.",
+        "mock-cached-model-context-synthesis",
     )
     missing_frontend = [
         pattern
         for pattern in required_frontend_patterns
-        if pattern not in contract_source and pattern not in repository_source
+        if (
+            pattern not in contract_source
+            and pattern not in repository_source
+            and pattern not in app_source
+            and pattern not in app_styles_source
+        )
     ]
     if missing_frontend:
         return fail(
@@ -649,10 +940,12 @@ def run_huggingface_auth_contract_check() -> int:
 def run_construct_memory_cleanup_contract_check() -> int:
     construct_service = PACKAGE_ROOT / "backend" / "services" / "construct_inference_service.py"
     api_server = PACKAGE_ROOT / "backend" / "api_server.py"
+    construct_workbench = PACKAGE_ROOT / "frontend" / "src" / "components" / "ConstructWorkbench.tsx"
     frontend_contracts = PACKAGE_ROOT / "frontend" / "src" / "contracts" / "foundryApi.ts"
     frontend_repository = PACKAGE_ROOT / "frontend" / "src" / "services" / "foundryRepository.ts"
     service_source = construct_service.read_text(encoding="utf-8")
     api_source = api_server.read_text(encoding="utf-8")
+    construct_workbench_source = construct_workbench.read_text(encoding="utf-8")
     contract_source = frontend_contracts.read_text(encoding="utf-8")
     repository_source = frontend_repository.read_text(encoding="utf-8")
 
@@ -695,11 +988,20 @@ def run_construct_memory_cleanup_contract_check() -> int:
     required_frontend_patterns = (
         "releaseConstructRuntimeMemory:",
         "releaseConstructRuntimeMemory",
+        "constructRuntimeLoading",
+        "constructAdapterEvidence",
+        "constructMemoryCleanup",
+        "Runtime loading is the proof point",
+        "Memory cleanup keeps iteration smooth",
     )
     missing_frontend = [
         pattern
         for pattern in required_frontend_patterns
-        if pattern not in contract_source and pattern not in repository_source
+        if (
+            pattern not in contract_source
+            and pattern not in repository_source
+            and pattern not in construct_workbench_source
+        )
     ]
     if missing_frontend:
         return fail(
@@ -769,6 +1071,7 @@ def main() -> int:
         run_api_transport_boundary_check,
         run_forge_adapter_boundary_check,
         run_trial_contract_check,
+        run_academy_progress_map_check,
         run_material_import_contract_check,
         run_construct_runtime_event_contract_check,
         run_foundry_runtime_status_contract_check,

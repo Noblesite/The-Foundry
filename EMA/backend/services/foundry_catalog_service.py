@@ -10,6 +10,7 @@ import re
 import sqlite3
 import socket
 from datetime import datetime, timezone
+from hashlib import sha256
 from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
@@ -29,6 +30,9 @@ DEFAULT_EXPORT_DIR = BASE_DIR / "runtime" / "materials" / "exports"
 DEFAULT_SOURCE_DIR = BASE_DIR / "runtime" / "materials" / "sources"
 DEFAULT_MATERIAL_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
 DEFAULT_WEBSITE_FETCH_MAX_BYTES = 2 * 1024 * 1024
+REVIEWED_TRIAL_VERDICTS = {"pass", "needs-work", "fail"}
+AUTO_TRIAL_VERDICT = "needs-review"
+VALID_TRIAL_VERDICTS = REVIEWED_TRIAL_VERDICTS | {AUTO_TRIAL_VERDICT}
 SUPPORTED_IMPORT_EXTENSIONS = {
     "csv": {".csv"},
     "pdf": {".pdf"},
@@ -252,6 +256,7 @@ class FoundryCatalogService:
                 chunk_index INTEGER NOT NULL,
                 text TEXT NOT NULL,
                 token_count INTEGER NOT NULL,
+                metadata_json TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(workshop_id) REFERENCES workshops(id),
                 FOREIGN KEY(material_id) REFERENCES materials(id),
@@ -471,6 +476,7 @@ class FoundryCatalogService:
         )
         self._ensure_forge_contract_columns(connection)
         self._ensure_material_metadata_columns(connection)
+        self._ensure_material_chunk_metadata_columns(connection)
         self._ensure_qa_review_columns(connection)
 
     def _ensure_forge_contract_columns(self, connection: sqlite3.Connection) -> None:
@@ -495,6 +501,15 @@ class FoundryCatalogService:
         if "metadata_json" not in columns:
             connection.execute(
                 "ALTER TABLE materials ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'"
+            )
+
+    def _ensure_material_chunk_metadata_columns(self, connection: sqlite3.Connection) -> None:
+        columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(material_chunks)").fetchall()
+        }
+        if "metadata_json" not in columns:
+            connection.execute(
+                "ALTER TABLE material_chunks ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'"
             )
 
     def _ensure_qa_review_columns(self, connection: sqlite3.Connection) -> None:
@@ -774,11 +789,81 @@ class FoundryCatalogService:
                 json.dumps(["trials", "forge", "artifacts"]),
             ),
             (
+                "acd-foundry-loop",
+                "The Foundry Loop",
+                "foundry-loop",
+                "The Foundry loop shows how raw source material becomes reviewed QA, training data, a Forge run, an Artifact, a Construct, and finally Trial evidence.",
+                json.dumps(["workshop", "materials", "forge", "artifacts", "construct", "trials"]),
+            ),
+            (
+                "acd-source-ingestion",
+                "Source Ingestion",
+                "source-ingestion",
+                "Source ingestion copies files or snapshots webpages into controlled storage so later chunks and QA rows can cite stable evidence.",
+                json.dumps(["materials", "library", "forge"]),
+            ),
+            (
+                "acd-chunking",
+                "Chunking",
+                "chunking",
+                "Chunking splits source text into overlapping windows small enough for the QA generator to read while preserving source references.",
+                json.dumps(["materials", "forge", "academy"]),
+            ),
+            (
+                "acd-qa-generation",
+                "QA Generation",
+                "qa-generation",
+                "QA generation turns source chunks into question and answer examples that can become training Material after human review.",
+                json.dumps(["materials", "forge", "trials"]),
+            ),
+            (
+                "acd-qa-quality-gate",
+                "QA Quality Gate",
+                "qa-quality-gate",
+                "The QA quality gate checks grounding, confidence, triviality, and source coverage before rows become Forge-ready JSONL.",
+                json.dumps(["materials", "forge", "trials"]),
+            ),
+            (
+                "acd-training-adapters",
+                "Training Adapters",
+                "training-adapters",
+                "LoRA and QLoRA train compact adapter weights instead of rewriting every base-model parameter.",
+                json.dumps(["forge", "artifacts", "construct"]),
+            ),
+            (
+                "acd-artifact-readiness",
+                "Artifact Readiness",
+                "artifact-readiness",
+                "Artifact readiness checks whether the saved output has loadable files, trainer evidence, and base-model compatibility.",
+                json.dumps(["artifacts", "forge", "construct"]),
+            ),
+            (
                 "acd-weak-sample-review",
                 "Weak Sample Review",
                 "weak-sample-review",
                 "Weak sample review turns failed and needs-work replies into corrected Material for the next Forge.",
                 json.dumps(["trials", "materials", "forge"]),
+            ),
+            (
+                "acd-runtime-evidence",
+                "Runtime Evidence",
+                "runtime-evidence",
+                "Runtime evidence records whether a reply came from simulation, a base model, or an adapter-backed Artifact.",
+                json.dumps(["construct", "trials", "artifacts"]),
+            ),
+            (
+                "acd-memory-management",
+                "Runtime Memory Management",
+                "memory-management",
+                "Memory cleanup releases model references and asks the local runtime to clear CPU, CUDA, or Apple Silicon accelerator caches.",
+                json.dumps(["construct", "settings", "archive"]),
+            ),
+            (
+                "acd-trial-comparison",
+                "Prompt Comparison",
+                "trial-comparison",
+                "Prompt comparison repeats the same test across Artifacts and runtime modes so users can see whether behavior actually improved.",
+                json.dumps(["trials", "construct", "forge"]),
             ),
         ]
         connection.executemany(
@@ -803,6 +888,15 @@ class FoundryCatalogService:
                 "Attention is the first layer-level concept to understand because it explains how prompts steer the next generated token.",
             ),
             (
+                "dashboard.learning-loop",
+                "workshop",
+                "explain-foundry-loop",
+                "Learn the loop",
+                "foundry-loop",
+                "Where am I in the loop?",
+                "The loop map tracks the journey from source Material through Assembly Line, QA Review, JSONL, Forge, Artifact, Construct, and Trial evidence.",
+            ),
+            (
                 "materials.open-assembly-line",
                 "materials",
                 "open-assembly-line",
@@ -810,6 +904,42 @@ class FoundryCatalogService:
                 "attention",
                 "Why Materials matter",
                 "Materials become chunks and examples. Cleaner inputs make every later training and evaluation step easier to trust.",
+            ),
+            (
+                "materials.source-ingestion",
+                "materials",
+                "explain-source-ingestion",
+                "Learn ingestion",
+                "source-ingestion",
+                "Why snapshot source material?",
+                "The Foundry stores a controlled copy or website snapshot so every chunk, QA row, and exported JSONL line can point back to stable source evidence.",
+            ),
+            (
+                "materials.chunking",
+                "materials",
+                "explain-chunking",
+                "Learn chunking",
+                "chunking",
+                "What is chunking?",
+                "Chunking breaks long source material into overlapping token windows. Overlap helps preserve context at boundaries, but too much overlap can create duplicate QA rows.",
+            ),
+            (
+                "materials.qa-generation",
+                "materials",
+                "explain-qa-generation",
+                "Learn QA generation",
+                "qa-generation",
+                "What is QA generation?",
+                "QA generation reads source chunks and drafts training examples. Deterministic mode is for smoke tests; model-backed mode is the path for higher-quality, context-aware examples.",
+            ),
+            (
+                "materials.qa-quality-gate",
+                "materials",
+                "explain-qa-quality-gate",
+                "Learn quality gates",
+                "qa-quality-gate",
+                "Why can QA rows be blocked?",
+                "The quality gate blocks rows with weak grounding, low confidence, trivial questions, unsupported QA types, or deterministic fallback output before they reach Forge.",
             ),
             (
                 "forge.open-training",
@@ -821,6 +951,33 @@ class FoundryCatalogService:
                 "Forge metrics are useful only when paired with examples, validation, and layer-level understanding.",
             ),
             (
+                "forge.training-method",
+                "forge",
+                "explain-training-method",
+                "Learn methods",
+                "training-adapters",
+                "LoRA or QLoRA?",
+                "LoRA trains adapter matrices in normal precision. QLoRA keeps the base model quantized while training adapters, which lowers memory pressure for local fine-tuning.",
+            ),
+            (
+                "forge.adapter-boundary",
+                "forge",
+                "explain-adapter-boundary",
+                "Learn adapter boundary",
+                "training-adapters",
+                "Why an adapter boundary?",
+                "The Forge contract records the base model, Material, and adapter output path. That boundary lets the simulator, tiny proof, and real trainer use the same handoff.",
+            ),
+            (
+                "forge.proof-mode",
+                "forge",
+                "explain-proof-mode",
+                "Learn proof mode",
+                "training-adapters",
+                "What is tiny Forge proof?",
+                "Tiny proof uses a cached small model and tiny JSONL Material to verify the local training path without requiring a long or expensive run.",
+            ),
+            (
                 "artifacts.open-promotion",
                 "artifacts",
                 "open-promotion-concepts",
@@ -828,6 +985,24 @@ class FoundryCatalogService:
                 "evaluation",
                 "Why promotion needs Trials",
                 "Artifacts should move into Constructs only after evaluation gives you evidence that behavior improved.",
+            ),
+            (
+                "artifacts.readiness",
+                "artifacts",
+                "explain-artifact-readiness",
+                "Learn readiness",
+                "artifact-readiness",
+                "What is Artifact readiness?",
+                "Readiness checks whether an Artifact is metadata-only, a LoRA adapter, a full checkpoint, or blocked because expected output files are missing.",
+            ),
+            (
+                "artifacts.promotion-gate",
+                "artifacts",
+                "explain-promotion-gate",
+                "Learn promotion",
+                "artifact-readiness",
+                "Why gate Construct loading?",
+                "Promotion gates prevent broken or incompatible Artifact outputs from being treated like a real Construct runtime. Load only after readiness and Trials give enough evidence.",
             ),
             (
                 "trials.open-evaluation",
@@ -846,6 +1021,51 @@ class FoundryCatalogService:
                 "weak-sample-review",
                 "What is Weak Sample Review?",
                 "Weak sample review turns failed or needs-work replies into corrected rows that can train the next Artifact.",
+            ),
+            (
+                "trials.runtime-sources",
+                "trials",
+                "explain-runtime-sources",
+                "Learn runtime sources",
+                "runtime-evidence",
+                "What is a runtime source?",
+                "A runtime source tells you whether a Trial reply was simulated, produced by the base model, or produced with a loaded adapter. Adapter-backed Trials are the strongest evidence that a Forge changed behavior.",
+            ),
+            (
+                "trials.compare-prompts",
+                "trials",
+                "explain-prompt-comparison",
+                "Learn comparison",
+                "trial-comparison",
+                "Why repeat the same prompt?",
+                "Repeating one prompt across Artifacts keeps the test stable. Differences in verdict, token count, and runtime source show whether the trained Artifact improved or only changed its style.",
+            ),
+            (
+                "construct.runtime-loading",
+                "construct",
+                "explain-runtime-loading",
+                "Learn runtime loading",
+                "runtime-evidence",
+                "What is runtime loading?",
+                "Runtime loading places a cached base model, and sometimes an adapter, into local memory so Construct can stream real tokens instead of simulated output.",
+            ),
+            (
+                "construct.adapter-evidence",
+                "construct",
+                "explain-adapter-evidence",
+                "Learn adapters",
+                "runtime-evidence",
+                "What does adapter loaded mean?",
+                "An adapter-backed Construct uses the base model plus the LoRA Artifact produced by Forge. This is the live path you want before judging whether training changed behavior.",
+            ),
+            (
+                "construct.memory-cleanup",
+                "construct",
+                "explain-memory-cleanup",
+                "Learn memory cleanup",
+                "memory-management",
+                "Why release memory?",
+                "Releasing memory clears cached model references and asks Python, CUDA, or Apple Silicon Metal/MPS caches to free space before another model load.",
             ),
         ]
         connection.executemany(
@@ -1011,6 +1231,9 @@ class FoundryCatalogService:
             "chunkIndex": row["chunk_index"],
             "text": row["text"],
             "tokenCount": row["token_count"],
+            "metadata": self._decode_json_object(
+                row["metadata_json"] if "metadata_json" in row.keys() else None
+            ),
         }
 
     def _decode_json_object(self, value: Optional[str]) -> Dict[str, Any]:
@@ -1022,6 +1245,14 @@ class FoundryCatalogService:
 
     def _qa_pair_from_row(self, row: sqlite3.Row) -> Dict[str, Any]:
         generation_metadata = self._decode_json_object(row["generation_metadata_json"])
+        chunk_metadata = self._decode_json_object(
+            row["chunk_metadata_json"] if "chunk_metadata_json" in row.keys() else None
+        )
+        source_location = (
+            chunk_metadata.get("sourceLocation")
+            if isinstance(chunk_metadata.get("sourceLocation"), dict)
+            else {}
+        )
         return {
             "id": row["id"],
             "workshopId": row["workshop_id"],
@@ -1034,6 +1265,10 @@ class FoundryCatalogService:
             "confidence": float(row["confidence"] or 0),
             "generationMetadata": generation_metadata,
             "qualityGate": self._qa_pair_quality_gate(row, generation_metadata),
+            "sourceReference": {
+                "chunkMetadata": chunk_metadata,
+                "sourceLocation": source_location,
+            },
             "reviewStatus": row["review_status"] or "draft",
             "reviewedAt": row["reviewed_at"],
         }
@@ -1360,8 +1595,8 @@ class FoundryCatalogService:
         token_count: int,
         generation_settings: Dict[str, Any],
     ) -> Dict[str, Any]:
-        if verdict not in {"pass", "needs-work", "fail"}:
-            raise ValueError("Trial verdict must be pass, needs-work, or fail.")
+        if verdict not in VALID_TRIAL_VERDICTS:
+            raise ValueError("Trial verdict must be pass, needs-work, fail, or needs-review.")
 
         with self._connect() as connection:
             workshop = connection.execute(
@@ -1393,6 +1628,54 @@ class FoundryCatalogService:
             if construct["artifact_id"] != artifact_id:
                 raise ValueError("Construct is not loaded with the selected Artifact.")
 
+            generation_payload = dict(generation_settings)
+            generation_payload["runtimeProfile"] = self._trial_runtime_profile(
+                artifact=artifact,
+                construct=construct,
+                runtime_mode=runtime_mode,
+                generation_settings=generation_payload,
+            )
+            row = self._upsert_trial_for_message(
+                connection=connection,
+                workshop_id=workshop_id,
+                artifact_id=artifact_id,
+                construct_id=construct_id,
+                message_id=message_id,
+                prompt=prompt,
+                response=response,
+                verdict=verdict,
+                runtime_mode=runtime_mode,
+                token_count=token_count,
+                generation_payload=generation_payload,
+            )
+            self._refresh_artifact_trial_score(connection, artifact_id)
+            return self._trial_from_row(row)
+
+    def _upsert_trial_for_message(
+        self,
+        *,
+        connection: sqlite3.Connection,
+        workshop_id: str,
+        artifact_id: str,
+        construct_id: str,
+        message_id: str,
+        prompt: str,
+        response: str,
+        verdict: str,
+        runtime_mode: str,
+        token_count: int,
+        generation_payload: Dict[str, Any],
+    ) -> sqlite3.Row:
+        existing = connection.execute(
+            """
+            SELECT * FROM trials
+            WHERE workshop_id = ? AND message_id = ?
+            ORDER BY datetime(created_at) ASC, id ASC
+            LIMIT 1
+            """,
+            (workshop_id, message_id),
+        ).fetchone()
+        if existing is None:
             trial_id = f"trl-{uuid4().hex[:12]}"
             connection.execute(
                 """
@@ -1414,12 +1697,40 @@ class FoundryCatalogService:
                     verdict,
                     runtime_mode,
                     max(token_count, 0),
-                    json.dumps(generation_settings),
+                    json.dumps(generation_payload),
                 ),
             )
-            self._refresh_artifact_trial_score(connection, artifact_id)
-            row = connection.execute("SELECT * FROM trials WHERE id = ?", (trial_id,)).fetchone()
-            return self._trial_from_row(row)
+        else:
+            trial_id = existing["id"]
+            connection.execute(
+                """
+                UPDATE trials
+                SET artifact_id = ?,
+                    construct_id = ?,
+                    prompt = ?,
+                    response = ?,
+                    verdict = ?,
+                    runtime_mode = ?,
+                    token_count = ?,
+                    generation_settings_json = ?
+                WHERE id = ?
+                """,
+                (
+                    artifact_id,
+                    construct_id,
+                    prompt,
+                    response,
+                    verdict,
+                    runtime_mode,
+                    max(token_count, 0),
+                    json.dumps(generation_payload),
+                    trial_id,
+                ),
+            )
+        row = connection.execute("SELECT * FROM trials WHERE id = ?", (trial_id,)).fetchone()
+        if row is None:
+            raise ValueError("Trial could not be persisted for this Construct message.")
+        return row
 
     async def export_trials_to_material(
         self,
@@ -1445,7 +1756,7 @@ class FoundryCatalogService:
         verdicts: List[str],
         name: Optional[str],
     ) -> Dict[str, Any]:
-        invalid_verdicts = [verdict for verdict in verdicts if verdict not in {"pass", "needs-work", "fail"}]
+        invalid_verdicts = [verdict for verdict in verdicts if verdict not in REVIEWED_TRIAL_VERDICTS]
         if invalid_verdicts:
             raise ValueError("Trial export verdicts must be pass, needs-work, or fail.")
 
@@ -1481,6 +1792,9 @@ class FoundryCatalogService:
 
             if trial_ids and len(rows) != len(set(trial_ids)):
                 raise ValueError("One or more selected Trials were not found for this Workshop.")
+            unreviewed_rows = [row for row in rows if row["verdict"] == AUTO_TRIAL_VERDICT]
+            if unreviewed_rows:
+                raise ValueError("Review auto-captured Trials before exporting them to JSONL.")
 
             export_dir = DEFAULT_EXPORT_DIR / workshop_id
             export_dir.mkdir(parents=True, exist_ok=True)
@@ -1491,6 +1805,7 @@ class FoundryCatalogService:
             with export_path.open("w", encoding="utf-8") as export_file:
                 for index, row in enumerate(rows):
                     generation_settings = json.loads(row["generation_settings_json"])
+                    runtime_profile = generation_settings.get("runtimeProfile") or {}
                     payload = {
                         "id": row["id"],
                         "instruction": row["prompt"],
@@ -1510,6 +1825,7 @@ class FoundryCatalogService:
                             "rowIndex": index,
                             "verdict": row["verdict"],
                             "runtimeMode": row["runtime_mode"],
+                            "runtimeProfile": runtime_profile,
                             "tokenCount": row["token_count"],
                             "generationSettings": generation_settings,
                             "createdAt": row["created_at"],
@@ -1600,6 +1916,65 @@ class FoundryCatalogService:
             export_name = self._safe_export_name(name or f"{workshop['name']} Weak Trial Samples")
             export_path = export_dir / f"{export_name}-weak-samples-{uuid4().hex[:8]}.jsonl"
             exported_verdicts = sorted({sample["verdict"] for sample in weak_samples})
+            now = datetime.now(timezone.utc).isoformat()
+            training_readiness = {
+                "contractVersion": "foundry.qa-training-readiness.v1",
+                "status": "caution",
+                "forgeReady": True,
+                "defaultTrainingSafe": False,
+                "rowCount": len(weak_samples),
+                "reviewedRows": len(weak_samples) if reviewed_samples else 0,
+                "sourceReferencedRows": 0,
+                "qualityPassedRows": len(weak_samples),
+                "qualityBlockedRows": 0,
+                "deterministicRows": 0,
+                "fallbackRows": 0,
+                "generatorModels": [],
+                "generatorModes": ["evaluation-correction"],
+                "promptVersions": [],
+                "checks": [
+                    self._jsonl_validation_check(
+                        "jsonl-schema",
+                        "JSONL schema",
+                        "pass",
+                        "Corrected weak samples include instruction and output fields for Forge handoff.",
+                    ),
+                    self._jsonl_validation_check(
+                        "human-review",
+                        "Human review",
+                        "pass" if reviewed_samples else "warn",
+                        "Weak samples were reviewed before export."
+                        if reviewed_samples
+                        else "Weak samples came directly from the Trial Report and should be reviewed before training.",
+                    ),
+                    self._jsonl_validation_check(
+                        "source-lineage",
+                        "Evaluation lineage",
+                        "warn",
+                        "Rows retain Trial Report, Forge, and source Material lineage instead of original chunk references.",
+                    ),
+                ],
+                "recommendation": (
+                    "Use this corrective Material for a targeted Forge after reviewing the edited outputs."
+                    if reviewed_samples
+                    else "Review and edit weak samples before using this Material for real training."
+                ),
+            }
+            material_metadata = {
+                "export": {
+                    "contractVersion": "foundry.evaluation.weak-sample-export.v1",
+                    "source": "evaluation-report",
+                    "forgeRunId": evaluation_report["forgeRunId"],
+                    "sourceMaterialId": evaluation_report["materialId"],
+                    "datasetUri": evaluation_report["datasetUri"],
+                    "reportVersion": evaluation_report["reportVersion"],
+                    "reviewed": bool(reviewed_samples),
+                    "verdicts": exported_verdicts,
+                    "sampleCount": len(weak_samples),
+                    "createdAt": now,
+                    "trainingReadiness": training_readiness,
+                }
+            }
 
             with export_path.open("w", encoding="utf-8") as export_file:
                 for index, sample in enumerate(weak_samples):
@@ -1619,9 +1994,19 @@ class FoundryCatalogService:
                         "metadata": {
                             "format": "foundry.evaluation.weak-sample.v1",
                             "rowIndex": index,
+                            "reviewStatus": "edited" if reviewed_samples else "accepted",
+                            "generatorModel": "evaluation-report-corrective-export",
+                            "confidence": 0.72,
                             "verdict": sample["verdict"],
                             "observed": sample.get("observed", ""),
                             "note": sample.get("note", ""),
+                            "generation": {
+                                "contractVersion": "foundry.evaluation.weak-sample-export.v1",
+                                "mode": "evaluation-correction",
+                                "sourceForgeRunId": evaluation_report["forgeRunId"],
+                                "sourceMaterialId": evaluation_report["materialId"],
+                                "fallbackReason": None,
+                            },
                             "reportVersion": evaluation_report["reportVersion"],
                             "createdAt": evaluation_report["createdAt"],
                             "reviewed": bool(reviewed_samples),
@@ -1640,10 +2025,17 @@ class FoundryCatalogService:
                 UPDATE materials
                 SET status = 'qa-ready',
                     chunk_count = ?,
-                    qa_pair_count = ?
+                    qa_pair_count = ?,
+                    metadata_json = ?
                 WHERE id = ? AND workshop_id = ?
                 """,
-                (len(weak_samples), len(weak_samples), material["id"], workshop_id),
+                (
+                    len(weak_samples),
+                    len(weak_samples),
+                    json.dumps(material_metadata),
+                    material["id"],
+                    workshop_id,
+                ),
             )
             connection.execute(
                 """
@@ -1732,7 +2124,7 @@ class FoundryCatalogService:
             system_prompt,
         )
         with self._connect() as connection:
-            self._persist_construct_chat_response(
+            trial = self._persist_construct_chat_response(
                 connection=connection,
                 construct_id=construct_id,
                 conversation_id=conversation_id,
@@ -1740,12 +2132,15 @@ class FoundryCatalogService:
                 assistant_message_id=prepared["message"]["id"],
                 user_text=message,
                 response_text=prepared["message"]["text"],
+                generation_settings=prepared["generation"],
+                runtime_mode="simulated",
             )
             construct = connection.execute(
                 "SELECT * FROM constructs WHERE id = ?",
                 (construct_id,),
             ).fetchone()
             prepared["construct"] = self._construct_from_row(construct)
+            prepared["trial"] = trial
             return prepared
 
     def _prepare_construct_chat_response_sync(
@@ -1811,9 +2206,11 @@ class FoundryCatalogService:
         assistant_message_id: str,
         user_text: str,
         response_text: str,
-    ) -> None:
+        generation_settings: Dict[str, Any],
+        runtime_mode: str,
+    ) -> Dict[str, Any]:
         async with self._write_lock:
-            await self._run_query(
+            return await self._run_query(
                 lambda: self._persist_prepared_construct_chat_response_sync(
                     construct_id,
                     conversation_id,
@@ -1821,6 +2218,8 @@ class FoundryCatalogService:
                     assistant_message_id,
                     user_text,
                     response_text,
+                    generation_settings,
+                    runtime_mode,
                 )
             )
 
@@ -1832,9 +2231,11 @@ class FoundryCatalogService:
         assistant_message_id: str,
         user_text: str,
         response_text: str,
-    ) -> None:
+        generation_settings: Dict[str, Any],
+        runtime_mode: str,
+    ) -> Dict[str, Any]:
         with self._connect() as connection:
-            self._persist_construct_chat_response(
+            return self._persist_construct_chat_response(
                 connection,
                 construct_id,
                 conversation_id,
@@ -1842,6 +2243,8 @@ class FoundryCatalogService:
                 assistant_message_id,
                 user_text,
                 response_text,
+                generation_settings,
+                runtime_mode,
             )
 
     def _persist_construct_chat_response(
@@ -1853,7 +2256,9 @@ class FoundryCatalogService:
         assistant_message_id: str,
         user_text: str,
         response_text: str,
-    ) -> None:
+        generation_settings: Dict[str, Any],
+        runtime_mode: str,
+    ) -> Dict[str, Any]:
         connection.executemany(
             """
             INSERT OR IGNORE INTO construct_messages (
@@ -1888,6 +2293,45 @@ class FoundryCatalogService:
             """,
             (construct_id,),
         )
+        construct = connection.execute(
+            "SELECT * FROM constructs WHERE id = ?",
+            (construct_id,),
+        ).fetchone()
+        if construct is None:
+            raise ValueError("Construct was not found for Trial evidence capture.")
+        artifact = connection.execute(
+            "SELECT * FROM artifacts WHERE id = ?",
+            (construct["artifact_id"],),
+        ).fetchone()
+        if artifact is None:
+            raise ValueError("Loaded Artifact was not found for Trial evidence capture.")
+        generation_payload = dict(generation_settings)
+        generation_payload["autoTrial"] = {
+            "contractVersion": "foundry.construct.auto-trial.v1",
+            "verdict": AUTO_TRIAL_VERDICT,
+            "reviewRequired": True,
+        }
+        generation_payload["runtimeProfile"] = self._trial_runtime_profile(
+            artifact=artifact,
+            construct=construct,
+            runtime_mode=runtime_mode,
+            generation_settings=generation_payload,
+        )
+        trial_row = self._upsert_trial_for_message(
+            connection=connection,
+            workshop_id=construct["workshop_id"],
+            artifact_id=construct["artifact_id"],
+            construct_id=construct_id,
+            message_id=assistant_message_id,
+            prompt=user_text,
+            response=response_text,
+            verdict=AUTO_TRIAL_VERDICT,
+            runtime_mode=runtime_mode,
+            token_count=len(response_text.split()),
+            generation_payload=generation_payload,
+        )
+        self._refresh_artifact_trial_score(connection, construct["artifact_id"])
+        return self._trial_from_row(trial_row)
 
     def _build_construct_response(
         self,
@@ -2205,7 +2649,10 @@ class FoundryCatalogService:
                 if assembly_line_run_id:
                     rows = connection.execute(
                         """
-                        SELECT qa_pairs.*, material_chunks.text AS source_text
+                        SELECT
+                            qa_pairs.*,
+                            material_chunks.text AS source_text,
+                            material_chunks.metadata_json AS chunk_metadata_json
                         FROM qa_pairs
                         LEFT JOIN material_chunks ON material_chunks.id = qa_pairs.chunk_id
                         WHERE qa_pairs.workshop_id = ? AND qa_pairs.assembly_line_run_id = ?
@@ -2216,7 +2663,10 @@ class FoundryCatalogService:
                 else:
                     rows = connection.execute(
                         """
-                        SELECT qa_pairs.*, material_chunks.text AS source_text
+                        SELECT
+                            qa_pairs.*,
+                            material_chunks.text AS source_text,
+                            material_chunks.metadata_json AS chunk_metadata_json
                         FROM qa_pairs
                         LEFT JOIN material_chunks ON material_chunks.id = qa_pairs.chunk_id
                         WHERE qa_pairs.workshop_id = ?
@@ -2299,7 +2749,10 @@ class FoundryCatalogService:
             )
             row = connection.execute(
                 """
-                SELECT qa_pairs.*, material_chunks.text AS source_text
+                SELECT
+                    qa_pairs.*,
+                    material_chunks.text AS source_text,
+                    material_chunks.metadata_json AS chunk_metadata_json
                 FROM qa_pairs
                 LEFT JOIN material_chunks ON material_chunks.id = qa_pairs.chunk_id
                 WHERE qa_pairs.id = ? AND qa_pairs.workshop_id = ?
@@ -2327,6 +2780,90 @@ class FoundryCatalogService:
                 )
             )
 
+    async def preview_qa_pairs_export(
+        self,
+        workshop_id: str,
+        assembly_line_run_id: str,
+        include_drafts: bool = False,
+        include_low_quality: bool = False,
+        sample_limit: int = 5,
+    ) -> Dict[str, Any]:
+        return await self._run_query(
+            lambda: self._preview_qa_pairs_export_sync(
+                workshop_id,
+                assembly_line_run_id,
+                include_drafts,
+                include_low_quality,
+                sample_limit,
+            )
+        )
+
+    def _preview_qa_pairs_export_sync(
+        self,
+        workshop_id: str,
+        assembly_line_run_id: str,
+        include_drafts: bool,
+        include_low_quality: bool,
+        sample_limit: int,
+    ) -> Dict[str, Any]:
+        with self._connect() as connection:
+            _workshop, _run, rows, quality_gates = self._qa_export_rows(
+                connection=connection,
+                workshop_id=workshop_id,
+                assembly_line_run_id=assembly_line_run_id,
+                include_drafts=include_drafts,
+            )
+            payloads = [
+                self._qa_export_payload(
+                    row=row,
+                    quality_gate=quality_gates[index],
+                    row_index=index,
+                    workshop_id=workshop_id,
+                    include_drafts=include_drafts,
+                    include_low_quality=include_low_quality,
+                )
+                for index, row in enumerate(rows)
+            ]
+            blocked_gates = [gate for gate in quality_gates if gate["status"] != "passed"]
+            validation = self._validate_qa_jsonl_payloads(
+                payloads,
+                blocked_gates=blocked_gates,
+                include_low_quality=include_low_quality,
+            )
+            training_readiness = self._qa_training_readiness(
+                payloads=payloads,
+                validation=validation,
+                blocked_gates=blocked_gates,
+                include_drafts=include_drafts,
+                include_low_quality=include_low_quality,
+            )
+            safe_sample_limit = max(1, min(25, sample_limit))
+            return {
+                "contractVersion": "foundry.qa-jsonl.preview.v1",
+                "assemblyLineRunId": assembly_line_run_id,
+                "format": "jsonl",
+                "rowCount": len(payloads),
+                "sampleRows": payloads[:safe_sample_limit],
+                "sampleLimit": safe_sample_limit,
+                "jsonlPreview": [
+                    json.dumps(payload, ensure_ascii=False)
+                    for payload in payloads[:safe_sample_limit]
+                ],
+                "validation": validation,
+                "qualityGate": {
+                    "status": "override" if blocked_gates and include_low_quality else validation["status"],
+                    "checkedRows": len(payloads),
+                    "blockedRows": len(blocked_gates),
+                    "confidenceThreshold": QA_QUALITY_CONFIDENCE_THRESHOLD,
+                    "override": include_low_quality,
+                },
+                "trainingReadiness": training_readiness,
+                "options": {
+                    "includeDrafts": include_drafts,
+                    "includeLowQuality": include_low_quality,
+                },
+            }
+
     def _export_qa_pairs_to_material_sync(
         self,
         workshop_id: str,
@@ -2336,61 +2873,12 @@ class FoundryCatalogService:
         name: Optional[str],
     ) -> Dict[str, Any]:
         with self._connect() as connection:
-            workshop = connection.execute(
-                "SELECT id, name FROM workshops WHERE id = ?",
-                (workshop_id,),
-            ).fetchone()
-            if workshop is None:
-                raise ValueError(f"Workshop {workshop_id} was not found.")
-
-            run = connection.execute(
-                """
-                SELECT * FROM assembly_line_runs
-                WHERE id = ? AND workshop_id = ?
-                """,
-                (assembly_line_run_id, workshop_id),
-            ).fetchone()
-            if run is None:
-                raise ValueError("Assembly Line run was not found for this Workshop.")
-
-            rows = connection.execute(
-                """
-                SELECT
-                    qa_pairs.id,
-                    qa_pairs.question,
-                    qa_pairs.answer,
-                    qa_pairs.generator_model,
-                    qa_pairs.confidence,
-                    qa_pairs.generation_metadata_json,
-                    qa_pairs.review_status,
-                    qa_pairs.reviewed_at,
-                    qa_pairs.material_id,
-                    qa_pairs.chunk_id,
-                    qa_pairs.assembly_line_run_id,
-                    material_chunks.text AS source_text,
-                    materials.name AS material_name,
-                    materials.source_uri AS source_uri
-                FROM qa_pairs
-                LEFT JOIN material_chunks ON material_chunks.id = qa_pairs.chunk_id
-                LEFT JOIN materials ON materials.id = qa_pairs.material_id
-                WHERE qa_pairs.workshop_id = ?
-                    AND qa_pairs.assembly_line_run_id = ?
-                    AND (? OR qa_pairs.review_status IN ('accepted', 'edited'))
-                ORDER BY qa_pairs.material_id ASC, qa_pairs.created_at ASC
-                """,
-                (workshop_id, assembly_line_run_id, 1 if include_drafts else 0),
-            ).fetchall()
-            if not rows:
-                raise ValueError(
-                    "This Assembly Line run has no accepted QA pairs to export. Review rows first or use the draft override."
-                )
-            quality_gates = [
-                self._qa_pair_quality_gate(
-                    row,
-                    self._decode_json_object(row["generation_metadata_json"]),
-                )
-                for row in rows
-            ]
+            workshop, _run, rows, quality_gates = self._qa_export_rows(
+                connection=connection,
+                workshop_id=workshop_id,
+                assembly_line_run_id=assembly_line_run_id,
+                include_drafts=include_drafts,
+            )
             blocked_gates = [gate for gate in quality_gates if gate["status"] != "passed"]
             if blocked_gates and not include_low_quality:
                 blocked_count = len(blocked_gates)
@@ -2405,48 +2893,112 @@ class FoundryCatalogService:
             export_name = self._safe_export_name(name or f"{workshop['name']} QA Dataset")
             export_path = export_dir / f"{export_name}-{assembly_line_run_id}.jsonl"
 
+            payloads = []
             with export_path.open("w", encoding="utf-8") as export_file:
                 for index, row in enumerate(rows):
-                    quality_gate = quality_gates[index]
-                    payload = {
-                        "id": row["id"],
-                        "instruction": row["question"],
-                        "input": "",
-                        "output": row["answer"],
-                        "question": row["question"],
-                        "answer": row["answer"],
-                        "source": {
-                            "workshopId": workshop_id,
-                            "assemblyLineRunId": row["assembly_line_run_id"],
-                            "materialId": row["material_id"],
-                            "materialName": row["material_name"],
-                            "sourceUri": row["source_uri"],
-                            "chunkId": row["chunk_id"],
-                            "chunkText": row["source_text"],
-                        },
-                        "metadata": {
-                            "format": "foundry.qa.v1",
-                            "rowIndex": index,
-                            "generatorModel": row["generator_model"],
-                            "confidence": float(row["confidence"] or 0),
-                            "generation": self._decode_json_object(
-                                row["generation_metadata_json"]
-                            ),
-                            "reviewStatus": row["review_status"],
-                            "reviewedAt": row["reviewed_at"],
-                            "draftOverride": include_drafts,
-                            "lowQualityOverride": include_low_quality,
-                            "qualityGate": quality_gate,
-                        },
-                    }
+                    payload = self._qa_export_payload(
+                        row=row,
+                        quality_gate=quality_gates[index],
+                        row_index=index,
+                        workshop_id=workshop_id,
+                        include_drafts=include_drafts,
+                        include_low_quality=include_low_quality,
+                    )
+                    payloads.append(payload)
                     export_file.write(json.dumps(payload, ensure_ascii=False) + "\n")
-
-            material = self._register_material_sync(
-                workshop_id=workshop_id,
-                name=name or f"{workshop['name']} QA Dataset",
-                kind="jsonl",
-                source_uri=str(export_path.relative_to(BASE_DIR)),
+            validation = self._validate_qa_jsonl_payloads(
+                payloads,
+                blocked_gates=blocked_gates,
+                include_low_quality=include_low_quality,
             )
+            training_readiness = self._qa_training_readiness(
+                payloads=payloads,
+                validation=validation,
+                blocked_gates=blocked_gates,
+                include_drafts=include_drafts,
+                include_low_quality=include_low_quality,
+            )
+
+            export_uri = str(export_path.relative_to(BASE_DIR))
+            material_name = name or f"{workshop['name']} QA Dataset"
+            material_metadata = {
+                "export": {
+                    "contractVersion": "foundry.material.qa-export.v1",
+                    "assemblyLineRunId": assembly_line_run_id,
+                    "format": "jsonl",
+                    "rowCount": len(rows),
+                    "qualityGate": {
+                        "status": "override" if blocked_gates and include_low_quality else "passed",
+                        "checkedRows": len(rows),
+                        "blockedRows": len(blocked_gates),
+                        "confidenceThreshold": QA_QUALITY_CONFIDENCE_THRESHOLD,
+                        "override": include_low_quality,
+                    },
+                    "trainingReadiness": training_readiness,
+                    "options": {
+                        "includeDrafts": include_drafts,
+                        "includeLowQuality": include_low_quality,
+                    },
+                }
+            }
+            existing_material = connection.execute(
+                """
+                SELECT * FROM materials
+                WHERE workshop_id = ?
+                    AND kind = 'jsonl'
+                    AND source_uri = ?
+                ORDER BY datetime(created_at) ASC, id ASC
+                LIMIT 1
+                """,
+                (workshop_id, export_uri),
+            ).fetchone()
+            if existing_material is None:
+                material_id = f"mat-{uuid4().hex[:12]}"
+                connection.execute(
+                    """
+                    INSERT INTO materials (
+                        id, workshop_id, name, kind, status, source_uri, metadata_json,
+                        chunk_count, qa_pair_count
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        material_id,
+                        workshop_id,
+                        material_name,
+                        "jsonl",
+                        "qa-ready",
+                        export_uri,
+                        json.dumps(material_metadata),
+                        len(rows),
+                        len(rows),
+                    ),
+                )
+            else:
+                material_id = existing_material["id"]
+                existing_metadata = self._decode_json_object(
+                    existing_material["metadata_json"] if "metadata_json" in existing_material.keys() else None
+                )
+                existing_metadata.update(material_metadata)
+                connection.execute(
+                    """
+                    UPDATE materials
+                    SET name = ?,
+                        status = 'qa-ready',
+                        metadata_json = ?,
+                        chunk_count = ?,
+                        qa_pair_count = ?
+                    WHERE id = ? AND workshop_id = ?
+                    """,
+                    (
+                        material_name,
+                        json.dumps(existing_metadata),
+                        len(rows),
+                        len(rows),
+                        material_id,
+                        workshop_id,
+                    ),
+                )
             connection.execute(
                 """
                 UPDATE materials
@@ -2455,7 +3007,7 @@ class FoundryCatalogService:
                     qa_pair_count = ?
                 WHERE id = ? AND workshop_id = ?
                 """,
-                (len(rows), len(rows), material["id"], workshop_id),
+                (len(rows), len(rows), material_id, workshop_id),
             )
             connection.execute(
                 """
@@ -2467,12 +3019,12 @@ class FoundryCatalogService:
             )
             material_row = connection.execute(
                 "SELECT * FROM materials WHERE id = ?",
-                (material["id"],),
+                (material_id,),
             ).fetchone()
 
             return {
                 "material": self._material_from_row(material_row),
-                "exportUri": str(export_path.relative_to(BASE_DIR)),
+                "exportUri": export_uri,
                 "format": "jsonl",
                 "qaPairCount": len(rows),
                 "assemblyLineRunId": assembly_line_run_id,
@@ -2483,7 +3035,448 @@ class FoundryCatalogService:
                     "confidenceThreshold": QA_QUALITY_CONFIDENCE_THRESHOLD,
                     "override": include_low_quality,
                 },
+                "trainingReadiness": training_readiness,
             }
+
+    def _qa_export_rows(
+        self,
+        *,
+        connection: sqlite3.Connection,
+        workshop_id: str,
+        assembly_line_run_id: str,
+        include_drafts: bool,
+    ) -> tuple[sqlite3.Row, sqlite3.Row, list[sqlite3.Row], list[Dict[str, Any]]]:
+        workshop = connection.execute(
+            "SELECT id, name FROM workshops WHERE id = ?",
+            (workshop_id,),
+        ).fetchone()
+        if workshop is None:
+            raise ValueError(f"Workshop {workshop_id} was not found.")
+
+        run = connection.execute(
+            """
+            SELECT * FROM assembly_line_runs
+            WHERE id = ? AND workshop_id = ?
+            """,
+            (assembly_line_run_id, workshop_id),
+        ).fetchone()
+        if run is None:
+            raise ValueError("Assembly Line run was not found for this Workshop.")
+
+        rows = connection.execute(
+            """
+            SELECT
+                qa_pairs.id,
+                qa_pairs.question,
+                qa_pairs.answer,
+                qa_pairs.generator_model,
+                qa_pairs.confidence,
+                qa_pairs.generation_metadata_json,
+                qa_pairs.review_status,
+                qa_pairs.reviewed_at,
+                qa_pairs.material_id,
+                qa_pairs.chunk_id,
+                qa_pairs.assembly_line_run_id,
+                material_chunks.text AS source_text,
+                material_chunks.chunk_index AS chunk_index,
+                material_chunks.metadata_json AS chunk_metadata_json,
+                materials.name AS material_name,
+                materials.source_uri AS source_uri
+            FROM qa_pairs
+            LEFT JOIN material_chunks ON material_chunks.id = qa_pairs.chunk_id
+            LEFT JOIN materials ON materials.id = qa_pairs.material_id
+            WHERE qa_pairs.workshop_id = ?
+                AND qa_pairs.assembly_line_run_id = ?
+                AND (? OR qa_pairs.review_status IN ('accepted', 'edited'))
+            ORDER BY qa_pairs.material_id ASC, qa_pairs.created_at ASC
+            """,
+            (workshop_id, assembly_line_run_id, 1 if include_drafts else 0),
+        ).fetchall()
+        if not rows:
+            raise ValueError(
+                "This Assembly Line run has no accepted QA pairs to export. Review rows first or use the draft override."
+            )
+        quality_gates = [
+            self._qa_pair_quality_gate(
+                row,
+                self._decode_json_object(row["generation_metadata_json"]),
+            )
+            for row in rows
+        ]
+        return workshop, run, rows, quality_gates
+
+    def _qa_export_payload(
+        self,
+        *,
+        row: sqlite3.Row,
+        quality_gate: Dict[str, Any],
+        row_index: int,
+        workshop_id: str,
+        include_drafts: bool,
+        include_low_quality: bool,
+    ) -> Dict[str, Any]:
+        chunk_metadata = self._decode_json_object(row["chunk_metadata_json"])
+        source_reference = (
+            chunk_metadata.get("source")
+            if isinstance(chunk_metadata.get("source"), dict)
+            else {}
+        )
+        source_location = (
+            chunk_metadata.get("sourceLocation")
+            if isinstance(chunk_metadata.get("sourceLocation"), dict)
+            else {}
+        )
+        return {
+            "id": row["id"],
+            "instruction": row["question"],
+            "input": "",
+            "output": row["answer"],
+            "question": row["question"],
+            "answer": row["answer"],
+            "source": {
+                "workshopId": workshop_id,
+                "assemblyLineRunId": row["assembly_line_run_id"],
+                "materialId": row["material_id"],
+                "materialName": row["material_name"],
+                "sourceUri": row["source_uri"],
+                "sourceTitle": source_reference.get("sourceTitle") or row["material_name"],
+                "sourceLocation": source_location,
+                "chunkId": row["chunk_id"],
+                "chunkIndex": row["chunk_index"],
+                "chunkFingerprint": chunk_metadata.get("fingerprint"),
+                "chunkText": row["source_text"],
+            },
+            "metadata": {
+                "format": "foundry.qa.v1",
+                "rowIndex": row_index,
+                "generatorModel": row["generator_model"],
+                "confidence": float(row["confidence"] or 0),
+                "generation": self._decode_json_object(
+                    row["generation_metadata_json"]
+                ),
+                "sourceReference": {
+                    "chunkMetadata": chunk_metadata,
+                    "sourceLocation": source_location,
+                },
+                "reviewStatus": row["review_status"],
+                "reviewedAt": row["reviewed_at"],
+                "draftOverride": include_drafts,
+                "lowQualityOverride": include_low_quality,
+                "qualityGate": quality_gate,
+            },
+        }
+
+    def _validate_qa_jsonl_payloads(
+        self,
+        payloads: list[Dict[str, Any]],
+        *,
+        blocked_gates: list[Dict[str, Any]],
+        include_low_quality: bool,
+    ) -> Dict[str, Any]:
+        checks = []
+        warnings = []
+        errors = []
+
+        required_fields = ("instruction", "output", "source", "metadata")
+        missing_required = [
+            payload.get("id") or f"row-{index}"
+            for index, payload in enumerate(payloads)
+            if any(self._jsonl_required_value_missing(payload.get(field)) for field in required_fields)
+        ]
+        if missing_required:
+            errors.append(f"{len(missing_required)} row(s) are missing required JSONL fields.")
+        checks.append(
+            self._jsonl_validation_check(
+                "schema-fields",
+                "Required JSONL fields",
+                "fail" if missing_required else "pass",
+                "instruction, output, source, and metadata are present."
+                if not missing_required
+                else "Some rows are missing instruction, output, source, or metadata.",
+            )
+        )
+
+        missing_source = [
+            payload.get("id") or f"row-{index}"
+            for index, payload in enumerate(payloads)
+            if not payload.get("source", {}).get("materialId")
+            or not payload.get("source", {}).get("chunkId")
+            or not payload.get("source", {}).get("sourceLocation")
+        ]
+        if missing_source:
+            errors.append(f"{len(missing_source)} row(s) are missing source references.")
+        checks.append(
+            self._jsonl_validation_check(
+                "source-references",
+                "Source references",
+                "fail" if missing_source else "pass",
+                "Every row retains Material, chunk, and source location references."
+                if not missing_source
+                else "Some rows are missing Material, chunk, or source location references.",
+            )
+        )
+
+        draft_rows = [
+            payload
+            for payload in payloads
+            if payload.get("metadata", {}).get("reviewStatus") not in {"accepted", "edited"}
+        ]
+        if draft_rows:
+            warnings.append(f"{len(draft_rows)} draft/rejected row(s) are included by override.")
+        checks.append(
+            self._jsonl_validation_check(
+                "review-status",
+                "Human review",
+                "warn" if draft_rows else "pass",
+                "Only accepted or edited rows are included."
+                if not draft_rows
+                else "Draft or rejected rows are included because draft override is enabled.",
+            )
+        )
+
+        if blocked_gates and not include_low_quality:
+            errors.append(f"{len(blocked_gates)} row(s) are blocked by the QA quality gate.")
+        elif blocked_gates:
+            warnings.append(f"{len(blocked_gates)} quality-blocked row(s) are included by override.")
+        checks.append(
+            self._jsonl_validation_check(
+                "quality-gate",
+                "QA quality gate",
+                "fail" if blocked_gates and not include_low_quality else "warn" if blocked_gates else "pass",
+                "All included rows passed the QA quality gate."
+                if not blocked_gates
+                else "Quality-blocked rows are present; override is required before export.",
+            )
+        )
+
+        duplicate_instructions = self._duplicate_instruction_count(payloads)
+        if duplicate_instructions:
+            warnings.append(f"{duplicate_instructions} duplicate instruction(s) detected.")
+        checks.append(
+            self._jsonl_validation_check(
+                "duplicates",
+                "Duplicate instructions",
+                "warn" if duplicate_instructions else "pass",
+                "No duplicate instructions detected."
+                if not duplicate_instructions
+                else "Duplicate instructions should be reviewed before Forge training.",
+            )
+        )
+
+        status = "blocked" if errors else "caution" if warnings else "ready"
+        return {
+            "status": status,
+            "forgeReady": status in {"ready", "caution"} and not errors,
+            "checks": checks,
+            "warnings": warnings,
+            "errors": errors,
+            "rowCount": len(payloads),
+            "duplicateInstructionCount": duplicate_instructions,
+        }
+
+    def _qa_training_readiness(
+        self,
+        *,
+        payloads: list[Dict[str, Any]],
+        validation: Dict[str, Any],
+        blocked_gates: list[Dict[str, Any]],
+        include_drafts: bool,
+        include_low_quality: bool,
+    ) -> Dict[str, Any]:
+        row_count = len(payloads)
+        reviewed_rows = [
+            payload
+            for payload in payloads
+            if payload.get("metadata", {}).get("reviewStatus") in {"accepted", "edited"}
+        ]
+        source_referenced_rows = [
+            payload for payload in payloads if self._qa_payload_has_source_reference(payload)
+        ]
+        quality_passed_rows = row_count - len(blocked_gates)
+        fallback_rows = [
+            payload
+            for payload in payloads
+            if payload.get("metadata", {}).get("generation", {}).get("fallbackReason")
+        ]
+        deterministic_rows = [
+            payload
+            for payload in payloads
+            if payload.get("metadata", {}).get("generatorModel")
+            in {"deterministic-context-generator", "legacy-summary"}
+        ]
+        generator_models = sorted(
+            {
+                str(payload.get("metadata", {}).get("generatorModel"))
+                for payload in payloads
+                if payload.get("metadata", {}).get("generatorModel")
+            }
+        )
+        generator_modes = sorted(
+            {
+                str(payload.get("metadata", {}).get("generation", {}).get("mode"))
+                for payload in payloads
+                if payload.get("metadata", {}).get("generation", {}).get("mode")
+            }
+        )
+        prompt_versions = sorted(
+            {
+                str(payload.get("metadata", {}).get("generation", {}).get("prompt", {}).get("templateVersion"))
+                for payload in payloads
+                if payload.get("metadata", {}).get("generation", {}).get("prompt", {}).get("templateVersion")
+            }
+        )
+
+        checks = [
+            self._jsonl_validation_check(
+                "jsonl-schema",
+                "JSONL schema",
+                "pass" if validation.get("forgeReady") else "fail",
+                "Rows satisfy the Forge JSONL contract."
+                if validation.get("forgeReady")
+                else "Resolve JSONL validation errors before Forge handoff.",
+            ),
+            self._jsonl_validation_check(
+                "source-lineage",
+                "Source lineage",
+                "pass" if len(source_referenced_rows) == row_count and row_count else "fail",
+                "Every row keeps Workshop, Material, chunk, fingerprint, and source location references."
+                if len(source_referenced_rows) == row_count and row_count
+                else "Every training row must retain source references for review and troubleshooting.",
+            ),
+            self._jsonl_validation_check(
+                "human-review",
+                "Human review",
+                "pass" if len(reviewed_rows) == row_count and row_count else "warn" if include_drafts else "fail",
+                "Every row has been accepted or edited by a reviewer."
+                if len(reviewed_rows) == row_count and row_count
+                else "Draft or rejected rows are only suitable for smoke tests unless explicitly overridden.",
+            ),
+            self._jsonl_validation_check(
+                "qa-quality",
+                "QA quality",
+                "pass"
+                if not blocked_gates
+                else "warn"
+                if include_low_quality
+                else "fail",
+                "Every row passed the QA quality gate."
+                if not blocked_gates
+                else "Quality-blocked rows are included by override; review before real training.",
+            ),
+            self._jsonl_validation_check(
+                "generator-provenance",
+                "Generator provenance",
+                "warn" if deterministic_rows or fallback_rows else "pass",
+                "Rows include model-backed generator, mode, prompt, and confidence metadata."
+                if not deterministic_rows and not fallback_rows
+                else "Some rows came from deterministic or fallback generation and should be treated as smoke data.",
+            ),
+        ]
+        failed = [check for check in checks if check["status"] == "fail"]
+        warned = [check for check in checks if check["status"] == "warn"]
+        status = "blocked" if failed else "caution" if warned else "ready"
+        default_training_safe = (
+            status == "ready"
+            and not include_drafts
+            and not include_low_quality
+            and not fallback_rows
+            and not deterministic_rows
+        )
+        return {
+            "contractVersion": "foundry.qa-training-readiness.v1",
+            "status": status,
+            "forgeReady": validation.get("forgeReady") is True and not failed,
+            "defaultTrainingSafe": default_training_safe,
+            "rowCount": row_count,
+            "reviewedRows": len(reviewed_rows),
+            "sourceReferencedRows": len(source_referenced_rows),
+            "qualityPassedRows": quality_passed_rows,
+            "qualityBlockedRows": len(blocked_gates),
+            "deterministicRows": len(deterministic_rows),
+            "fallbackRows": len(fallback_rows),
+            "generatorModels": generator_models,
+            "generatorModes": generator_modes,
+            "promptVersions": prompt_versions,
+            "checks": checks,
+            "recommendation": self._qa_training_readiness_recommendation(
+                status=status,
+                default_training_safe=default_training_safe,
+                include_drafts=include_drafts,
+                include_low_quality=include_low_quality,
+                deterministic_rows=len(deterministic_rows),
+                fallback_rows=len(fallback_rows),
+            ),
+        }
+
+    def _qa_payload_has_source_reference(self, payload: Dict[str, Any]) -> bool:
+        source = payload.get("source") if isinstance(payload.get("source"), dict) else {}
+        source_location = (
+            source.get("sourceLocation")
+            if isinstance(source.get("sourceLocation"), dict)
+            else {}
+        )
+        return bool(
+            source.get("workshopId")
+            and source.get("materialId")
+            and source.get("chunkId")
+            and source.get("chunkFingerprint")
+            and source_location
+            and source_location.get("chunkIndex") is not None
+        )
+
+    def _qa_training_readiness_recommendation(
+        self,
+        *,
+        status: str,
+        default_training_safe: bool,
+        include_drafts: bool,
+        include_low_quality: bool,
+        deterministic_rows: int,
+        fallback_rows: int,
+    ) -> str:
+        if default_training_safe:
+            return "Ready for default Forge training with reviewed, grounded, model-backed QA rows."
+        if status == "blocked":
+            return "Fix failed readiness checks before creating a Forge training contract."
+        if include_drafts:
+            return "Draft rows are included; use this only for smoke tests or review rehearsals."
+        if include_low_quality:
+            return "Quality override is enabled; proceed only for tiny proofs or after human review."
+        if deterministic_rows or fallback_rows:
+            return "Deterministic or fallback rows are useful for smoke tests; use model-backed rows for training-worthy Materials."
+        return "Review caution checks before starting Forge."
+
+    def _jsonl_validation_check(
+        self,
+        check_id: str,
+        label: str,
+        status: str,
+        detail: str,
+    ) -> Dict[str, str]:
+        return {"id": check_id, "label": label, "status": status, "detail": detail}
+
+    def _jsonl_required_value_missing(self, value: Any) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return not value.strip()
+        if isinstance(value, dict):
+            return not value
+        if isinstance(value, list):
+            return not value
+        return False
+
+    def _duplicate_instruction_count(self, payloads: list[Dict[str, Any]]) -> int:
+        seen: set[str] = set()
+        duplicates = 0
+        for payload in payloads:
+            instruction = re.sub(r"\s+", " ", str(payload.get("instruction") or "").lower()).strip()
+            if not instruction:
+                continue
+            if instruction in seen:
+                duplicates += 1
+            seen.add(instruction)
+        return duplicates
 
     def _qa_pair_quality_gate(
         self,
@@ -2508,6 +3501,21 @@ class FoundryCatalogService:
             reasons.append(
                 f"confidence {confidence:.0%} is below the {QA_QUALITY_CONFIDENCE_THRESHOLD:.0%} gate"
             )
+        if not metrics.get("questionFormed"):
+            reasons.append("question is not clearly formed")
+        if metrics.get("trivialQuestion"):
+            reasons.append("question is too trivial for training-quality QA")
+        if metrics.get("answerTooShort"):
+            reasons.append("answer is too short to train from")
+        if metrics.get("hallucinationRisk"):
+            reasons.append("answer is not sufficiently grounded in the source chunk")
+        if not metrics.get("qaTypeValid", True):
+            reasons.append("QA type is missing or unsupported")
+        if (
+            float(metrics.get("questionAnswerSimilarity") or 0)
+            > metrics.get("qualityThresholds", {}).get("maxQuestionAnswerSimilarity", 0.82)
+        ):
+            reasons.append("question and answer are too similar")
         if generation_metadata.get("fallbackReason"):
             reasons.append("row was produced by a generator fallback")
         if generator_model in {"legacy-summary", "deterministic-context-generator"}:
@@ -2989,6 +3997,7 @@ class FoundryCatalogService:
                     chunk["index"],
                     chunk["text"],
                     chunk["token_count"],
+                    json.dumps(chunk.get("metadata", {})),
                 )
                 for output in material_outputs
                 for chunk in output["chunks"]
@@ -2998,9 +4007,9 @@ class FoundryCatalogService:
                     """
                     INSERT INTO material_chunks (
                         id, workshop_id, material_id, assembly_line_run_id,
-                        chunk_index, text, token_count
+                        chunk_index, text, token_count, metadata_json
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     chunk_rows,
                 )
@@ -3108,6 +4117,15 @@ class FoundryCatalogService:
                     "index": index,
                     "text": f"Estimated chunk {index + 1} for {material['name']}.",
                     "token_count": chunk_size_tokens,
+                    "metadata": self._chunk_metadata(
+                        material=material,
+                        run_id=run_id,
+                        chunk_index=index,
+                        token_start=index * chunk_size_tokens,
+                        token_count=chunk_size_tokens,
+                        text=f"Estimated chunk {index + 1} for {material['name']}.",
+                        estimated=True,
+                    ),
                 }
                 for index in range(self._estimate_chunks(material, chunk_size_tokens))
             ]
@@ -3157,11 +4175,77 @@ class FoundryCatalogService:
                     "index": index,
                     "text": " ".join(chunk_tokens),
                     "token_count": len(chunk_tokens),
+                    "metadata": self._chunk_metadata(
+                        material=material,
+                        run_id=run_id,
+                        chunk_index=index,
+                        token_start=start,
+                        token_count=len(chunk_tokens),
+                        text=" ".join(chunk_tokens),
+                    ),
                 }
             )
             if start + chunk_size_tokens >= len(tokens):
                 break
         return chunks
+
+    def _chunk_metadata(
+        self,
+        *,
+        material: sqlite3.Row,
+        run_id: str,
+        chunk_index: int,
+        token_start: int,
+        token_count: int,
+        text: str,
+        estimated: bool = False,
+    ) -> Dict[str, Any]:
+        material_metadata = self._decode_json_object(
+            material["metadata_json"] if "metadata_json" in material.keys() else None
+        )
+        scrape_metadata = (
+            material_metadata.get("scrape")
+            if isinstance(material_metadata.get("scrape"), dict)
+            else {}
+        )
+        source_title = (
+            scrape_metadata.get("title")
+            or material_metadata.get("title")
+            or material["name"]
+        )
+        original_source_uri = (
+            scrape_metadata.get("sourceUrl")
+            or material_metadata.get("originalSourceUri")
+            or material["source_uri"]
+        )
+        compact_text = " ".join(text.split())
+        return {
+            "contractVersion": "foundry.material-chunk.v1",
+            "assemblyLineRunId": run_id,
+            "fingerprint": sha256(compact_text.encode("utf-8")).hexdigest()[:16],
+            "estimated": estimated,
+            "source": {
+                "materialId": material["id"],
+                "materialName": material["name"],
+                "materialKind": material["kind"],
+                "sourceTitle": source_title,
+                "sourceUri": material["source_uri"],
+                "originalSourceUri": original_source_uri,
+            },
+            "sourceLocation": {
+                "chunkIndex": chunk_index,
+                "tokenStart": token_start,
+                "tokenEnd": token_start + token_count,
+                "tokenCount": token_count,
+                "tokenUnit": "whitespace",
+                "page": None,
+                "row": None,
+                "section": None,
+                "timestamp": None,
+                "lineRange": None,
+                "byteRange": None,
+            },
+        }
 
     def _read_text_source(self, source_uri: str) -> str:
         source_path = Path(source_uri)
@@ -3415,6 +4499,7 @@ class FoundryCatalogService:
                     qa_pair_count=remaining_count,
                     workshop_subject=workshop["subject"],
                     voice_target=workshop["voice_target"],
+                    source_metadata=chunk.get("metadata", {}),
                 )
             )
             qa_pairs.extend(generated_rows[:remaining_count])
@@ -3436,6 +4521,117 @@ class FoundryCatalogService:
         )
         normalized = "-".join(part for part in normalized.split("-") if part)
         return normalized or "qa-dataset"
+
+    def _dashboard_loop_evidence(
+        self,
+        connection: sqlite3.Connection,
+        workshop_id: str,
+    ) -> Dict[str, Any]:
+        material_rows = connection.execute(
+            """
+            SELECT kind, chunk_count
+            FROM materials
+            WHERE workshop_id = ?
+            """,
+            (workshop_id,),
+        ).fetchall()
+        assembly_rows = connection.execute(
+            """
+            SELECT status
+            FROM assembly_line_runs
+            WHERE workshop_id = ?
+            """,
+            (workshop_id,),
+        ).fetchall()
+        qa_rows = connection.execute(
+            """
+            SELECT
+                qa_pairs.*,
+                material_chunks.text AS source_text
+            FROM qa_pairs
+            LEFT JOIN material_chunks ON material_chunks.id = qa_pairs.chunk_id
+            WHERE qa_pairs.workshop_id = ?
+            """,
+            (workshop_id,),
+        ).fetchall()
+        forge_rows = connection.execute(
+            """
+            SELECT status
+            FROM forge_runs
+            WHERE workshop_id = ?
+            """,
+            (workshop_id,),
+        ).fetchall()
+        artifact_rows = connection.execute(
+            """
+            SELECT *
+            FROM artifacts
+            WHERE workshop_id = ?
+            """,
+            (workshop_id,),
+        ).fetchall()
+        trial_rows = connection.execute(
+            """
+            SELECT generation_settings_json
+            FROM trials
+            WHERE workshop_id = ?
+            """,
+            (workshop_id,),
+        ).fetchall()
+
+        blocked_qa_pair_count = 0
+        for row in qa_rows:
+            generation_metadata = self._decode_json_object(row["generation_metadata_json"])
+            quality_gate = self._qa_pair_quality_gate(row, generation_metadata)
+            if quality_gate.get("status") == "blocked":
+                blocked_qa_pair_count += 1
+
+        adapter_backed_trial_count = 0
+        for row in trial_rows:
+            generation_settings = self._decode_json_object(row["generation_settings_json"])
+            runtime_profile = generation_settings.get("runtimeProfile")
+            if isinstance(runtime_profile, dict) and runtime_profile.get("source") == "adapter-backed":
+                adapter_backed_trial_count += 1
+
+        ready_artifact_count = 0
+        for row in artifact_rows:
+            readiness = self._artifact_readiness(row)
+            if (
+                row["status"] == "ready"
+                or readiness.get("status") == "verified"
+                or readiness.get("canLoad") is True
+            ):
+                ready_artifact_count += 1
+
+        active_run_statuses = {"queued", "running"}
+        return {
+            "materialCount": len(material_rows),
+            "chunkCount": sum(int(row["chunk_count"] or 0) for row in material_rows),
+            "qaPairCount": len(qa_rows),
+            "reviewedQAPairCount": sum(
+                1 for row in qa_rows if (row["review_status"] or "draft") != "draft"
+            ),
+            "acceptedQAPairCount": sum(
+                1 for row in qa_rows if (row["review_status"] or "draft") in {"accepted", "edited"}
+            ),
+            "blockedQAPairCount": blocked_qa_pair_count,
+            "jsonlMaterialCount": sum(1 for row in material_rows if row["kind"] == "jsonl"),
+            "assemblyRunCount": len(assembly_rows),
+            "activeAssemblyRunCount": sum(
+                1 for row in assembly_rows if row["status"] in active_run_statuses
+            ),
+            "completedAssemblyRunCount": sum(
+                1 for row in assembly_rows if row["status"] == "completed"
+            ),
+            "forgeRunCount": len(forge_rows),
+            "activeForgeRunCount": sum(1 for row in forge_rows if row["status"] in active_run_statuses),
+            "completedForgeRunCount": sum(1 for row in forge_rows if row["status"] == "completed"),
+            "artifactCount": len(artifact_rows),
+            "readyArtifactCount": ready_artifact_count,
+            "trialCount": len(trial_rows),
+            "adapterBackedTrialCount": adapter_backed_trial_count,
+            "updatedAt": datetime.now(timezone.utc).isoformat(),
+        }
 
     async def get_dashboard(self) -> Dict[str, Any]:
         def query():
@@ -3475,6 +4671,7 @@ class FoundryCatalogService:
                     "currentArtifact": self._artifact_from_row(artifact),
                     "construct": self._construct_from_row(construct),
                     "forgeQueue": [self._forge_run_from_row(row) for row in forge_rows],
+                    "loopEvidence": self._dashboard_loop_evidence(connection, workshop["id"]),
                     "academyLesson": {
                         "id": "acd-attention-layers",
                         "title": "Understanding Attention Layers",
@@ -3536,6 +4733,19 @@ class FoundryCatalogService:
 
         return await self._run_query(query)
 
+    async def get_dashboard_evidence(self, workshop_id: str) -> Dict[str, Any]:
+        def query():
+            with self._connect() as connection:
+                workshop = connection.execute(
+                    "SELECT id FROM workshops WHERE id = ?",
+                    (workshop_id,),
+                ).fetchone()
+                if workshop is None:
+                    raise ValueError(f"Workshop {workshop_id} was not found.")
+                return self._dashboard_loop_evidence(connection, workshop_id)
+
+        return await self._run_query(query)
+
     def _artifact_from_row(self, row: sqlite3.Row) -> Dict[str, Any]:
         readiness = self._artifact_readiness(row)
         return {
@@ -3555,27 +4765,46 @@ class FoundryCatalogService:
 
     def _artifact_readiness(self, row: sqlite3.Row) -> Dict[str, Any]:
         adapter_path = row["adapter_path"] or ""
+        artifact_kind = "metadata-only"
+        compatibility = {
+            "status": "unknown",
+            "message": "Artifact output has not been inspected yet.",
+            "baseModel": row["base_model"] or "unknown",
+            "adapterAppliesToBase": None,
+        }
         if row["status"] == "archived":
             return {
                 "status": "blocked",
                 "canLoad": False,
                 "message": "Archived Artifacts cannot be loaded into a Construct.",
+                "artifactKind": artifact_kind,
                 "checkedPath": adapter_path,
                 "requiredFiles": [],
                 "presentFiles": [],
+                "outputFiles": [],
+                "trainerResult": None,
+                "compatibility": compatibility,
             }
         if not adapter_path:
             return {
                 "status": "blocked",
                 "canLoad": False,
                 "message": "Artifact has no adapter or checkpoint path registered.",
+                "artifactKind": artifact_kind,
                 "checkedPath": "",
                 "requiredFiles": [],
                 "presentFiles": [],
+                "outputFiles": [],
+                "trainerResult": None,
+                "compatibility": compatibility,
             }
 
         artifact_path = self._resolve_catalog_runtime_path(adapter_path)
         present_files = self._artifact_present_files(artifact_path)
+        output_files = self._artifact_output_files(artifact_path, present_files)
+        trainer_result = self._artifact_trainer_result(artifact_path)
+        artifact_kind = self._artifact_kind(present_files, trainer_result)
+        compatibility = self._artifact_compatibility(row, trainer_result, artifact_kind)
         required_files = [
             "trainer-result.json",
             "adapter_model.safetensors",
@@ -3588,37 +4817,190 @@ class FoundryCatalogService:
             return {
                 "status": "verified",
                 "canLoad": True,
-                "message": "Artifact output files are present.",
+                "message": self._artifact_verified_message(artifact_kind, compatibility),
+                "artifactKind": artifact_kind,
                 "checkedPath": str(artifact_path),
                 "requiredFiles": required_files,
                 "presentFiles": present_files,
+                "outputFiles": output_files,
+                "trainerResult": trainer_result,
+                "compatibility": compatibility,
             }
         if artifact_path.exists() and present_files:
             return {
                 "status": "caution",
                 "canLoad": True,
                 "message": "Artifact path exists, but no standard adapter marker was found.",
+                "artifactKind": artifact_kind,
                 "checkedPath": str(artifact_path),
                 "requiredFiles": required_files,
                 "presentFiles": present_files,
+                "outputFiles": output_files,
+                "trainerResult": trainer_result,
+                "compatibility": compatibility,
             }
         if adapter_path.startswith("runtime/artifacts/pending/"):
             return {
                 "status": "blocked",
                 "canLoad": False,
                 "message": "Real Forge output is missing adapter files.",
+                "artifactKind": artifact_kind,
                 "checkedPath": str(artifact_path),
                 "requiredFiles": required_files,
                 "presentFiles": present_files,
+                "outputFiles": output_files,
+                "trainerResult": trainer_result,
+                "compatibility": compatibility,
             }
         return {
             "status": "simulated",
             "canLoad": True,
             "message": "Metadata-only Artifact from a simulated Forge; Construct load will stay simulated until real adapter files exist.",
+            "artifactKind": artifact_kind,
             "checkedPath": str(artifact_path),
             "requiredFiles": required_files,
             "presentFiles": present_files,
+            "outputFiles": output_files,
+            "trainerResult": trainer_result,
+            "compatibility": {
+                **compatibility,
+                "status": "simulated",
+                "message": "No adapter compatibility check is possible for metadata-only simulated output.",
+            },
         }
+
+    def _artifact_verified_message(
+        self,
+        artifact_kind: str,
+        compatibility: Dict[str, Any],
+    ) -> str:
+        if artifact_kind == "lora-adapter":
+            return (
+                "LoRA adapter files are present. Construct can apply this adapter with PEFT "
+                "when the matching base model is loaded."
+            )
+        if artifact_kind == "full-checkpoint":
+            return "Full checkpoint markers are present for Construct runtime loading."
+        if compatibility["status"] == "mismatch":
+            return compatibility["message"]
+        return "Artifact output files are present."
+
+    def _artifact_kind(
+        self,
+        present_files: List[str],
+        trainer_result: Optional[Dict[str, Any]],
+    ) -> str:
+        file_names = {Path(file_name).name for file_name in present_files}
+        has_adapter = bool(
+            {"adapter_config.json", "adapter_model.safetensors", "adapter_model.bin"} & file_names
+        )
+        has_checkpoint = bool({"model.safetensors", "pytorch_model.bin", "model.bin"} & file_names)
+        if has_adapter or trainer_result and trainer_result.get("targetModules"):
+            return "lora-adapter"
+        if has_checkpoint or ("config.json" in file_names and not has_adapter):
+            return "full-checkpoint"
+        if present_files:
+            return "unknown-output"
+        return "metadata-only"
+
+    def _artifact_compatibility(
+        self,
+        row: sqlite3.Row,
+        trainer_result: Optional[Dict[str, Any]],
+        artifact_kind: str,
+    ) -> Dict[str, Any]:
+        expected_base_model = row["base_model"] or "unknown"
+        result_base_model = str((trainer_result or {}).get("baseModel") or "").strip()
+        if artifact_kind == "metadata-only":
+            return {
+                "status": "simulated",
+                "message": "Metadata-only Artifacts do not include adapter compatibility evidence.",
+                "baseModel": expected_base_model,
+                "trainedBaseModel": result_base_model or None,
+                "adapterAppliesToBase": None,
+            }
+        if not result_base_model:
+            return {
+                "status": "unknown",
+                "message": "Trainer result does not include a base model reference.",
+                "baseModel": expected_base_model,
+                "trainedBaseModel": None,
+                "adapterAppliesToBase": None,
+            }
+        compatible = result_base_model == expected_base_model or result_base_model.endswith(
+            f"/{self._artifact_base_model_slug(expected_base_model)}"
+        )
+        return {
+            "status": "matched" if compatible else "mismatch",
+            "message": (
+                "Trainer result base model matches the Artifact base model."
+                if compatible
+                else "Trainer result base model differs from the Artifact base model."
+            ),
+            "baseModel": expected_base_model,
+            "trainedBaseModel": result_base_model,
+            "adapterAppliesToBase": compatible,
+        }
+
+    def _artifact_trainer_result(self, artifact_path: Path) -> Optional[Dict[str, Any]]:
+        result_path = artifact_path / "trainer-result.json"
+        if not result_path.exists():
+            return None
+        try:
+            raw_result = json.loads(result_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        if not isinstance(raw_result, dict):
+            return None
+        return {
+            "adapterPath": raw_result.get("adapterPath"),
+            "baseModel": raw_result.get("baseModel"),
+            "device": raw_result.get("device"),
+            "loss": raw_result.get("loss"),
+            "rowsUsed": raw_result.get("rowsUsed"),
+            "datasetRows": raw_result.get("datasetRows"),
+            "targetModules": raw_result.get("targetModules") or [],
+            "createdAt": raw_result.get("createdAt"),
+        }
+
+    def _artifact_base_model_slug(self, base_model: str) -> str:
+        return re.sub(r"[^A-Za-z0-9_.-]+", "-", base_model.strip()).strip("-")
+
+    def _artifact_output_files(
+        self,
+        artifact_path: Path,
+        present_files: List[str],
+    ) -> List[Dict[str, Any]]:
+        return [
+            {
+                "path": file_name,
+                "role": self._artifact_file_role(file_name),
+                "sizeBytes": self._artifact_file_size(artifact_path / file_name),
+            }
+            for file_name in present_files
+        ]
+
+    def _artifact_file_role(self, file_name: str) -> str:
+        basename = Path(file_name).name
+        if basename == "trainer-result.json":
+            return "trainer-summary"
+        if basename == "adapter_config.json":
+            return "adapter-config"
+        if basename in {"adapter_model.safetensors", "adapter_model.bin"}:
+            return "adapter-weights"
+        if basename == "config.json":
+            return "model-config"
+        if basename in {"model.safetensors", "pytorch_model.bin", "model.bin"}:
+            return "checkpoint-weights"
+        if basename.startswith("tokenizer") or basename in {"vocab.json", "merges.txt", "special_tokens_map.json"}:
+            return "tokenizer"
+        return "supporting-file"
+
+    def _artifact_file_size(self, path: Path) -> int:
+        try:
+            return path.stat().st_size if path.exists() and path.is_file() else 0
+        except OSError:
+            return 0
 
     def _artifact_present_files(self, path: Path) -> List[str]:
         if not path.exists():
@@ -3652,6 +5034,7 @@ class FoundryCatalogService:
         }
 
     def _trial_from_row(self, row: sqlite3.Row) -> Dict[str, Any]:
+        generation_settings = json.loads(row["generation_settings_json"])
         return {
             "id": row["id"],
             "workshopId": row["workshop_id"],
@@ -3663,8 +5046,49 @@ class FoundryCatalogService:
             "verdict": row["verdict"],
             "runtimeMode": row["runtime_mode"],
             "tokenCount": row["token_count"],
-            "generationSettings": json.loads(row["generation_settings_json"]),
+            "generationSettings": generation_settings,
+            "runtimeProfile": generation_settings.get("runtimeProfile") or {},
             "createdAt": row["created_at"],
+        }
+
+    def _trial_runtime_profile(
+        self,
+        *,
+        artifact: sqlite3.Row,
+        construct: sqlite3.Row,
+        runtime_mode: str,
+        generation_settings: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        readiness = self._artifact_readiness(artifact)
+        runtime_payload = generation_settings.get("runtime")
+        loaded_model = (
+            runtime_payload.get("diagnostics", {}).get("loadedModel", {})
+            if isinstance(runtime_payload, dict)
+            else {}
+        )
+        artifact_kind = readiness.get("artifactKind") or "metadata-only"
+        adapter_path = artifact["adapter_path"] if artifact_kind == "lora-adapter" else None
+        adapter_loaded = bool(loaded_model.get("adapterLoaded")) or (
+            runtime_mode == "transformers" and artifact_kind == "lora-adapter"
+        )
+        if runtime_mode == "simulated" or readiness.get("status") == "simulated":
+            source = "simulated"
+        elif adapter_loaded:
+            source = "adapter-backed"
+        else:
+            source = "base-only"
+        return {
+            "source": source,
+            "runtimeMode": runtime_mode,
+            "baseModel": artifact["base_model"] or loaded_model.get("baseModelId") or "unknown",
+            "modelId": loaded_model.get("modelId") or generation_settings.get("modelId"),
+            "artifactId": artifact["id"],
+            "artifactKind": artifact_kind,
+            "adapterPath": adapter_path,
+            "adapterLoaded": adapter_loaded,
+            "constructId": construct["id"],
+            "readinessStatus": readiness.get("status"),
+            "device": loaded_model.get("device"),
         }
 
     def _refresh_artifact_trial_score(
@@ -3679,6 +5103,7 @@ class FoundryCatalogService:
                 SUM(CASE WHEN verdict = 'pass' THEN 1 ELSE 0 END) AS pass_count
             FROM trials
             WHERE artifact_id = ?
+                AND verdict IN ('pass', 'needs-work', 'fail')
             """,
             (artifact_id,),
         ).fetchone()
