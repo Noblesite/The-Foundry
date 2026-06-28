@@ -680,6 +680,18 @@ export interface ConstructMessage {
   tokenCount?: number;
 }
 
+export interface ConstructPromptChain {
+  contractVersion: "foundry.construct.prompt-chain.v1";
+  systemPrompt: string;
+  systemPromptPresent: boolean;
+  systemPromptPreview: string;
+  userPrompt: string;
+  userPromptPreview: string;
+  includeLibraryContext: boolean;
+  instructionOrder: string[];
+  createdAt: string;
+}
+
 export interface ConstructChatResponse {
   conversationId: string;
   construct: Construct;
@@ -691,6 +703,7 @@ export interface ConstructChatResponse {
     maxNewTokens: number;
     temperature: number;
     includeLibraryContext: boolean;
+    promptChain?: ConstructPromptChain;
   };
 }
 

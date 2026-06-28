@@ -852,10 +852,12 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     assert construct["streamingEnabled"] is True
 
     prompt = "What should a new engineer learn from this Forge?"
+    system_prompt = "Answer as a careful Foundry mentor and cite uncertainty."
     chat = await catalog.chat_with_construct(
         construct_id=construct["id"],
         conversation_id="mvp-rehearsal",
         message=prompt,
+        system_prompt=system_prompt,
         include_library_context=False,
         max_new_tokens=64,
         temperature=0.2,
@@ -866,9 +868,16 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     assert artifact["name"] in chat["message"]["text"]
     assert chat["generation"]["maxNewTokens"] == 64
     assert chat["generation"]["temperature"] == 0.2
+    assert chat["generation"]["promptChain"]["contractVersion"] == "foundry.construct.prompt-chain.v1"
+    assert chat["generation"]["promptChain"]["systemPrompt"] == system_prompt
+    assert chat["generation"]["promptChain"]["userPrompt"] == prompt
     assert chat["trial"]["messageId"] == chat["message"]["id"]
     assert chat["trial"]["verdict"] == "needs-review"
     assert chat["trial"]["generationSettings"]["autoTrial"]["reviewRequired"] is True
+    assert (
+        chat["trial"]["generationSettings"]["promptChain"]["contractVersion"]
+        == "foundry.construct.prompt-chain.v1"
+    )
     unreviewed_trials = await catalog.list_trials(workshop["id"])
     assert len(unreviewed_trials) == 1
     assert unreviewed_trials[0]["id"] == chat["trial"]["id"]

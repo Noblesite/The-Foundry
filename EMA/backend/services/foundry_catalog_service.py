@@ -2356,6 +2356,11 @@ class FoundryCatalogService:
                 "maxNewTokens": max_new_tokens or construct["max_new_tokens"],
                 "temperature": temperature if temperature is not None else construct["temperature"],
                 "includeLibraryContext": include_library_context,
+                "promptChain": self._construct_prompt_chain(
+                    message=message,
+                    system_prompt=system_prompt,
+                    include_library_context=include_library_context,
+                ),
             }
             response_text = self._build_construct_response(
                 artifact=artifact,
@@ -2538,6 +2543,25 @@ class FoundryCatalogService:
             f"{generation_settings['contextWindow']}.{prompt_line} "
             "This is the Construct runtime contract; the next engine swap can stream real model tokens here."
         )
+
+    def _construct_prompt_chain(
+        self,
+        message: str,
+        system_prompt: Optional[str],
+        include_library_context: bool,
+    ) -> Dict[str, Any]:
+        normalized_system_prompt = system_prompt.strip() if system_prompt else ""
+        return {
+            "contractVersion": "foundry.construct.prompt-chain.v1",
+            "systemPrompt": normalized_system_prompt,
+            "systemPromptPresent": bool(normalized_system_prompt),
+            "systemPromptPreview": normalized_system_prompt[:240],
+            "userPrompt": message,
+            "userPromptPreview": message[:240],
+            "includeLibraryContext": include_library_context,
+            "instructionOrder": ["system", "user", "library-context", "generation-settings"],
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        }
 
     async def register_material(
         self,

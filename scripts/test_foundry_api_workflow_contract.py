@@ -982,12 +982,14 @@ def run_api_workflow(tmp_path: Path) -> None:
             assert construct["artifactId"] == artifact["id"]
 
             prompt = "What should a new engineer learn from this Forge?"
+            system_prompt = "Answer as a careful Foundry mentor and cite uncertainty."
             chat = assert_response(
                 client.post(
                     f"/api/v1/constructs/{construct['id']}/chat",
                     json={
                         "conversationId": "mvp-api-rehearsal",
                         "message": prompt,
+                        "systemPrompt": system_prompt,
                         "includeLibraryContext": False,
                         "maxNewTokens": 64,
                         "temperature": 0.2,
@@ -999,6 +1001,12 @@ def run_api_workflow(tmp_path: Path) -> None:
             assert chat["trial"]["messageId"] == chat["message"]["id"]
             assert chat["trial"]["verdict"] == "needs-review"
             assert chat["trial"]["generationSettings"]["autoTrial"]["reviewRequired"] is True
+            assert (
+                chat["generation"]["promptChain"]["contractVersion"]
+                == "foundry.construct.prompt-chain.v1"
+            )
+            assert chat["generation"]["promptChain"]["systemPrompt"] == system_prompt
+            assert chat["generation"]["promptChain"]["userPrompt"] == prompt
             unreviewed_trials = assert_response(
                 client.get(f"/api/v1/workshops/{workshop['id']}/trials")
             )

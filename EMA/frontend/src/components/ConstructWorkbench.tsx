@@ -11,6 +11,7 @@ import {
   Construct,
   ConstructMessage,
   ConstructModelHandoff,
+  ConstructPromptChain,
   ConstructRuntime,
   ConstructRuntimeEvent,
   ConstructRuntimePreflightResult,
@@ -64,6 +65,8 @@ interface ResponseInspection {
   maxNewTokens: number;
   temperature: number;
   includeLibraryContext: boolean;
+  systemPrompt: string;
+  promptChain?: ConstructPromptChain;
   artifactId: string;
   constructId: string;
 }
@@ -86,6 +89,7 @@ interface RuntimeSmokeResult {
 const LOCAL_SMOKE_MODEL_ID = "sshleifer/tiny-gpt2";
 const LOCAL_SMOKE_PROMPT =
   "Runtime smoke test: reply with one short sentence from The Foundry.";
+const PROMPT_CHAIN_CONTRACT_VERSION = "foundry.construct.prompt-chain.v1";
 const SMOKE_RESULT_STORAGE_PREFIX = "foundry.construct.smokeResult";
 const RUNTIME_VALIDATION_PAGE_SIZE = 5;
 const RUNTIME_HISTORY_FILTERS: Array<{ id: RuntimeHistoryFilter; label: string }> = [
@@ -207,6 +211,28 @@ const findSmokeModelArchiveEntry = (archiveEntries: ModelArchiveEntry[]) =>
 
 const isModelArchiveEntryCached = (entry?: ModelArchiveEntry) =>
   Boolean(entry?.localPath && (entry.status === "cached" || entry.status === "ready"));
+
+const buildDefaultSystemPrompt = (construct: Construct, artifact: Artifact) =>
+  `You are ${construct.name}, a Foundry Construct testing Artifact ${artifact.name}. Stay grounded in the Workshop Material, name uncertainty clearly, and keep replies useful for Trial review.`;
+
+const createPromptChain = (
+  systemPrompt: string,
+  userPrompt: string,
+  includeLibraryContext: boolean
+): ConstructPromptChain => {
+  const normalizedSystemPrompt = systemPrompt.trim();
+  return {
+    contractVersion: PROMPT_CHAIN_CONTRACT_VERSION,
+    systemPrompt: normalizedSystemPrompt,
+    systemPromptPresent: normalizedSystemPrompt.length > 0,
+    systemPromptPreview: normalizedSystemPrompt.slice(0, 240),
+    userPrompt,
+    userPromptPreview: userPrompt.slice(0, 240),
+    includeLibraryContext,
+    instructionOrder: ["system", "user", "library-context", "generation-settings"],
+    createdAt: new Date().toISOString(),
+  };
+};
 
 const mergeRuntimeTimelineEvents = (
   current: ConstructRuntimeEvent[],
@@ -346,6 +372,13 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const constructRuntimeFocusRef = useRef<HTMLDivElement | null>(null);
   const [activeConstruct, setActiveConstruct] = useState(construct);
   const [activeArtifact, setActiveArtifact] = useState(artifact);
+  const activePromptDefault = useMemo(
+    () => buildDefaultSystemPrompt(activeConstruct, activeArtifact),
+    [activeArtifact, activeConstruct]
+  );
+  const previousPromptDefault = useRef(activePromptDefault);
+  const [systemPrompt, setSystemPrompt] = useState(activePromptDefault);
+  const [promptWorkbenchOpen, setPromptWorkbenchOpen] = useState(true);
   const [messages, setMessages] = useState<ConstructMessage[]>([
     {
       id: "welcome",
@@ -426,6 +459,15 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [isSavingTrial, setIsSavingTrial] = useState(false);
   const [trialError, setTrialError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSystemPrompt((currentPrompt) =>
+      currentPrompt.trim() && currentPrompt !== previousPromptDefault.current
+        ? currentPrompt
+        : activePromptDefault
+    );
+    previousPromptDefault.current = activePromptDefault;
+  }, [activePromptDefault]);
 
   const refreshRuntimeTimeline = useCallback(async () => {
     try {
@@ -1289,6 +1331,11 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       }
       const assistantMessageId = `assistant-${Date.now()}`;
       let assistantText = "";
+      const activePromptChain = createPromptChain(
+        systemPrompt,
+        messageText,
+        includeLibraryContext
+      );
       setMessages((current) => [
         ...current,
         {
@@ -1300,6 +1347,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       await repository.streamConstructChat(activeConstruct.id, {
         conversationId,
         message: messageText,
+        systemPrompt: activePromptChain.systemPrompt || undefined,
         includeLibraryContext,
         maxNewTokens: settings.maxNewTokens,
         temperature: settings.temperature,
@@ -1354,6 +1402,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
             maxNewTokens: event.generation.maxNewTokens,
             temperature: event.generation.temperature,
             includeLibraryContext: event.generation.includeLibraryContext,
+            systemPrompt: activePromptChain.systemPrompt,
+            promptChain: event.generation.promptChain || activePromptChain,
             artifactId: event.artifact.id,
             constructId: event.construct.id,
           });
@@ -1562,6 +1612,14 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           maxNewTokens: lastInspection.maxNewTokens,
           temperature: lastInspection.temperature,
           includeLibraryContext: lastInspection.includeLibraryContext,
+          systemPrompt: lastInspection.systemPrompt,
+          promptChain:
+            lastInspection.promptChain ||
+            createPromptChain(
+              lastInspection.systemPrompt,
+              lastInspection.prompt,
+              lastInspection.includeLibraryContext
+            ),
           runtimeStatus: lastInspection.runtimeStatus,
           modelId: lastInspection.modelId,
           device: lastInspection.device,
@@ -2518,6 +2576,61 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
               </label>
             </div>
 
+            <section className="prompt-workbench panel-glass" aria-labelledby="prompt-workbench-title">
+              <div className="prompt-workbench-header">
+                <div>
+                  <p className="panel-kicker">Prompt Chain</p>
+                  <h3 id="prompt-workbench-title">System and user prompts</h3>
+                </div>
+                <button
+                  className="button-secondary button-compact"
+                  onClick={() => setPromptWorkbenchOpen((isOpen) => !isOpen)}
+                  type="button"
+                >
+                  <i
+                    className={`fas ${promptWorkbenchOpen ? "fa-chevron-up" : "fa-chevron-down"}`}
+                    aria-hidden="true"
+                  />
+                  {promptWorkbenchOpen ? "Hide" : "Edit"}
+                </button>
+              </div>
+              {promptWorkbenchOpen && (
+                <div className="prompt-workbench-body">
+                  <label className="prompt-field" htmlFor="construct-system-prompt">
+                    <span>System Prompt</span>
+                    <textarea
+                      id="construct-system-prompt"
+                      onChange={(event) => setSystemPrompt(event.target.value)}
+                      rows={4}
+                      value={systemPrompt}
+                    />
+                  </label>
+                  <div className="prompt-lesson-grid">
+                    <div>
+                      <strong>System</strong>
+                      <span>Sets durable behavior, boundaries, and tone before the turn begins.</span>
+                    </div>
+                    <div>
+                      <strong>User</strong>
+                      <span>Holds the current request that the Construct answers and Trials record.</span>
+                    </div>
+                    <div>
+                      <strong>Library</strong>
+                      <span>{includeLibraryContext ? "Context will be included." : "Context is off for this turn."}</span>
+                    </div>
+                  </div>
+                  <button
+                    className="button-secondary button-compact"
+                    onClick={() => setSystemPrompt(activePromptDefault)}
+                    type="button"
+                  >
+                    <i className="fas fa-rotate-left" aria-hidden="true" />
+                    Reset System Prompt
+                  </button>
+                </div>
+              )}
+            </section>
+
             <div className="prompt-presets" aria-label="Construct test prompts">
               {promptPresets.map((preset) => (
                 <button
@@ -2551,14 +2664,18 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
             </div>
 
             <div className="composer">
-              <input
-                className="composer-input"
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => event.key === "Enter" && void sendMessage()}
-                placeholder={`Test ${activeArtifact.name}...`}
-                type="text"
-                value={input}
-              />
+              <label className="user-prompt-field" htmlFor="construct-user-prompt">
+                <span>User Prompt</span>
+                <input
+                  id="construct-user-prompt"
+                  className="composer-input"
+                  onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={(event) => event.key === "Enter" && void sendMessage()}
+                  placeholder={`Test ${activeArtifact.name}...`}
+                  type="text"
+                  value={input}
+                />
+              </label>
               <button
                 aria-label="Send message"
                 className="send-button"
@@ -3047,6 +3164,21 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                   <strong>{lastInspection.maxNewTokens}</strong>
                   <span>Temperature</span>
                   <strong>{lastInspection.temperature}</strong>
+                  <span>Prompt chain</span>
+                  <strong>
+                    {lastInspection.promptChain?.instructionOrder.join(" -> ") ||
+                      "system -> user -> settings"}
+                  </strong>
+                  <span>System prompt</span>
+                  <strong>
+                    {lastInspection.promptChain?.systemPromptPresent
+                      ? lastInspection.promptChain.systemPromptPreview
+                      : "not set"}
+                  </strong>
+                  <span>User prompt</span>
+                  <strong>
+                    {lastInspection.promptChain?.userPromptPreview || lastInspection.prompt}
+                  </strong>
                 </div>
                 <div className="trial-actions" aria-label="Trial verdict">
                   {(["pass", "needs-work", "fail"] as ReviewedTrialVerdict[]).map((verdict) => (
@@ -3081,6 +3213,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           <LearningCard
             title="What is inference?"
             body="Inference is the moment the trained model turns your prompt, system instructions, retrieved context, and generation settings into new tokens."
+          />
+          <LearningCard
+            title="System vs user prompt"
+            body="The system prompt sets the Construct's standing instructions. The user prompt is the current test request. Trials save both so prompt changes can be compared later."
           />
           <LearningCard
             title="Runtime loading is the proof point"

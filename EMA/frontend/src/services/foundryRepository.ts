@@ -2664,12 +2664,25 @@ export const mockFoundryRepository: FoundryRepository = {
     }
     const artifact = mockDashboardSummary.currentArtifact;
     const messageId = `msg-${Date.now()}`;
+    const normalizedSystemPrompt = request.systemPrompt?.trim() || "";
+    const promptChain = {
+      contractVersion: "foundry.construct.prompt-chain.v1" as const,
+      systemPrompt: normalizedSystemPrompt,
+      systemPromptPresent: normalizedSystemPrompt.length > 0,
+      systemPromptPreview: normalizedSystemPrompt.slice(0, 240),
+      userPrompt: request.message,
+      userPromptPreview: request.message.slice(0, 240),
+      includeLibraryContext: request.includeLibraryContext,
+      instructionOrder: ["system", "user", "library-context", "generation-settings"],
+      createdAt: new Date().toISOString(),
+    };
     const responseText = `Simulated response from ${mockConstruct.name} using ${artifact.name} ${artifact.version}. You asked: "${request.message}". Generation settings are max_new_tokens=${request.maxNewTokens ?? mockConstruct.maxNewTokens}, temperature=${request.temperature ?? mockConstruct.temperature}, context_window=${mockConstruct.contextWindow}.`;
     const generation = {
       contextWindow: mockConstruct.contextWindow,
       maxNewTokens: request.maxNewTokens ?? mockConstruct.maxNewTokens,
       temperature: request.temperature ?? mockConstruct.temperature,
       includeLibraryContext: request.includeLibraryContext,
+      promptChain,
     };
     const trial = upsertMockTrialForMessage(artifact.workshopId, {
       artifact,
