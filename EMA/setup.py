@@ -24,6 +24,7 @@ setup(
     name="ema",
     version="1.0.0",
     packages=find_packages(),
+    license="AGPL-3.0-or-later",
     include_package_data=True,
     install_requires=load_requirements(),
     entry_points={
@@ -36,7 +37,7 @@ setup(
     },
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
+        "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
         "Operating System :: OS Independent",
     ],
    

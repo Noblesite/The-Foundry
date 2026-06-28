@@ -206,6 +206,7 @@ The Foundry uses domain terms that support the learn-by-building experience:
 - [First-Run Setup](docs/first_run_setup.md)
 - [MVP Demo Script](docs/mvp_demo_script.md)
 - [Known Limitations](docs/known_limitations.md)
+- [License Policy](docs/license_policy.md)
 - [Public Release Checklist](docs/public_release_checklist.md)
 - [Release Notes: v0.1.0-mvp](docs/release_notes_v0.1.0-mvp.md)
 - [Catalog Persistence](docs/the_foundry_catalog_persistence.md)
@@ -217,4 +218,15 @@ The Foundry uses domain terms that support the learn-by-building experience:
 
 ## License
 
-The Foundry is released under the MIT License. See [LICENSE](LICENSE).
+The Foundry is released under the GNU Affero General Public License v3.0 or
+later (`AGPL-3.0-or-later`). See [LICENSE](LICENSE).
+
+The intent is simple: The Foundry should remain open for learners, builders,
+and self-hosters. If someone modifies the platform and offers it as a hosted
+service, the AGPL requires them to make the corresponding source code available
+to the users of that service. Commercial use is allowed only within those
+source-sharing obligations.
+
+Earlier public snapshots that were received under MIT remain under the license
+terms that applied when those copies were received. New development from this
+point forward is AGPL-licensed.

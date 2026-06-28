@@ -82,6 +82,7 @@ Before merge, confirm these docs tell the same story:
 - `docs/release_notes_v0.1.0-mvp.md`
 - `docs/mvp_missing_features.md`
 - `docs/roadmap.md`
+- `docs/license_policy.md`
 
 The public claim audit should verify:
 
@@ -94,6 +95,7 @@ The public claim audit should verify:
 - Local runtime outputs stay under ignored `EMA/runtime/` paths.
 - Old E.M.A. module names are either intentionally documented or identified as
   cleanup candidates.
+- License references and package metadata use `AGPL-3.0-or-later`.
 
 ## UI Review
 

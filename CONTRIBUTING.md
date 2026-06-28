@@ -51,6 +51,8 @@ make dev-frontend
 - Keep user-facing language in The Foundry domain unless touching legacy code.
 - Keep backend contracts under `/api/v1` stable unless the change is explicitly
   a contract migration.
+- Contributions are accepted under `AGPL-3.0-or-later` so the project and
+  hosted modified versions remain source-available to their users.
 - Keep model downloads, generated datasets, runtime SQLite files, vector stores,
   and checkpoints out of git.
 - Prefer simulator or adapter boundaries for expensive AI workflows.
