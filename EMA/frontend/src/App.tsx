@@ -756,6 +756,17 @@ const App: React.FC = () => {
     setStatusToast(`${job.repoId} added to Archive Jobs.`);
   };
 
+  const handleReturnToMaterialsWithModel = (handoff: ArchiveModelHandoff) => {
+    setMaterialsArchiveHandoff({
+      ...handoff,
+      returnTo: "materials",
+      requestedAt: Date.now(),
+    });
+    setArchiveHandoff(null);
+    setActiveSection("materials");
+    setStatusToast(`${handoff.modelId} returned to Materials for QA generator preflight.`);
+  };
+
   const handleBaseModelSelected = (modelId: string) => {
     persistSettings({
       ...settings,
@@ -977,6 +988,7 @@ const App: React.FC = () => {
           onModelDownloadJobStarted={handleArchiveDownloadJobStarted}
           onBaseModelSelected={handleBaseModelSelected}
           onOpenConstructWithModel={handleOpenConstructWithModel}
+          onReturnToMaterialsWithModel={handleReturnToMaterialsWithModel}
           onOpenAcademy={() =>
             handleOpenAcademyAction(ACADEMY_ACTION_IDS.artifactsOpenPromotion)
           }

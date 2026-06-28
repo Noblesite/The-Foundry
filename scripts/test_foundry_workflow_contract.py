@@ -17,6 +17,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from EMA.backend.services import forge_training_service as forge_module
 from EMA.backend.services import foundry_catalog_service as catalog_module
+from EMA.backend.services import qa_generation_service as qa_module
 from EMA.backend.services.forge_training_service import ForgeTrainingService
 from EMA.backend.services.foundry_catalog_service import FoundryCatalogService
 
@@ -428,6 +429,7 @@ async def exercise_workflow(tmp_path: Path) -> None:
     catalog_module.DEFAULT_SOURCE_DIR = runtime_root / "sources"
     catalog_module.DEFAULT_EXPORT_DIR = runtime_root / "exports"
     forge_module.DEFAULT_FORGE_RUNTIME_DIR = runtime_root / "forges"
+    qa_module.DEFAULT_QA_MODEL_ARCHIVE_DIR = runtime_root / "models" / "huggingface"
 
     try:
         await _exercise_workflow(tmp_path)
@@ -473,6 +475,22 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     assert blocked_preflight["selection"]["selectedTier"] == 0
     assert any(tier["tier"] == 1 for tier in blocked_preflight["selection"]["tiers"])
     assert any(check["id"] == "archive-cache" for check in blocked_preflight["checks"])
+    revisioned_model_id = "hf-internal-testing/tiny-random-GPT2LMHeadModel"
+    revisioned_model_dir = (
+        qa_module.DEFAULT_QA_MODEL_ARCHIVE_DIR
+        / f"{catalog.qa_generator._safe_archive_slug(revisioned_model_id)}-af80da83"
+    )
+    revisioned_model_dir.mkdir(parents=True, exist_ok=True)
+    (revisioned_model_dir / "config.json").write_text("{}", encoding="utf-8")
+    revisioned_preflight = catalog.qa_generator.preflight(
+        mode="transformers",
+        model_id=revisioned_model_id,
+        max_new_tokens=96,
+        temperature=0.0,
+    )
+    assert revisioned_preflight["model"]["cached"] is True
+    assert revisioned_preflight["model"]["path"] == str(revisioned_model_dir)
+    assert "pinned revision" in revisioned_preflight["model"]["message"]
     qa_smoke = catalog.qa_generator.smoke_proof()
     assert qa_smoke["contractVersion"] == "foundry.qa-generator.smoke-proof.v1"
     assert qa_smoke["rows"][0]["generationMetadata"]["contractVersion"] == "foundry.qa-generation.v1"

@@ -44,6 +44,10 @@ complexity.
 - Support streaming token output from loaded local models.
 - Add prompt presets, response inspection, and persisted Trial verdicts. Done
   for the first Construct testing bench and Trial persistence slices.
+- Add editable System Prompt and User Prompt surfaces with Academy guidance that
+  explains what each prompt does, why the system prompt exists, how user
+  instructions interact with it, and how prompt changes affect Construct
+  behavior.
 - Export reviewed Trials as JSONL Materials so they can feed Forge training or
   evaluation runs. Done for the first Trial review/export slice.
 - Add a Forge purpose switch for training versus evaluation contracts. Done
@@ -73,6 +77,9 @@ complexity.
   how token relationships move through query, key, and value projections.
 - Add LoRA/QLoRA explainers tied to actual Forge configuration.
 - Add training metric explainers for loss, epochs, learning rate, and evals.
+- Add prompt literacy lessons that teach system prompts, user prompts, role
+  boundaries, instruction hierarchy, prompt injection risks, and how prompt
+  design differs from fine-tuning or RAG.
 
 ## Phase 7: Production Readiness
 

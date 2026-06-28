@@ -1057,6 +1057,15 @@ class QAGenerationService:
                 "sizeOnDiskBytes": self._directory_size(archive_path),
                 "message": "Generator model is cached in the local Archive.",
             }
+        revisioned_archive_path = self._find_revisioned_archive_path(model_id)
+        if revisioned_archive_path:
+            return {
+                "modelId": model_id,
+                "path": str(revisioned_archive_path),
+                "cached": True,
+                "sizeOnDiskBytes": self._directory_size(revisioned_archive_path),
+                "message": "Generator model is cached in the local Archive with a pinned revision.",
+            }
         return {
             "modelId": model_id,
             "path": None,
@@ -1064,6 +1073,20 @@ class QAGenerationService:
             "sizeOnDiskBytes": 0,
             "message": "Generator model is not cached locally; use Archive search/download first.",
         }
+
+    def _find_revisioned_archive_path(self, model_id: str) -> Path | None:
+        archive_root = DEFAULT_QA_MODEL_ARCHIVE_DIR
+        if not archive_root.exists():
+            return None
+        slug_prefix = f"{self._safe_archive_slug(model_id)}-"
+        candidates = [
+            path
+            for path in archive_root.iterdir()
+            if path.is_dir() and path.name.startswith(slug_prefix)
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda path: path.stat().st_mtime)
 
     def _safe_archive_slug(self, model_id: str) -> str:
         return re.sub(r"[^A-Za-z0-9._-]+", "-", model_id.strip()).strip("-") or "model"

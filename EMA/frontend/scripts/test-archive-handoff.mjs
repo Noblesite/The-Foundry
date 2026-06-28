@@ -8,6 +8,8 @@ const artifacts = await readFile(
   new URL("../src/components/ArtifactsWorkbench.tsx", import.meta.url),
   "utf8"
 );
+const app = await readFile(new URL("../src/App.tsx", import.meta.url), "utf8");
+const roadmap = await readFile(new URL("../../../docs/roadmap.md", import.meta.url), "utf8");
 
 const assertIncludes = (source, expected, message) => {
   if (!source.includes(expected)) {
@@ -52,6 +54,21 @@ assertIncludes(
   materials,
   "onOpenArchiveModel(qaGeneratorArchiveModelId, \"QA Generator\")",
   "Materials routes the blocked QA generator model to Archive"
+);
+assertIncludes(
+  materials,
+  "const canRunModelBackedQAProof = Boolean(",
+  "Materials gates model-backed QA proof on a configured local Transformers runtime"
+);
+assertIncludes(
+  materials,
+  "disabled={isRunningGeneratorQualityProof || !canRunModelBackedQAProof}",
+  "Materials disables model-backed proof until the selected cached model is configured"
+);
+assertIncludes(
+  materials,
+  "Configure + preflight a cached local model before running proof.",
+  "Materials explains why model-backed proof is blocked"
 );
 assertIncludes(
   materials,
@@ -109,4 +126,39 @@ assertIncludes(
   artifacts,
   "onModelDownloadJobStarted?.(job);",
   "Archive reports queued download jobs to App for automatic return routing"
+);
+assertIncludes(
+  artifacts,
+  "const canReturnCachedModelToMaterials = Boolean(",
+  "Archive exposes an explicit return path when a QA generator model is cached"
+);
+assertIncludes(
+  artifacts,
+  "data-testid=\"archive-return-to-materials\"",
+  "Archive return to Materials control has a stable test id"
+);
+assertIncludes(
+  artifacts,
+  "onReturnToMaterialsWithModel?.({",
+  "Archive can return a cached QA generator model to Materials without Construct handoff"
+);
+assertIncludes(
+  app,
+  "const handleReturnToMaterialsWithModel = (handoff: ArchiveModelHandoff) =>",
+  "App owns the Archive-to-Materials return handoff"
+);
+assertIncludes(
+  app,
+  "onReturnToMaterialsWithModel={handleReturnToMaterialsWithModel}",
+  "App wires the Archive return handler into Artifacts"
+);
+assertIncludes(
+  roadmap,
+  "Add editable System Prompt and User Prompt surfaces",
+  "Roadmap captures System Prompt and User Prompt learning as a product slice"
+);
+assertIncludes(
+  roadmap,
+  "prompt injection risks",
+  "Roadmap includes prompt literacy and safety concepts"
 );

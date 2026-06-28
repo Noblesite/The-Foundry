@@ -37,6 +37,7 @@ interface ArtifactsWorkbenchProps {
   onModelDownloadJobStarted?: (job: ModelDownloadJob) => void;
   onBaseModelSelected: (modelId: string) => void;
   onOpenConstructWithModel: (modelId: string, label?: string) => void;
+  onReturnToMaterialsWithModel?: (handoff: ArchiveModelHandoff) => void;
   onOpenAcademy: () => void;
   onOpenAcademyAction: (actionId: string) => void;
   onLoopEvidenceRefresh?: () => void;
@@ -102,6 +103,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   onModelDownloadJobStarted,
   onBaseModelSelected,
   onOpenConstructWithModel,
+  onReturnToMaterialsWithModel,
   onOpenAcademy,
   onOpenAcademyAction,
   onLoopEvidenceRefresh,
@@ -282,6 +284,13 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
       );
     },
     [archiveEntries, selectedModel]
+  );
+  const canReturnCachedModelToMaterials = Boolean(
+    handoff?.source === "materials" &&
+      handoff.purpose === "qa-generator" &&
+      handoff.returnTo === "materials" &&
+      selectedArchiveEntry?.localPath &&
+      (selectedArchiveEntry.status === "cached" || selectedArchiveEntry.status === "ready")
   );
 
   const downloadGateState = useMemo(() => {
@@ -709,6 +718,19 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     setError(null);
     onOpenConstructWithModel(selectedArchiveEntry.localPath, selectedArchiveEntry.repoId);
     setStatusText(`${selectedArchiveEntry.repoId} handed off to Construct for preflight.`);
+  };
+
+  const returnCachedModelToMaterials = () => {
+    if (!handoff || !selectedArchiveEntry?.localPath || !canReturnCachedModelToMaterials) {
+      return;
+    }
+    setStatusText(`${selectedArchiveEntry.repoId} returned to Materials for QA generator preflight.`);
+    onReturnToMaterialsWithModel?.({
+      ...handoff,
+      modelId: selectedArchiveEntry.repoId,
+      revision: selectedArchiveEntry.revision,
+      requestedAt: Date.now(),
+    });
   };
 
   const selectModelForRuntime = () => {
@@ -1172,6 +1194,18 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                     <i className="fas fa-sliders" aria-hidden="true" />
                     Use for Runtime
                   </button>
+                  {handoff?.purpose === "qa-generator" && handoff.returnTo === "materials" && (
+                    <button
+                      className="button-secondary"
+                      data-testid="archive-return-to-materials"
+                      disabled={!canReturnCachedModelToMaterials}
+                      onClick={returnCachedModelToMaterials}
+                      type="button"
+                    >
+                      <i className="fas fa-arrow-turn-down" aria-hidden="true" />
+                      Return to Materials
+                    </button>
+                  )}
                 </div>
               </>
             ) : (

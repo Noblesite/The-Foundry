@@ -353,12 +353,16 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
     ])
       .then(([sources, runs, runtime]) => {
         if (isCurrent) {
+          const returnedArchiveModelId =
+            qaGeneratorArchiveHandoff?.purpose === "qa-generator"
+              ? qaGeneratorArchiveHandoff.modelId.trim()
+              : "";
           setMaterials(sources);
           setAssemblyRuns(runs);
           setQAGeneratorRuntime(runtime);
           setQAGeneratorDraft({
-            mode: runtime.mode,
-            modelId: runtime.modelId,
+            mode: returnedArchiveModelId ? "transformers" : runtime.mode,
+            modelId: returnedArchiveModelId || runtime.modelId,
             maxNewTokens: runtime.maxNewTokens,
             temperature: runtime.temperature,
           });
@@ -375,7 +379,7 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
     return () => {
       isCurrent = false;
     };
-  }, [repository, workshop.id]);
+  }, [qaGeneratorArchiveHandoff, repository, workshop.id]);
 
   useEffect(() => {
     if (!qaGeneratorArchiveHandoff || qaGeneratorArchiveHandoff.purpose !== "qa-generator") {
@@ -613,6 +617,21 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
     : "proof not run";
   const activeQAGeneratorMode = qaGeneratorRuntime?.mode || qaGeneratorDraft.mode;
   const activeQAGeneratorModel = qaGeneratorRuntime?.modelId || qaGeneratorDraft.modelId;
+  const configuredQAGeneratorModel = qaGeneratorRuntime?.modelId?.trim() || "";
+  const draftedQAGeneratorModel = qaGeneratorDraft.modelId.trim() || DEFAULT_QA_GENERATOR_MODEL_ID;
+  const canRunModelBackedQAProof = Boolean(
+    qaGeneratorRuntime?.ready &&
+      qaGeneratorRuntime.mode === "transformers" &&
+      configuredQAGeneratorModel === draftedQAGeneratorModel
+  );
+  const modelBackedQAProofBlockedReason =
+    qaGeneratorDraft.mode !== "transformers"
+      ? "Switch to Local Transformers before running model-backed proof."
+      : !qaGeneratorRuntime?.ready || qaGeneratorRuntime.mode !== "transformers"
+        ? "Configure + preflight a cached local model before running proof."
+        : configuredQAGeneratorModel !== draftedQAGeneratorModel
+          ? "Configure the selected generator model before running proof."
+          : "";
   const trainingQualityGatePassed = Boolean(
     activeQAGeneratorMode === "transformers" &&
       modelBackedQAProofPassed &&
@@ -903,6 +922,10 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   };
 
   const runQAGeneratorQualityProof = async () => {
+    if (!canRunModelBackedQAProof) {
+      setError(modelBackedQAProofBlockedReason || "Configure a cached local model first.");
+      return;
+    }
     setIsRunningGeneratorQualityProof(true);
     setError(null);
     try {
@@ -1309,8 +1332,9 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                 <button
                   className="button-secondary button-compact"
                   type="button"
-                  disabled={isRunningGeneratorQualityProof}
+                  disabled={isRunningGeneratorQualityProof || !canRunModelBackedQAProof}
                   onClick={runQAGeneratorQualityProof}
+                  title={modelBackedQAProofBlockedReason || "Run a local model-backed QA proof."}
                 >
                   {isRunningGeneratorQualityProof ? "Testing" : "Model-backed QA proof"}
                 </button>
@@ -1367,8 +1391,9 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                   <button
                     className="button-primary button-compact"
                     type="button"
-                    disabled={isRunningGeneratorQualityProof}
+                    disabled={isRunningGeneratorQualityProof || !canRunModelBackedQAProof}
                     onClick={runQAGeneratorQualityProof}
+                    title={modelBackedQAProofBlockedReason || "Run a local model-backed QA proof."}
                   >
                     <i className="fas fa-vial-circle-check" aria-hidden="true" />
                     {isRunningGeneratorQualityProof ? "Running proof" : "Run model-backed proof"}
@@ -1381,6 +1406,11 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                     {qaProofSourceLabel}
                     {qaProofMode?.localFilesOnly ? " · local files only" : ""}
                   </span>
+                  {!canRunModelBackedQAProof && modelBackedQAProofBlockedReason && (
+                    <span className="quality-blocked-text">
+                      {modelBackedQAProofBlockedReason}
+                    </span>
+                  )}
                 </div>
                 {qaGeneratorQualityProof && (
                   <div className="qa-model-proof-summary">
@@ -1621,8 +1651,9 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                   <button
                     className="button-secondary button-compact"
                     type="button"
-                    disabled={isRunningGeneratorQualityProof}
+                    disabled={isRunningGeneratorQualityProof || !canRunModelBackedQAProof}
                     onClick={runQAGeneratorQualityProof}
+                    title={modelBackedQAProofBlockedReason || "Run a local model-backed QA proof."}
                   >
                     <i className="fas fa-vial-circle-check" aria-hidden="true" />
                     {isRunningGeneratorQualityProof ? "Running proof" : "Run model-backed proof"}
