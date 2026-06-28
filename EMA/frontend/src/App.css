@@ -4233,7 +4233,7 @@ input[type="checkbox"] {
 
 .trial-comparison-summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0.6rem;
 }
 
@@ -4330,7 +4330,15 @@ input[type="checkbox"] {
 
 .trial-variant-row {
   display: grid;
-  grid-template-columns: auto minmax(7rem, 0.85fr) minmax(7rem, 0.85fr) minmax(7rem, 1fr) minmax(8rem, 1.2fr) auto;
+  grid-template-columns:
+    auto
+    minmax(7rem, 0.85fr)
+    minmax(7rem, 0.85fr)
+    minmax(7rem, 1fr)
+    minmax(8rem, 1.2fr)
+    minmax(8rem, 1.2fr)
+    minmax(6rem, 0.8fr)
+    auto;
   gap: 0.55rem;
   align-items: center;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -4436,6 +4444,49 @@ input[type="checkbox"] {
   padding: 0.25rem 0.48rem;
   color: var(--text-secondary);
   font-size: 0.72rem;
+}
+
+.trial-prompt-chain {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.5rem;
+  border: 1px solid rgba(212, 160, 23, 0.18);
+  border-radius: 8px;
+  padding: 0.7rem;
+  background:
+    linear-gradient(135deg, rgba(212, 160, 23, 0.08), rgba(0, 212, 255, 0.035)),
+    rgba(13, 17, 23, 0.46);
+}
+
+.trial-prompt-chain div {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.trial-prompt-chain span {
+  display: inline-flex;
+  gap: 0.32rem;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.trial-prompt-chain .concept-tooltip {
+  color: var(--arc-blue);
+  font-size: 0.7rem;
+  text-transform: none;
+}
+
+.trial-prompt-chain strong {
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .trial-runtime-evidence {

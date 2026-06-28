@@ -8,6 +8,7 @@ import {
   ForgeRun,
   ReviewedTrialVerdict,
   SectionSummary,
+  ConstructPromptChain,
   Trial,
   TrialVerdict,
   Workshop,
@@ -114,6 +115,29 @@ const normalizePrompt = (prompt: string) =>
 
 const shortValue = (value: string, length = 48) =>
   value.length > length ? `${value.slice(0, length - 1)}...` : value;
+
+const promptChainForTrial = (trial: Trial): ConstructPromptChain | null =>
+  trial.generationSettings.promptChain || null;
+
+const promptChainSystemLabel = (promptChain: ConstructPromptChain | null) => {
+  if (!promptChain) {
+    return "not recorded";
+  }
+  if (!promptChain.systemPromptPresent) {
+    return "not set";
+  }
+  return shortValue(promptChain.systemPromptPreview || promptChain.systemPrompt, 64);
+};
+
+const promptChainOrderLabel = (promptChain: ConstructPromptChain | null) =>
+  promptChain?.instructionOrder?.join(" -> ") || "not recorded";
+
+const promptChainLibraryLabel = (promptChain: ConstructPromptChain | null) => {
+  if (!promptChain) {
+    return "not recorded";
+  }
+  return promptChain.includeLibraryContext ? "included" : "off";
+};
 
 interface EvaluationReportSummary {
   forgeRun: ForgeRun;
@@ -434,6 +458,19 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
           new Set(variants.map((trial) => trial.runtimeProfile?.source || trial.runtimeMode))
         );
         const artifacts = Array.from(new Set(variants.map((trial) => trial.artifactId)));
+        const promptChains = variants
+          .map(promptChainForTrial)
+          .filter((promptChain): promptChain is ConstructPromptChain => Boolean(promptChain));
+        const systemPromptVariants = Array.from(
+          new Set(
+            promptChains.map((promptChain) =>
+              promptChain.systemPromptPresent ? promptChain.systemPrompt : "not set"
+            )
+          )
+        );
+        const libraryContextVariants = Array.from(
+          new Set(promptChains.map((promptChain) => promptChain.includeLibraryContext))
+        );
         const tokenCounts = variants.map((trial) => trial.tokenCount);
         return {
           key: normalizePrompt(variants[0].prompt),
@@ -443,6 +480,8 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
           best,
           sources,
           artifacts,
+          systemPromptVariants,
+          libraryContextVariants,
           minTokens: Math.min(...tokenCounts),
           maxTokens: Math.max(...tokenCounts),
         };
@@ -468,6 +507,12 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
     const simulated = trials.filter(
       (trial) => trial.runtimeProfile?.source === "simulated" || !trial.runtimeProfile
     ).length;
+    const promptChainTrials = trials.filter((trial) => promptChainForTrial(trial)).length;
+    const promptVariantGroups = trialComparisons.filter(
+      (comparison) =>
+        comparison.systemPromptVariants.length > 1 ||
+        comparison.libraryContextVariants.length > 1
+    ).length;
     return {
       promptGroups: trialComparisons.length,
       comparedTrials,
@@ -475,6 +520,8 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
       adapterBacked,
       baseOnly,
       simulated,
+      promptChainTrials,
+      promptVariantGroups,
     };
   }, [trialComparisons, trials]);
   const trialsNextAction = useMemo(() => {
@@ -781,8 +828,9 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
           </div>
         </div>
         <p className="trial-guidance">
-          Compare repeated prompts across Artifacts and runtime sources before promoting an
-          Artifact. The steadier the prompt, the clearer the signal.
+          Compare repeated prompts across Artifacts, runtime sources, and prompt-chain settings
+          before promoting an Artifact. The steadier the system and user prompts, the clearer the
+          signal.
         </p>
         <div className="trial-comparison-summary">
           <div>
@@ -805,10 +853,19 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
             <span>Simulated</span>
             <strong>{trialComparisonSummary.simulated}</strong>
           </div>
+          <div>
+            <span>Prompt chains</span>
+            <strong>{trialComparisonSummary.promptChainTrials}</strong>
+          </div>
+          <div>
+            <span>Prompt variants</span>
+            <strong>{trialComparisonSummary.promptVariantGroups}</strong>
+          </div>
         </div>
         {trialComparisons.length === 0 ? (
           <p className="empty-state">
-            Save two or more Trials with the same prompt to compare Artifacts and runtime sources.
+            Save two or more Trials with the same user prompt to compare Artifacts, runtime sources,
+            and system prompt changes.
           </p>
         ) : (
           <div className="trial-comparison-list">
@@ -827,30 +884,49 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
                   <span>{comparison.artifacts.length} Artifacts</span>
                   <span>{comparison.sources.map(runtimeSourceLabel).join(" / ")}</span>
                   <span>
+                    {comparison.systemPromptVariants.length === 0
+                      ? "prompt chain not recorded"
+                      : `${comparison.systemPromptVariants.length} system prompt${
+                          comparison.systemPromptVariants.length === 1 ? "" : "s"
+                        }`}
+                  </span>
+                  <span>
+                    {comparison.libraryContextVariants.length === 0
+                      ? "Library not recorded"
+                      : comparison.libraryContextVariants.length === 1
+                        ? `Library ${comparison.libraryContextVariants[0] ? "included" : "off"}`
+                        : "Library varied"}
+                  </span>
+                  <span>
                     {comparison.minTokens === comparison.maxTokens
                       ? `${comparison.minTokens} tokens`
                       : `${comparison.minTokens}-${comparison.maxTokens} tokens`}
                   </span>
                 </div>
                 <div className="trial-variant-list">
-                  {comparison.variants.slice(0, 4).map((trial) => (
-                    <div className="trial-variant-row" key={trial.id}>
-                      <span className={`trial-verdict verdict-${trial.verdict}`}>
-                        {verdictLabels[trial.verdict]}
-                      </span>
-                      <strong>
-                        {runtimeModeLabel(trial.runtimeProfile?.runtimeMode || trial.runtimeMode)}
-                      </strong>
-                      <span>{runtimeSourceLabel(trial.runtimeProfile?.source)}</span>
-                      <span>{shortValue(trial.artifactId, 22)}</span>
-                      <span>
-                        {trial.runtimeProfile?.adapterLoaded
-                          ? shortValue(trial.runtimeProfile.adapterPath || "adapter", 32)
-                          : "no adapter"}
-                      </span>
-                      <span>{trial.tokenCount} tokens</span>
-                    </div>
-                  ))}
+                  {comparison.variants.slice(0, 4).map((trial) => {
+                    const promptChain = promptChainForTrial(trial);
+                    return (
+                      <div className="trial-variant-row" key={trial.id}>
+                        <span className={`trial-verdict verdict-${trial.verdict}`}>
+                          {verdictLabels[trial.verdict]}
+                        </span>
+                        <strong>
+                          {runtimeModeLabel(trial.runtimeProfile?.runtimeMode || trial.runtimeMode)}
+                        </strong>
+                        <span>{runtimeSourceLabel(trial.runtimeProfile?.source)}</span>
+                        <span>{shortValue(trial.artifactId, 22)}</span>
+                        <span>
+                          {trial.runtimeProfile?.adapterLoaded
+                            ? shortValue(trial.runtimeProfile.adapterPath || "adapter", 32)
+                            : "no adapter"}
+                        </span>
+                        <span>{promptChainSystemLabel(promptChain)}</span>
+                        <span>Library {promptChainLibraryLabel(promptChain)}</span>
+                        <span>{trial.tokenCount} tokens</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </article>
             ))}
@@ -1079,6 +1155,14 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
           />
         )}
         {trials.length > 0 && (
+          <LearningCard
+            title="Read the prompt chain"
+            body="A repeated user prompt is only a clean comparison when the system prompt, Library context, and generation settings are visible too. Prompt-chain evidence shows which instruction changed."
+            academyAction={promptComparisonAcademyAction}
+            onAction={() => onOpenAcademyAction(ACADEMY_ACTION_IDS.trialsComparePrompts)}
+          />
+        )}
+        {trials.length > 0 && (
           <div className="trial-filter-bar" role="group" aria-label="Filter Trials">
             {trialFilterOrder.map((filter) => (
               <button
@@ -1118,6 +1202,7 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
         ) : (
           visibleTrials.map((trial) => {
             const evidence = trialRuntimeEvidence(trial);
+            const promptChain = promptChainForTrial(trial);
             return (
               <article className="trial-card panel-glass" key={trial.id}>
                 <div className="trial-card-header">
@@ -1150,6 +1235,32 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
                   <span>Artifact {trial.artifactId}</span>
                   <span>{trial.tokenCount} tokens</span>
                   <span>{new Date(trial.createdAt).toLocaleString()}</span>
+                </div>
+                <div className="trial-prompt-chain">
+                  <div>
+                    <span>
+                      Prompt chain
+                      <AcademyActionTooltip
+                        action={promptComparisonAcademyAction}
+                        label="?"
+                      />
+                    </span>
+                    <strong>{promptChainOrderLabel(promptChain)}</strong>
+                  </div>
+                  <div>
+                    <span>System prompt</span>
+                    <strong>{promptChainSystemLabel(promptChain)}</strong>
+                  </div>
+                  <div>
+                    <span>User prompt</span>
+                    <strong>
+                      {shortValue(promptChain?.userPromptPreview || trial.prompt, 72)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Library context</span>
+                    <strong>{promptChainLibraryLabel(promptChain)}</strong>
+                  </div>
                 </div>
                 {trial.runtimeProfile && (
                   <div className={`trial-runtime-profile source-${trial.runtimeProfile.source}`}>

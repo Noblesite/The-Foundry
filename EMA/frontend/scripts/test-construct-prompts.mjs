@@ -102,7 +102,7 @@ assertIncludes(
 );
 assertIncludes(
   files.roadmap,
-  "Done for the first Construct prompt-chain and Trial metadata slice",
+  "Done for the first Construct prompt-chain, Trial metadata, and",
   "Roadmap records the completed prompt-chain slice"
 );
 

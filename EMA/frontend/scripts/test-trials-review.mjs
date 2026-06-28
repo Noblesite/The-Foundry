@@ -72,6 +72,26 @@ assertIncludes(
 );
 assertIncludes(
   trialsWorkbench,
+  "const promptChainForTrial = (trial: Trial): ConstructPromptChain | null =>",
+  "Trials page derives prompt-chain evidence from saved generation settings"
+);
+assertIncludes(
+  trialsWorkbench,
+  "promptVariantGroups",
+  "Trials comparison summary counts prompt-chain variants"
+);
+assertIncludes(
+  trialsWorkbench,
+  "className=\"trial-prompt-chain\"",
+  "Trials cards expose prompt-chain evidence beside runtime evidence"
+);
+assertIncludes(
+  trialsWorkbench,
+  "Read the prompt chain",
+  "Trials page teaches users how to compare system and user prompt evidence"
+);
+assertIncludes(
+  trialsWorkbench,
   "type TrialFilter = \"all\" | \"live-local\" | \"adapter-backed\" | \"simulated\" | \"needs-review\"",
   "Trials page defines the runtime evidence filter contract"
 );
