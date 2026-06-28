@@ -27,6 +27,11 @@ To prove the public MVP handoff path against a running backend:
 make mvp-demo
 ```
 
+Before merging a public release branch, use the
+[Public Release Checklist](docs/public_release_checklist.md) to confirm the
+README, limitations, release notes, runtime labels, and no-download baseline are
+still aligned.
+
 ## Local App
 
 Backend:

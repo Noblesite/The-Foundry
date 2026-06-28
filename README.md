@@ -206,6 +206,7 @@ The Foundry uses domain terms that support the learn-by-building experience:
 - [First-Run Setup](docs/first_run_setup.md)
 - [MVP Demo Script](docs/mvp_demo_script.md)
 - [Known Limitations](docs/known_limitations.md)
+- [Public Release Checklist](docs/public_release_checklist.md)
 - [Release Notes: v0.1.0-mvp](docs/release_notes_v0.1.0-mvp.md)
 - [Catalog Persistence](docs/the_foundry_catalog_persistence.md)
 - [Forge Runtime Adapter](docs/forge_runtime_adapter.md)
