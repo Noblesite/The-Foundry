@@ -68,6 +68,16 @@ assertIncludes(
 );
 assertIncludes(
   files.construct,
+  "const buildEvidenceSystemPrompt =",
+  "Construct workbench defines a source-grounded prompt variant for comparisons"
+);
+assertIncludes(
+  files.construct,
+  "systemPromptOverride?: string",
+  "Construct send path can run one-off system prompt variants"
+);
+assertIncludes(
+  files.construct,
   "System Prompt",
   "Construct workbench labels the system prompt field"
 );
@@ -98,6 +108,21 @@ assertIncludes(
 );
 assertIncludes(
   files.construct,
+  "Run Comparison Recipe",
+  "Construct prompt workbench offers a guided two-run comparison recipe"
+);
+assertIncludes(
+  files.construct,
+  "const runPromptComparisonRecipe = async () =>",
+  "Construct comparison recipe captures prompt variants through the normal stream path"
+);
+assertIncludes(
+  files.construct,
+  "includeLibraryContextOverride: true",
+  "Construct comparison recipe forces library context on for the source-grounded variant"
+);
+assertIncludes(
+  files.construct,
   "Open Trial Comparison",
   "Construct workbench can hand prompt variants to Trials comparison"
 );
@@ -123,12 +148,17 @@ assertIncludes(
 );
 assertIncludes(
   files.styles,
+  ".prompt-recipe-state",
+  "Prompt comparison recipe status has dedicated spacing"
+);
+assertIncludes(
+  files.styles,
   ".user-prompt-field",
   "User prompt composer has accessible label styling"
 );
 assertIncludes(
   files.roadmap,
-  "Trial prompt-evidence comparison, and Construct-to-Trials handoff slices",
+  "Trial prompt-evidence comparison, Construct-to-Trials handoff, and two-run",
   "Roadmap records the completed prompt-chain slice"
 );
 

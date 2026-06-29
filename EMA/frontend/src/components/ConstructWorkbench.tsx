@@ -86,6 +86,14 @@ interface RuntimeSmokeResult {
   completedAt: string;
 }
 
+interface SendMessageOptions {
+  smokeTest?: boolean;
+  smokeStartedAt?: number;
+  systemPromptOverride?: string;
+  includeLibraryContextOverride?: boolean;
+  preserveComposer?: boolean;
+}
+
 const LOCAL_SMOKE_MODEL_ID = "sshleifer/tiny-gpt2";
 const LOCAL_SMOKE_PROMPT =
   "Runtime smoke test: reply with one short sentence from The Foundry.";
@@ -214,6 +222,9 @@ const isModelArchiveEntryCached = (entry?: ModelArchiveEntry) =>
 
 const buildDefaultSystemPrompt = (construct: Construct, artifact: Artifact) =>
   `You are ${construct.name}, a Foundry Construct testing Artifact ${artifact.name}. Stay grounded in the Workshop Material, name uncertainty clearly, and keep replies useful for Trial review.`;
+
+const buildEvidenceSystemPrompt = (construct: Construct, artifact: Artifact) =>
+  `You are ${construct.name}, a Foundry Construct testing Artifact ${artifact.name}. Answer with source-grounded evidence first, separate persona behavior from known source facts, and call out uncertainty when the Workshop Material does not support a claim.`;
 
 const createPromptChain = (
   systemPrompt: string,
@@ -378,6 +389,10 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     () => buildDefaultSystemPrompt(activeConstruct, activeArtifact),
     [activeArtifact, activeConstruct]
   );
+  const evidencePromptDefault = useMemo(
+    () => buildEvidenceSystemPrompt(activeConstruct, activeArtifact),
+    [activeArtifact, activeConstruct]
+  );
   const previousPromptDefault = useRef(activePromptDefault);
   const [systemPrompt, setSystemPrompt] = useState(activePromptDefault);
   const [promptWorkbenchOpen, setPromptWorkbenchOpen] = useState(true);
@@ -455,6 +470,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [isClearingRuntimeHistory, setIsClearingRuntimeHistory] = useState(false);
   const [runtimeHistoryMessage, setRuntimeHistoryMessage] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
+  const [isRunningPromptRecipe, setIsRunningPromptRecipe] = useState(false);
+  const [promptRecipeMessage, setPromptRecipeMessage] = useState<string | null>(null);
   const [lastInspection, setLastInspection] = useState<ResponseInspection | null>(null);
   const [trialVerdict, setTrialVerdict] = useState<TrialVerdict | null>(null);
   const [savedTrial, setSavedTrial] = useState<Trial | null>(null);
@@ -785,6 +802,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       setSelectedRuntimeValidation(null);
       setIsConfirmingHistoryClear(false);
     setRuntimeHistoryMessage(null);
+    setPromptRecipeMessage(null);
     repository
       .listConstructRuntimeEvents()
       .then((events) => {
@@ -1303,12 +1321,15 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
 
   const sendMessage = async (
     presetText?: string,
-    options?: { smokeTest?: boolean; smokeStartedAt?: number }
+    options?: SendMessageOptions
   ) => {
     const messageText = (presetText ?? input).trim();
     if (!messageText) {
       return;
     }
+    const turnSystemPrompt = options?.systemPromptOverride ?? systemPrompt;
+    const turnIncludeLibraryContext =
+      options?.includeLibraryContextOverride ?? includeLibraryContext;
 
     const userMessage: ConstructMessage = {
       id: `user-${Date.now()}`,
@@ -1318,7 +1339,9 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     };
 
     setMessages((current) => [...current, userMessage]);
-    setInput("");
+    if (!options?.preserveComposer) {
+      setInput("");
+    }
     setTrialVerdict(null);
     setSavedTrial(null);
     setTrialError(null);
@@ -1334,9 +1357,9 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       const assistantMessageId = `assistant-${Date.now()}`;
       let assistantText = "";
       const activePromptChain = createPromptChain(
-        systemPrompt,
+        turnSystemPrompt,
         messageText,
-        includeLibraryContext
+        turnIncludeLibraryContext
       );
       setMessages((current) => [
         ...current,
@@ -1350,7 +1373,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
         conversationId,
         message: messageText,
         systemPrompt: activePromptChain.systemPrompt || undefined,
-        includeLibraryContext,
+        includeLibraryContext: turnIncludeLibraryContext,
         maxNewTokens: settings.maxNewTokens,
         temperature: settings.temperature,
       }, (event) => {
@@ -1532,6 +1555,42 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       setError(chatError instanceof Error ? chatError.message : "Could not talk to Construct.");
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const runPromptComparisonRecipe = async () => {
+    const comparisonPrompt =
+      input.trim() ||
+      lastInspection?.prompt ||
+      "Explain what this Artifact learned from the Workshop Material, then name one uncertainty.";
+
+    setIsRunningPromptRecipe(true);
+    setPromptRecipeMessage("Running two prompt variants and capturing Trials.");
+    setError(null);
+    try {
+      await sendMessage(comparisonPrompt, {
+        systemPromptOverride: systemPrompt,
+        includeLibraryContextOverride: includeLibraryContext,
+        preserveComposer: true,
+      });
+      await sendMessage(comparisonPrompt, {
+        systemPromptOverride: evidencePromptDefault,
+        includeLibraryContextOverride: true,
+        preserveComposer: true,
+      });
+      setPromptRecipeMessage(
+        "Prompt comparison recipe captured two Trials. Opening Trials comparison."
+      );
+      onOpenTrialComparison?.();
+    } catch (recipeError: unknown) {
+      setPromptRecipeMessage(null);
+      setError(
+        recipeError instanceof Error
+          ? recipeError.message
+          : "Prompt comparison recipe failed."
+      );
+    } finally {
+      setIsRunningPromptRecipe(false);
     }
   };
 
@@ -2632,7 +2691,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                   <div className="prompt-compare-actions">
                     <button
                       className="button-secondary button-compact"
-                      disabled={isSending || !lastInspection}
+                      disabled={isSending || isRunningPromptRecipe || !lastInspection}
                       onClick={() => lastInspection && void sendMessage(lastInspection.prompt)}
                       type="button"
                     >
@@ -2640,8 +2699,17 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                       Rerun Last User Prompt
                     </button>
                     <button
+                      className="button-primary button-compact"
+                      disabled={isSending || isRunningPromptRecipe}
+                      onClick={() => void runPromptComparisonRecipe()}
+                      type="button"
+                    >
+                      <i className="fas fa-flask-vial" aria-hidden="true" />
+                      {isRunningPromptRecipe ? "Running Recipe" : "Run Comparison Recipe"}
+                    </button>
+                    <button
                       className="button-secondary button-compact"
-                      disabled={!lastInspection}
+                      disabled={!lastInspection || isRunningPromptRecipe}
                       onClick={onOpenTrialComparison}
                       type="button"
                     >
@@ -2649,6 +2717,11 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                       Open Trial Comparison
                     </button>
                   </div>
+                  {promptRecipeMessage && (
+                    <p className="save-state success-state prompt-recipe-state">
+                      {promptRecipeMessage}
+                    </p>
+                  )}
                 </div>
               )}
             </section>
@@ -3220,7 +3293,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                 <div className="construct-comparison-actions">
                   <button
                     className="button-secondary button-compact"
-                    disabled={isSending}
+                    disabled={isSending || isRunningPromptRecipe}
                     onClick={() => void sendMessage(lastInspection.prompt)}
                     type="button"
                   >
@@ -3228,7 +3301,17 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                     Rerun for comparison
                   </button>
                   <button
+                    className="button-secondary button-compact"
+                    disabled={isSending || isRunningPromptRecipe}
+                    onClick={() => void runPromptComparisonRecipe()}
+                    type="button"
+                  >
+                    <i className="fas fa-flask-vial" aria-hidden="true" />
+                    {isRunningPromptRecipe ? "Running recipe" : "Run recipe"}
+                  </button>
+                  <button
                     className="button-primary button-compact"
+                    disabled={isRunningPromptRecipe}
                     onClick={onOpenTrialComparison}
                     type="button"
                   >
