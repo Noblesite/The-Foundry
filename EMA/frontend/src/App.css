@@ -3344,6 +3344,13 @@ input[type="checkbox"] {
   line-height: 1.45;
 }
 
+.prompt-compare-actions,
+.construct-comparison-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
 .prompt-presets {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

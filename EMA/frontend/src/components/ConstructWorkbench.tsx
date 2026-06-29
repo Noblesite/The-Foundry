@@ -346,6 +346,7 @@ interface ConstructWorkbenchProps {
   onOpenAcademyAction: (actionId: string) => void;
   onRuntimeChanged?: (runtime: ConstructRuntime) => void;
   onLoopEvidenceRefresh?: () => void;
+  onOpenTrialComparison?: () => void;
   loopFocus?: FoundryLoopFocus | null;
 }
 
@@ -364,6 +365,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   onOpenAcademyAction,
   onRuntimeChanged,
   onLoopEvidenceRefresh,
+  onOpenTrialComparison,
   loopFocus,
 }) => {
   const conversationId = `construct-${construct.id}`;
@@ -2627,6 +2629,26 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                     <i className="fas fa-rotate-left" aria-hidden="true" />
                     Reset System Prompt
                   </button>
+                  <div className="prompt-compare-actions">
+                    <button
+                      className="button-secondary button-compact"
+                      disabled={isSending || !lastInspection}
+                      onClick={() => lastInspection && void sendMessage(lastInspection.prompt)}
+                      type="button"
+                    >
+                      <i className="fas fa-repeat" aria-hidden="true" />
+                      Rerun Last User Prompt
+                    </button>
+                    <button
+                      className="button-secondary button-compact"
+                      disabled={!lastInspection}
+                      onClick={onOpenTrialComparison}
+                      type="button"
+                    >
+                      <i className="fas fa-scale-balanced" aria-hidden="true" />
+                      Open Trial Comparison
+                    </button>
+                  </div>
                 </div>
               )}
             </section>
@@ -3194,6 +3216,25 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                       {verdict}
                     </button>
                   ))}
+                </div>
+                <div className="construct-comparison-actions">
+                  <button
+                    className="button-secondary button-compact"
+                    disabled={isSending}
+                    onClick={() => void sendMessage(lastInspection.prompt)}
+                    type="button"
+                  >
+                    <i className="fas fa-repeat" aria-hidden="true" />
+                    Rerun for comparison
+                  </button>
+                  <button
+                    className="button-primary button-compact"
+                    onClick={onOpenTrialComparison}
+                    type="button"
+                  >
+                    <i className="fas fa-scale-balanced" aria-hidden="true" />
+                    Open Trial Comparison
+                  </button>
                 </div>
                 {savedTrial && (
                   <p className="save-state success-state">

@@ -870,6 +870,22 @@ const App: React.FC = () => {
     setActiveSection(focus.section);
   }, []);
 
+  const handleOpenTrialComparison = useCallback(() => {
+    setLoopFocus({
+      id: "construct-prompt-comparison",
+      section: "trials",
+      stepLabel: "Construct -> Trial",
+      title: "Compare prompt variants",
+      detail:
+        "Review repeated user prompts with different system prompts, Library context, runtime modes, or Artifacts.",
+      actionLabel: "Review comparison",
+      targetLabel: "Prompt comparison",
+      requestedAt: Date.now(),
+    });
+    refreshActiveLoopEvidence();
+    setActiveSection("trials");
+  }, [refreshActiveLoopEvidence]);
+
   const renderMain = () => {
     if (activeSection === "settings") {
       return (
@@ -905,6 +921,7 @@ const App: React.FC = () => {
           onOpenAcademyAction={handleOpenAcademyAction}
           onRuntimeChanged={handleConstructRuntimeChanged}
           onLoopEvidenceRefresh={refreshActiveLoopEvidence}
+          onOpenTrialComparison={handleOpenTrialComparison}
           loopFocus={loopFocus}
         />
       );

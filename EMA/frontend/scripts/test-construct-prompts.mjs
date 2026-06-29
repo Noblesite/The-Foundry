@@ -11,6 +11,7 @@ const files = {
     new URL("../src/components/ConstructWorkbench.tsx", import.meta.url),
     "utf8"
   ),
+  app: await readFile(new URL("../src/App.tsx", import.meta.url), "utf8"),
   styles: await readFile(new URL("../src/App.css", import.meta.url), "utf8"),
   roadmap: await readFile(new URL("../../../docs/roadmap.md", import.meta.url), "utf8"),
   catalog: await readFile(
@@ -91,9 +92,34 @@ assertIncludes(
   "Construct learning rail explains prompt roles"
 );
 assertIncludes(
+  files.construct,
+  "Rerun Last User Prompt",
+  "Construct prompt workbench can rerun the last user prompt for comparison"
+);
+assertIncludes(
+  files.construct,
+  "Open Trial Comparison",
+  "Construct workbench can hand prompt variants to Trials comparison"
+);
+assertIncludes(
+  files.app,
+  "const handleOpenTrialComparison = useCallback(() =>",
+  "App owns the Construct to Trials comparison handoff"
+);
+assertIncludes(
+  files.app,
+  'targetLabel: "Prompt comparison"',
+  "Trials handoff focuses the prompt comparison panel"
+);
+assertIncludes(
   files.styles,
   ".prompt-workbench",
   "Prompt workbench has dedicated Foundry styling"
+);
+assertIncludes(
+  files.styles,
+  ".prompt-compare-actions",
+  "Prompt comparison actions have dedicated styling"
 );
 assertIncludes(
   files.styles,
@@ -102,7 +128,7 @@ assertIncludes(
 );
 assertIncludes(
   files.roadmap,
-  "Done for the first Construct prompt-chain, Trial metadata, and",
+  "Trial prompt-evidence comparison, and Construct-to-Trials handoff slices",
   "Roadmap records the completed prompt-chain slice"
 );
 

@@ -47,8 +47,8 @@ complexity.
 - Add editable System Prompt and User Prompt surfaces with Academy guidance that
   explains what each prompt does, why the system prompt exists, how user
   instructions interact with it, and how prompt changes affect Construct
-  behavior. Done for the first Construct prompt-chain, Trial metadata, and
-  Trial prompt-evidence comparison slices.
+  behavior. Done for the first Construct prompt-chain, Trial metadata,
+  Trial prompt-evidence comparison, and Construct-to-Trials handoff slices.
 - Export reviewed Trials as JSONL Materials so they can feed Forge training or
   evaluation runs. Done for the first Trial review/export slice.
 - Add a Forge purpose switch for training versus evaluation contracts. Done
