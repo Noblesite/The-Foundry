@@ -42,6 +42,26 @@ assertIncludes(
 );
 assertIncludes(
   trialsWorkbench,
+  "const promoteBestComparisonVariant = async (comparison: TrialComparison) =>",
+  "Trials comparison cards can promote the strongest variant"
+);
+assertIncludes(
+  trialsWorkbench,
+  "Promote Best Variant",
+  "Trials comparison cards expose a promotion action"
+);
+assertIncludes(
+  trialsWorkbench,
+  "as pass evidence for Artifact readiness",
+  "Trials promotion explains the Artifact readiness handoff"
+);
+assertIncludes(
+  trialsWorkbench,
+  "current.includes(promotedTrial.id) ? current : [...current, promotedTrial.id]",
+  "Promoted comparison Trials are selected for JSONL export"
+);
+assertIncludes(
+  trialsWorkbench,
   "Review selected needs-review Trials before exporting them as JSONL.",
   "Trials export explains why unreviewed rows are blocked"
 );

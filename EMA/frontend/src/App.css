@@ -4346,6 +4346,24 @@ input[type="checkbox"] {
   padding: 0.24rem 0.46rem;
 }
 
+.trial-comparison-promote {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: center;
+  border: 1px solid rgba(255, 138, 0, 0.2);
+  border-radius: 8px;
+  padding: 0.68rem;
+  background: rgba(255, 138, 0, 0.07);
+}
+
+.trial-comparison-promote p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
 .trial-variant-list {
   display: grid;
   gap: 0.42rem;

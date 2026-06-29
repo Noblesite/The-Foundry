@@ -154,6 +154,20 @@ interface ReviewedWeakSample {
   note: string;
 }
 
+interface TrialComparison {
+  key: string;
+  prompt: string;
+  variants: Trial[];
+  latest: Trial;
+  best: Trial;
+  sources: string[];
+  artifacts: string[];
+  systemPromptVariants: string[];
+  libraryContextVariants: boolean[];
+  minTokens: number;
+  maxTokens: number;
+}
+
 type ReadinessState =
   | "needs-more-data"
   | "ready-for-forge"
@@ -443,7 +457,7 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
     [trials]
   );
 
-  const trialComparisons = useMemo(() => {
+  const trialComparisons = useMemo<TrialComparison[]>(() => {
     const groups = new Map<string, Trial[]>();
     trials.forEach((trial) => {
       const key = normalizePrompt(trial.prompt);
@@ -682,6 +696,46 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
       onLoopEvidenceRefresh?.();
     } catch (reviewError: unknown) {
       setError(reviewError instanceof Error ? reviewError.message : "Could not review Trial.");
+    } finally {
+      setReviewingTrialId(null);
+    }
+  };
+
+  const promoteBestComparisonVariant = async (comparison: TrialComparison) => {
+    setReviewingTrialId(comparison.best.id);
+    setError(null);
+    setExportState(null);
+    try {
+      const promotedTrial = await repository.createTrial(workshop.id, {
+        artifactId: comparison.best.artifactId,
+        constructId: comparison.best.constructId,
+        messageId: comparison.best.messageId,
+        prompt: comparison.best.prompt,
+        response: comparison.best.response,
+        verdict: "pass",
+        runtimeMode: comparison.best.runtimeMode,
+        tokenCount: comparison.best.tokenCount,
+        generationSettings: comparison.best.generationSettings,
+      });
+      setTrials((current) =>
+        current.map((trial) => (trial.id === promotedTrial.id ? promotedTrial : trial))
+      );
+      setSelectedTrialIds((current) =>
+        current.includes(promotedTrial.id) ? current : [...current, promotedTrial.id]
+      );
+      setExportState(
+        `Promoted best variant for "${shortValue(
+          comparison.prompt,
+          64
+        )}" as pass evidence for Artifact readiness.`
+      );
+      onLoopEvidenceRefresh?.();
+    } catch (promotionError: unknown) {
+      setError(
+        promotionError instanceof Error
+          ? promotionError.message
+          : "Could not promote best Trial variant."
+      );
     } finally {
       setReviewingTrialId(null);
     }
@@ -950,6 +1004,23 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
                         ? `${comparison.minTokens} tokens`
                         : `${comparison.minTokens}-${comparison.maxTokens} tokens`}
                     </span>
+                  </div>
+                  <div className="trial-comparison-promote">
+                    <p>
+                      Promotion marks the strongest variant as pass evidence and selects it for
+                      JSONL export toward Artifact readiness.
+                    </p>
+                    <button
+                      className="button-primary button-compact"
+                      disabled={reviewingTrialId === comparison.best.id}
+                      onClick={() => void promoteBestComparisonVariant(comparison)}
+                      type="button"
+                    >
+                      <i className="fas fa-arrow-up-right-dots" aria-hidden="true" />
+                      {reviewingTrialId === comparison.best.id
+                        ? "Promoting"
+                        : "Promote Best Variant"}
+                    </button>
                   </div>
                   <div className="trial-variant-list">
                     {comparison.variants.slice(0, 4).map((trial) => {
