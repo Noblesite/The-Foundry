@@ -340,21 +340,25 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     [archiveEntries, selectedModel]
   );
   const selectedModelLiteracyProfile = useMemo(
-    () =>
-      buildModelLiteracyProfile({
-        modelId: selectedModel?.repoId || selectedArchiveEntry?.repoId || defaultBaseModel,
-        libraryName: selectedModel?.libraryName || selectedArchiveEntry?.libraryName,
-        pipelineTag: selectedModel?.pipelineTag || selectedArchiveEntry?.pipelineTag,
-        tags: selectedModel?.tags,
-        parameterCount: selectedModel?.parameterCount || selectedArchiveEntry?.parameterCount,
+    () => {
+      const inspectedModel = modelPreflight?.model || selectedModel;
+      return buildModelLiteracyProfile({
+        modelId: inspectedModel?.repoId || selectedArchiveEntry?.repoId || defaultBaseModel,
+        libraryName: inspectedModel?.libraryName || selectedArchiveEntry?.libraryName,
+        pipelineTag: inspectedModel?.pipelineTag || selectedArchiveEntry?.pipelineTag,
+        tags: inspectedModel?.tags,
+        parameterCount: inspectedModel?.parameterCount || selectedArchiveEntry?.parameterCount,
         contextWindow: settings.contextWindow,
+        repositoryFiles: inspectedModel?.siblings,
         runtimeMode: "archive selection",
         cached:
+          inspectedModel?.cached ||
           selectedArchiveEntry?.status === "cached" ||
           selectedArchiveEntry?.status === "ready",
         source: "archive",
-      }),
-    [defaultBaseModel, selectedArchiveEntry, selectedModel, settings.contextWindow]
+      });
+    },
+    [defaultBaseModel, modelPreflight?.model, selectedArchiveEntry, selectedModel, settings.contextWindow]
   );
   const canReturnCachedModelToMaterials = Boolean(
     handoff?.source === "materials" &&

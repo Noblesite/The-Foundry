@@ -2001,6 +2001,46 @@ input[type="checkbox"] {
   padding: 1rem;
 }
 
+.workshop-model-selector {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.workshop-model-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.workshop-model-search input,
+.workshop-model-selector select {
+  width: 100%;
+}
+
+.workshop-model-selector select {
+  min-height: 3rem;
+}
+
+.workshop-model-selector-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.workshop-model-selector-actions .button-ghost {
+  width: auto;
+  padding: 0.38rem 0;
+}
+
+.workshop-model-selector-actions span {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
 .modal-actions {
   display: grid;
   grid-template-columns: minmax(0, 0.6fr) minmax(0, 1fr);
@@ -7793,6 +7833,7 @@ input[type="checkbox"] {
   .weak-sample-grid,
   .modal-actions,
   .model-literacy-heading,
+  .workshop-model-search,
   .settings-grid {
     grid-template-columns: 1fr;
   }

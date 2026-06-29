@@ -35,6 +35,7 @@ import {
   FoundryRuntimeStatus,
   ModelArchiveEntry,
   ModelDownloadJob,
+  ModelSearchResult,
   NavigationSection,
   RuntimeMetric,
   Workshop,
@@ -593,6 +594,27 @@ const App: React.FC = () => {
       setIsWorkshopModalOpen(false);
     }
   };
+
+  const searchWorkshopBaseModels = useCallback(
+    async (query: string): Promise<ModelSearchResult[]> => {
+      const username =
+        settings.huggingFaceToken && settings.huggingFaceUsername
+          ? settings.huggingFaceUsername
+          : undefined;
+      const token = settings.huggingFaceToken || undefined;
+      const result = await repository.searchArchiveModels({
+        query,
+        pipelineTag: "text-generation",
+        sort: "downloads",
+        limit: 12,
+        includeGated: Boolean(token),
+        username,
+        token,
+      });
+      return result.models;
+    },
+    [repository, settings.huggingFaceToken, settings.huggingFaceUsername]
+  );
 
   const handleCreateWorkshop = async (request: CreateWorkshopRequest) => {
     setIsCreatingWorkshop(true);
@@ -1219,8 +1241,10 @@ const App: React.FC = () => {
         isOpen={isWorkshopModalOpen}
         isSaving={isCreatingWorkshop}
         settings={settings}
+        archiveEntries={archiveEntries}
         onClose={closeWorkshopModal}
         onCreate={handleCreateWorkshop}
+        onSearchBaseModels={searchWorkshopBaseModels}
       />
       <WorkshopDeleteModal
         error={deleteWorkshopError}

@@ -6,6 +6,11 @@ export interface ModelLiteracySource {
   tags?: string[] | null;
   parameterCount?: number | null;
   contextWindow?: number | null;
+  modelType?: string | null;
+  architectures?: string[] | null;
+  repositoryFiles?: Array<{ rfilename?: string | null; size?: number | null }> | null;
+  configReadable?: boolean | null;
+  tokenizerReadable?: boolean | null;
   runtimeMode?: string | null;
   cached?: boolean;
   source?: "archive" | "construct" | "artifact";
@@ -48,6 +53,62 @@ const formatParameterCount = (parameterCount?: number | null) => {
 const getModelShortName = (modelId: string) => {
   const parts = modelId.split("/").filter(Boolean);
   return parts[parts.length - 1] || modelId;
+};
+
+const readableList = (items: string[]) => {
+  if (items.length === 0) {
+    return "";
+  }
+  if (items.length === 1) {
+    return items[0];
+  }
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+};
+
+const getRepositoryFileNames = (source: ModelLiteracySource) =>
+  (source.repositoryFiles || [])
+    .map((file) => file.rfilename || "")
+    .filter(Boolean);
+
+const getTokenizerFileSummary = (
+  source: ModelLiteracySource,
+  repositoryFileNames: string[]
+) => {
+  const tokenizerFiles = repositoryFileNames.filter((name) => {
+    const basename = name.split("/").pop()?.toLowerCase() || name.toLowerCase();
+    return (
+      basename.startsWith("tokenizer") ||
+      basename === "vocab.json" ||
+      basename === "merges.txt" ||
+      basename === "sentencepiece.bpe.model" ||
+      basename === "special_tokens_map.json"
+    );
+  });
+
+  if (tokenizerFiles.length > 0) {
+    return `Detected tokenizer files: ${readableList(tokenizerFiles.slice(0, 4))}.`;
+  }
+  if (source.tokenizerReadable === true) {
+    return "The local tokenizer loaded during preflight, so prompts can be converted into model tokens.";
+  }
+  if (source.tokenizerReadable === false) {
+    return "Tokenizer files were not readable during preflight; loading should stay blocked until that is fixed.";
+  }
+  return "Tokenizer files are unknown until the model is inspected or cached.";
+};
+
+const getConfigSummary = (source: ModelLiteracySource, repositoryFileNames: string[]) => {
+  const hasConfig = repositoryFileNames.some((name) => name.endsWith("config.json"));
+  if (hasConfig) {
+    return "Repository metadata includes config.json, which is where architecture and context limits usually begin.";
+  }
+  if (source.configReadable === true) {
+    return "The local config loaded during preflight, so architecture and memory estimates are grounded in model metadata.";
+  }
+  if (source.configReadable === false) {
+    return "Model config was not readable during preflight; memory and layer estimates are uncertain.";
+  }
+  return "Config metadata is unknown until inspection or preflight reads the model files.";
 };
 
 const inferModelFamily = (source: ModelLiteracySource) => {
@@ -108,12 +169,19 @@ export const buildModelLiteracyProfile = (
   const modelId = source.modelId?.trim() || DEFAULT_MODEL_ID;
   const label = source.label?.trim() || getModelShortName(modelId);
   const inferred = inferModelFamily(source);
+  const repositoryFileNames = getRepositoryFileNames(source);
   const contextWindow = source.contextWindow && source.contextWindow > 0
     ? source.contextWindow.toLocaleString()
     : "unknown";
   const runtimeMode = source.runtimeMode || "not loaded";
+  const architectureSummary = source.architectures?.length
+    ? `Architecture: ${readableList(source.architectures)}.`
+    : source.modelType
+      ? `Model type: ${source.modelType}.`
+      : getConfigSummary(source, repositoryFileNames);
+  const tokenizerSummary = getTokenizerFileSummary(source, repositoryFileNames);
   const cacheState = source.cached
-    ? "This model is cached locally, so the next proof should inspect tokenizer files and runtime metadata."
+    ? "This model is cached locally, so preflight can validate tokenizer files and runtime metadata."
     : "This model may still be remote; inspect the tokenizer after it is cached before trusting exact control tokens.";
 
   return {
@@ -140,6 +208,7 @@ export const buildModelLiteracyProfile = (
         body:
           "Most local chat models use stacked Transformer blocks: token embeddings, attention projections, feed-forward layers, normalization, and a language-model head.",
         bullets: [
+          architectureSummary,
           "Q, K, and V attention projections help each token compare itself to other tokens in the context.",
           "MLP or feed-forward layers reshape the attended signal into useful features.",
           "LoRA adapters usually attach small trainable matrices to attention or MLP projections.",
@@ -152,6 +221,7 @@ export const buildModelLiteracyProfile = (
         body:
           "Tokenizers usually reserve special tokens for beginning, ending, padding, unknown text, and chat roles.",
         bullets: [
+          tokenizerSummary,
           "System, user, and assistant markers are wrapper-facing control tokens when a chat template exists.",
           "Stop or end-of-sequence tokens tell the wrapper when to stop streaming.",
           cacheState,

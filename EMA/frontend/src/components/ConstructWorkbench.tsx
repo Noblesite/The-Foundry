@@ -1746,6 +1746,14 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           preflightResult?.contextWindow ||
           lastInspection?.contextWindow ||
           activeConstruct.contextWindow,
+        modelType: preflightResult?.modelType,
+        architectures: preflightResult?.architectures,
+        configReadable: preflightResult
+          ? preflightResult.checks.some((check) => check.id === "config" && check.status === "pass")
+          : null,
+        tokenizerReadable: preflightResult
+          ? preflightResult.checks.some((check) => check.id === "tokenizer" && check.status === "pass")
+          : null,
         runtimeMode: runtime?.mode || runtimeMode,
         cached: Boolean(runtime?.loaded || loadedModel.modelId),
         source: "construct",
@@ -1755,7 +1763,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       activeConstruct.contextWindow,
       lastInspection?.contextWindow,
       loadedModel.modelId,
-      preflightResult?.contextWindow,
+      preflightResult,
       runtime?.loaded,
       runtime?.mode,
       runtime?.modelId,

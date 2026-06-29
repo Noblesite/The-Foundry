@@ -976,6 +976,11 @@ export interface ModelArchiveEntry {
   updatedAt: string;
 }
 
+export interface ModelRepositoryFile {
+  rfilename: string;
+  size?: number | null;
+}
+
 export interface ModelDownloadJob {
   id: string;
   repoId: string;
@@ -1005,6 +1010,7 @@ export interface ModelSearchResult {
   private: boolean;
   parameterCount?: number | null;
   sizeBytes: number;
+  siblings?: ModelRepositoryFile[];
   revision?: string;
   cached?: boolean;
   archiveEntry?: ModelArchiveEntry | null;
