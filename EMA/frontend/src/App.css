@@ -5928,6 +5928,33 @@ input[type="checkbox"] {
   align-items: center;
 }
 
+.artifact-evidence-route-preview {
+  display: grid;
+  gap: 0.16rem;
+  min-width: min(100%, 16rem);
+  border: 1px solid rgba(0, 212, 255, 0.16);
+  border-radius: 8px;
+  padding: 0.5rem 0.58rem;
+  background: rgba(0, 212, 255, 0.045);
+}
+
+.artifact-evidence-route-preview span,
+.artifact-evidence-route-preview small {
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.artifact-evidence-route-preview strong {
+  color: var(--text-primary);
+  font-size: 0.82rem;
+}
+
+.artifact-evidence-route-preview small {
+  text-transform: none;
+}
+
 .dashboard-artifact-evidence .artifact-evidence-actions,
 .dashboard-artifact-evidence .button-secondary {
   width: fit-content;

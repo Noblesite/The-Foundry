@@ -1039,6 +1039,20 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                   <p className="artifact-readiness-copy">{selectedArtifactEvidence.nextAction}</p>
                   {selectedArtifactEvidenceAction && (
                     <div className="artifact-evidence-actions">
+                      <div className="artifact-evidence-route-preview">
+                        <span>Route preview</span>
+                        <strong>
+                          {selectedArtifactEvidenceAction.routePreview.destination}
+                          {" -> "}
+                          {selectedArtifactEvidenceAction.routePreview.focus}
+                        </strong>
+                        <small>
+                          Artifact {selectedArtifactEvidenceAction.routePreview.artifactId}
+                          {selectedArtifactEvidenceAction.routePreview.filter
+                            ? ` / Filter: ${selectedArtifactEvidenceAction.routePreview.filter}`
+                            : ""}
+                        </small>
+                      </div>
                       <button
                         className="button-secondary button-compact"
                         onClick={() => onArtifactEvidenceAction(selectedArtifactEvidenceAction)}

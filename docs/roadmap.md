@@ -88,6 +88,11 @@ complexity.
 - Add prompt literacy lessons that teach system prompts, user prompts, role
   boundaries, instruction hierarchy, prompt injection risks, and how prompt
   design differs from fine-tuning or RAG.
+- Add model literacy cards for base model families, layer types, reserved or
+  special tokens, context budgets, and wrapper orchestration. These should make
+  clear that a model emits text or structured requests, while the wrapper
+  decides whether to call tools, append context, route actions, or feed the next
+  prompt back into the model.
 
 ## Phase 7: Production Readiness
 

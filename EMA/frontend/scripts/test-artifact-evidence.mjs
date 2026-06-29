@@ -61,6 +61,11 @@ assertIncludes(
 );
 assertIncludes(
   files.artifactEvidence,
+  "routePreview:",
+  "Artifact evidence actions expose route-preview metadata"
+);
+assertIncludes(
+  files.artifactEvidence,
   "adapterBackedPassTrials.length > 0",
   "Artifact evidence treats adapter-backed pass Trials as verified"
 );
@@ -88,6 +93,16 @@ assertIncludes(
   files.artifacts,
   "onArtifactEvidenceAction(selectedArtifactEvidenceAction)",
   "Artifacts detail panel exposes the recommended evidence action"
+);
+assertIncludes(
+  files.artifacts,
+  "Route preview",
+  "Artifacts detail panel previews the evidence route before navigation"
+);
+assertIncludes(
+  files.artifacts,
+  "selectedArtifactEvidenceAction.routePreview.destination",
+  "Artifacts detail panel shows the target station for evidence actions"
 );
 assertIncludes(
   files.dashboard,
@@ -173,6 +188,11 @@ assertIncludes(
   files.styles,
   ".artifact-evidence-card",
   "Artifact evidence card has shared styling"
+);
+assertIncludes(
+  files.styles,
+  ".artifact-evidence-route-preview",
+  "Artifact evidence route preview has dedicated styling"
 );
 assertIncludes(
   files.styles,

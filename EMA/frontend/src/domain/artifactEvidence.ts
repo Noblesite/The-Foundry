@@ -25,6 +25,12 @@ export interface ArtifactEvidenceAction {
   label: string;
   icon: string;
   destination: NavigationSection;
+  routePreview: {
+    destination: string;
+    focus: string;
+    filter?: string;
+    artifactId: string;
+  };
   focus: Omit<FoundryLoopFocus, "requestedAt">;
 }
 
@@ -38,6 +44,12 @@ export const getArtifactEvidenceAction = (
       label: "Compare Trials",
       icon: "fa-code-compare",
       destination: "trials",
+      routePreview: {
+        destination: "Trials",
+        focus: "Prompt comparison",
+        filter: "Adapter-backed",
+        artifactId: artifact.id,
+      },
       focus: {
         id: `artifact-evidence-${artifact.id}-compare`,
         section: "trials",
@@ -59,6 +71,12 @@ export const getArtifactEvidenceAction = (
       label: "Review Trials",
       icon: "fa-clipboard-check",
       destination: "trials",
+      routePreview: {
+        destination: "Trials",
+        focus: "Trial list",
+        filter: "Needs review",
+        artifactId: artifact.id,
+      },
       focus: {
         id: `artifact-evidence-${artifact.id}-review`,
         section: "trials",
@@ -80,6 +98,11 @@ export const getArtifactEvidenceAction = (
       label: "Run Adapter Proof",
       icon: "fa-play",
       destination: "construct",
+      routePreview: {
+        destination: "Construct",
+        focus: "Adapter-backed Construct",
+        artifactId: artifact.id,
+      },
       focus: {
         id: `artifact-evidence-${artifact.id}-adapter-proof`,
         section: "construct",
@@ -100,6 +123,11 @@ export const getArtifactEvidenceAction = (
       label: "Run Local Proof",
       icon: "fa-play",
       destination: "construct",
+      routePreview: {
+        destination: "Construct",
+        focus: "Construct runtime",
+        artifactId: artifact.id,
+      },
       focus: {
         id: `artifact-evidence-${artifact.id}-local-proof`,
         section: "construct",
@@ -119,6 +147,11 @@ export const getArtifactEvidenceAction = (
     label: "Create Trial Evidence",
     icon: "fa-play",
     destination: "construct",
+    routePreview: {
+      destination: "Construct",
+      focus: "Construct prompt",
+      artifactId: artifact.id,
+    },
     focus: {
       id: `artifact-evidence-${artifact.id}-create-trial`,
       section: "construct",
