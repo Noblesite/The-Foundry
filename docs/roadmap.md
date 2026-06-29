@@ -68,6 +68,9 @@ complexity.
 - Add a weak-sample review drawer so users can edit corrected answers and
   include/exclude rows before exporting them as training Materials. Done for
   the first review-before-training slice.
+- Add an Artifact readiness evidence panel that reads promoted Trials and
+  explains simulated-only, base-model-only, and adapter-backed evidence across
+  Artifacts, Dashboard, and Construct. Done for the first five evidence slices.
 - Add runtime health, memory pressure, and unload behavior.
 - Teach users what context windows, sampling, and quantization settings do.
 

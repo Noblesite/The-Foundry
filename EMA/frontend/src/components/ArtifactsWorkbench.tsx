@@ -9,9 +9,11 @@ import {
   ModelDownloadJob,
   ModelSearchResult,
   SectionSummary,
+  Trial,
   Workshop,
   WorkspaceSettings,
 } from "../domain/foundry";
+import { buildArtifactEvidenceSummary } from "../domain/artifactEvidence";
 import {
   ACADEMY_ACTION_IDS,
   findAcademyAction,
@@ -110,6 +112,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   loopFocus,
 }) => {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [artifactTrials, setArtifactTrials] = useState<Trial[]>([]);
   const [downloadJobs, setDownloadJobs] = useState<ModelDownloadJob[]>([]);
   const [modelResults, setModelResults] = useState<ModelSearchResult[]>([]);
   const [modelQuery, setModelQuery] = useState("tiny-gpt2");
@@ -161,13 +164,13 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   useEffect(() => {
     let isCurrent = true;
 
-    repository
-      .listArtifacts(workshop.id)
-      .then((items) => {
+    Promise.all([repository.listArtifacts(workshop.id), repository.listTrials(workshop.id)])
+      .then(([items, trials]) => {
         if (!isCurrent) {
           return;
         }
         setArtifacts(items);
+        setArtifactTrials(trials);
         setSelectedArtifactId((current) => current || activeArtifactId || items[0]?.id || "");
       })
       .catch((loadError: unknown) => {
@@ -238,6 +241,13 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     [artifacts, selectedArtifactId]
   );
   const selectedArtifactReadiness = selectedArtifact?.readiness;
+  const selectedArtifactEvidence = useMemo(
+    () =>
+      selectedArtifact
+        ? buildArtifactEvidenceSummary(selectedArtifact, artifactTrials)
+        : null,
+    [artifactTrials, selectedArtifact]
+  );
   const artifactsNextAction = useMemo(() => {
     if (!artifactFocusTarget) {
       return undefined;
@@ -952,6 +962,39 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                       )}
                     </div>
                   )}
+                </div>
+              )}
+              {selectedArtifactEvidence && (
+                <div className={`artifact-evidence-card readiness-${selectedArtifactEvidence.status}`}>
+                  <div className="runtime-readiness-header">
+                    <div>
+                      <p className="panel-kicker">Artifact evidence</p>
+                      <strong>{selectedArtifactEvidence.title}</strong>
+                      <span>{selectedArtifactEvidence.summary}</span>
+                    </div>
+                    <span className={`status-badge readiness-${selectedArtifactEvidence.status}`}>
+                      {selectedArtifactEvidence.status}
+                    </span>
+                  </div>
+                  <div className="artifact-evidence-stats">
+                    <div>
+                      <span>Total Trials</span>
+                      <strong>{selectedArtifactEvidence.totalTrials}</strong>
+                    </div>
+                    <div>
+                      <span>Pass</span>
+                      <strong>{selectedArtifactEvidence.passTrials}</strong>
+                    </div>
+                    <div>
+                      <span>Adapter-backed</span>
+                      <strong>{selectedArtifactEvidence.adapterBackedPassTrials}</strong>
+                    </div>
+                    <div>
+                      <span>Needs review</span>
+                      <strong>{selectedArtifactEvidence.needsReviewTrials}</strong>
+                    </div>
+                  </div>
+                  <p className="artifact-readiness-copy">{selectedArtifactEvidence.nextAction}</p>
                 </div>
               )}
               <button

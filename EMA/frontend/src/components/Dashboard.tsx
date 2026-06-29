@@ -7,6 +7,7 @@ import {
   FoundryLoopFocus,
   NavigationSection,
 } from "../domain/foundry";
+import { ArtifactEvidenceSummary } from "../domain/artifactEvidence";
 import {
   formatRuntimeMemory,
   getLoadedModelSnapshot,
@@ -23,6 +24,7 @@ import ProgressRing from "./ProgressRing";
 
 interface DashboardProps {
   summary: DashboardSummary;
+  artifactEvidence: ArtifactEvidenceSummary;
   onCreateWorkshop: () => void;
   onRunConstruct: () => void;
   onViewQueue: () => void;
@@ -328,6 +330,7 @@ const writeLoopTourPreference = (isDismissed: boolean) => {
 
 const Dashboard: React.FC<DashboardProps> = ({
   summary,
+  artifactEvidence,
   onCreateWorkshop,
   onRunConstruct,
   onViewQueue,
@@ -636,6 +639,16 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
           <div className="artifact-core" aria-hidden="true">
             <i className="fas fa-cube" />
+          </div>
+          <div className={`dashboard-artifact-evidence readiness-${artifactEvidence.status}`}>
+            <div>
+              <span>Evidence</span>
+              <strong>{artifactEvidence.title}</strong>
+            </div>
+            <span className={`status-badge readiness-${artifactEvidence.status}`}>
+              {artifactEvidence.status}
+            </span>
+            <p>{artifactEvidence.summary}</p>
           </div>
           <div className="dashboard-runtime-strip">
             <span className={`status-badge ${runtime?.loaded ? "is-active" : ""}`}>

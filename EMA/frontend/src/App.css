@@ -1669,6 +1669,39 @@ input[type="checkbox"] {
   box-shadow: var(--shadow-blue);
 }
 
+.dashboard-artifact-evidence {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.48rem 0.7rem;
+  align-items: start;
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  border-radius: 8px;
+  padding: 0.68rem;
+  background: rgba(13, 17, 23, 0.48);
+}
+
+.dashboard-artifact-evidence div {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.dashboard-artifact-evidence span:not(.status-badge),
+.dashboard-artifact-evidence p {
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.dashboard-artifact-evidence strong {
+  color: var(--text-primary);
+  font-size: 0.86rem;
+}
+
+.dashboard-artifact-evidence p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .dashboard-runtime-strip {
   display: grid;
   gap: 0.5rem;
@@ -5861,6 +5894,58 @@ input[type="checkbox"] {
   color: var(--text-secondary);
   font-size: 0.84rem;
   line-height: 1.5;
+}
+
+.artifact-evidence-card {
+  display: grid;
+  gap: 0.72rem;
+  border: 1px solid rgba(0, 212, 255, 0.16);
+  border-radius: 8px;
+  padding: 0.78rem;
+  background:
+    linear-gradient(145deg, rgba(0, 212, 255, 0.07), transparent 44%),
+    rgba(13, 17, 23, 0.62);
+}
+
+.artifact-evidence-card.readiness-verified {
+  border-color: rgba(0, 212, 255, 0.36);
+  box-shadow: 0 0 24px rgba(0, 212, 255, 0.12);
+}
+
+.artifact-evidence-card.readiness-caution,
+.artifact-evidence-card.readiness-simulated {
+  border-color: rgba(212, 160, 23, 0.32);
+}
+
+.artifact-evidence-card.readiness-blocked {
+  border-color: rgba(255, 138, 0, 0.28);
+}
+
+.artifact-evidence-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.4rem, 1fr));
+  gap: 0.55rem;
+}
+
+.artifact-evidence-stats div {
+  display: grid;
+  gap: 0.2rem;
+  border: 1px solid rgba(0, 212, 255, 0.12);
+  border-radius: 8px;
+  padding: 0.62rem;
+  background: rgba(0, 212, 255, 0.045);
+}
+
+.artifact-evidence-stats span {
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.artifact-evidence-stats strong {
+  color: var(--text-primary);
+  font-size: 1rem;
 }
 
 .artifact-trainer-summary {

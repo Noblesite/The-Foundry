@@ -21,6 +21,10 @@ import {
   findAcademyAction,
 } from "./domain/academyRegistry";
 import {
+  ArtifactEvidenceSummary,
+  buildArtifactEvidenceSummary,
+} from "./domain/artifactEvidence";
+import {
   ArchiveModelHandoff,
   Artifact,
   Construct,
@@ -32,6 +36,7 @@ import {
   ModelDownloadJob,
   NavigationSection,
   RuntimeMetric,
+  Trial,
   Workshop,
   resolveDefaultBaseModel,
 } from "./domain/foundry";
@@ -240,6 +245,7 @@ const App: React.FC = () => {
   const [constructRuntime, setConstructRuntime] = useState<ConstructRuntime | null>(null);
   const [foundryStatus, setFoundryStatus] = useState<FoundryRuntimeStatus | null>(null);
   const [archiveEntries, setArchiveEntries] = useState<ModelArchiveEntry[]>([]);
+  const [activeWorkshopTrials, setActiveWorkshopTrials] = useState<Trial[]>([]);
   const [loopEvidenceRefreshCount, setLoopEvidenceRefreshCount] = useState(0);
   const [isRuntimeInspectorOpen, setIsRuntimeInspectorOpen] = useState(loadRuntimeInspectorOpen);
   const [workshops, setWorkshops] = useState<Workshop[]>([mockDashboardSummary.workshop]);
@@ -309,7 +315,10 @@ const App: React.FC = () => {
     const targetWorkshopId = workshopId || foundryData.dashboard.workshop.id;
     setLoopEvidenceRefreshCount((current) => current + 1);
     try {
-      const loopEvidence = await repository.getDashboardEvidence(targetWorkshopId);
+      const [loopEvidence, trials] = await Promise.all([
+        repository.getDashboardEvidence(targetWorkshopId),
+        repository.listTrials(targetWorkshopId),
+      ]);
       setFoundryData((current) => ({
         ...current,
         dashboard: {
@@ -320,6 +329,9 @@ const App: React.FC = () => {
               : current.dashboard.loopEvidence,
         },
       }));
+      if (foundryData.dashboard.workshop.id === targetWorkshopId) {
+        setActiveWorkshopTrials(trials);
+      }
       return loopEvidence;
     } finally {
       setLoopEvidenceRefreshCount((current) => Math.max(0, current - 1));
@@ -858,6 +870,10 @@ const App: React.FC = () => {
     }),
     [activeArtifact, activeConstruct, foundryData.dashboard]
   );
+  const activeArtifactEvidence = useMemo<ArtifactEvidenceSummary>(
+    () => buildArtifactEvidenceSummary(activeArtifact, activeWorkshopTrials),
+    [activeArtifact, activeWorkshopTrials]
+  );
   const isLoopEvidenceRefreshing = loopEvidenceRefreshCount > 0;
 
   const activeNavLabel = useMemo(
@@ -932,6 +948,7 @@ const App: React.FC = () => {
       return (
         <Dashboard
           summary={dashboardSummary}
+          artifactEvidence={activeArtifactEvidence}
           loopEvidence={dashboardSummary.loopEvidence ?? null}
           isLoopEvidenceRefreshing={isLoopEvidenceRefreshing}
           runtime={constructRuntime}
