@@ -357,7 +357,7 @@ interface ConstructWorkbenchProps {
   onOpenAcademyAction: (actionId: string) => void;
   onRuntimeChanged?: (runtime: ConstructRuntime) => void;
   onLoopEvidenceRefresh?: () => void;
-  onOpenTrialComparison?: () => void;
+  onOpenTrialComparison?: (targetPrompt?: string) => void;
   loopFocus?: FoundryLoopFocus | null;
 }
 
@@ -1581,7 +1581,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       setPromptRecipeMessage(
         "Prompt comparison recipe captured two Trials. Opening Trials comparison."
       );
-      onOpenTrialComparison?.();
+      onOpenTrialComparison?.(comparisonPrompt);
     } catch (recipeError: unknown) {
       setPromptRecipeMessage(null);
       setError(
@@ -2710,7 +2710,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                     <button
                       className="button-secondary button-compact"
                       disabled={!lastInspection || isRunningPromptRecipe}
-                      onClick={onOpenTrialComparison}
+                      onClick={() => onOpenTrialComparison?.(lastInspection?.prompt)}
                       type="button"
                     >
                       <i className="fas fa-scale-balanced" aria-hidden="true" />
@@ -3312,7 +3312,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
                   <button
                     className="button-primary button-compact"
                     disabled={isRunningPromptRecipe}
-                    onClick={onOpenTrialComparison}
+                    onClick={() => onOpenTrialComparison?.(lastInspection.prompt)}
                     type="button"
                   >
                     <i className="fas fa-scale-balanced" aria-hidden="true" />

@@ -314,6 +314,13 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
   const [reviewTarget, setReviewTarget] = useState<EvaluationReportSummary | null>(null);
   const [reviewSamples, setReviewSamples] = useState<ReviewedWeakSample[]>([]);
   const trialsFocusTarget = useMemo(() => trialsLoopFocusTarget(loopFocus), [loopFocus]);
+  const focusedComparisonPrompt = useMemo(
+    () =>
+      trialsFocusTarget === "comparison" && loopFocus?.targetPrompt
+        ? normalizePrompt(loopFocus.targetPrompt)
+        : null,
+    [loopFocus?.targetPrompt, trialsFocusTarget]
+  );
   const trialComparisonRef = useRef<HTMLElement | null>(null);
   const trialExportRef = useRef<HTMLDivElement | null>(null);
   const trialListRef = useRef<HTMLDivElement | null>(null);
@@ -524,6 +531,29 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
       promptVariantGroups,
     };
   }, [trialComparisons, trials]);
+
+  const focusedTrialComparisons = useMemo(() => {
+    if (!focusedComparisonPrompt) {
+      return trialComparisons;
+    }
+    return [...trialComparisons].sort((left, right) => {
+      if (left.key === focusedComparisonPrompt && right.key !== focusedComparisonPrompt) {
+        return -1;
+      }
+      if (right.key === focusedComparisonPrompt && left.key !== focusedComparisonPrompt) {
+        return 1;
+      }
+      return Date.parse(right.latest.createdAt) - Date.parse(left.latest.createdAt);
+    });
+  }, [focusedComparisonPrompt, trialComparisons]);
+
+  const hasFocusedComparison = useMemo(
+    () =>
+      Boolean(focusedComparisonPrompt) &&
+      trialComparisons.some((comparison) => comparison.key === focusedComparisonPrompt),
+    [focusedComparisonPrompt, trialComparisons]
+  );
+
   const trialsNextAction = useMemo(() => {
     if (!trialsFocusTarget) {
       return undefined;
@@ -532,9 +562,14 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
       return "Run a Construct prompt and save a verdict so Trial evidence exists.";
     }
     if (trialsFocusTarget === "comparison") {
+      if (focusedComparisonPrompt && !hasFocusedComparison) {
+        return "The handoff prompt has not produced two saved Trials yet. Run the comparison recipe again.";
+      }
       return trialComparisonSummary.promptGroups === 0
         ? "Run the same prompt across Artifacts or runtime modes to create a comparison group."
-        : "Compare repeated prompts and decide which Artifact response is strongest.";
+        : hasFocusedComparison
+          ? "Review the highlighted comparison group and decide which prompt-chain behavior is strongest."
+          : "Compare repeated prompts and decide which Artifact response is strongest.";
     }
     if (trialsFocusTarget === "export") {
       return selectedTrialIds.length === 0
@@ -553,6 +588,8 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
     trialComparisonSummary.promptGroups,
     trials.length,
     trialsFocusTarget,
+    focusedComparisonPrompt,
+    hasFocusedComparison,
   ]);
 
   const sortedEvaluationReports = useMemo(
@@ -869,67 +906,79 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
           </p>
         ) : (
           <div className="trial-comparison-list">
-            {trialComparisons.slice(0, 6).map((comparison) => (
-              <article className="trial-comparison-card" key={comparison.key}>
-                <div className="trial-comparison-header">
-                  <div>
-                    <p className="panel-kicker">{comparison.variants.length} variants</p>
-                    <h3>{comparison.prompt}</h3>
+            {focusedTrialComparisons.slice(0, 6).map((comparison) => {
+              const isFocusedComparison = comparison.key === focusedComparisonPrompt;
+              return (
+                <article
+                  className={`trial-comparison-card ${
+                    isFocusedComparison ? "is-target-comparison" : ""
+                  }`}
+                  key={comparison.key}
+                >
+                  <div className="trial-comparison-header">
+                    <div>
+                      <p className="panel-kicker">
+                        {isFocusedComparison
+                          ? "Current handoff"
+                          : `${comparison.variants.length} variants`}
+                      </p>
+                      <h3>{comparison.prompt}</h3>
+                    </div>
+                    <span className={`trial-verdict verdict-${comparison.best.verdict}`}>
+                      Best {verdictLabels[comparison.best.verdict]}
+                    </span>
                   </div>
-                  <span className={`trial-verdict verdict-${comparison.best.verdict}`}>
-                    Best {verdictLabels[comparison.best.verdict]}
-                  </span>
-                </div>
-                <div className="trial-comparison-facts">
-                  <span>{comparison.artifacts.length} Artifacts</span>
-                  <span>{comparison.sources.map(runtimeSourceLabel).join(" / ")}</span>
-                  <span>
-                    {comparison.systemPromptVariants.length === 0
-                      ? "prompt chain not recorded"
-                      : `${comparison.systemPromptVariants.length} system prompt${
-                          comparison.systemPromptVariants.length === 1 ? "" : "s"
-                        }`}
-                  </span>
-                  <span>
-                    {comparison.libraryContextVariants.length === 0
-                      ? "Library not recorded"
-                      : comparison.libraryContextVariants.length === 1
-                        ? `Library ${comparison.libraryContextVariants[0] ? "included" : "off"}`
-                        : "Library varied"}
-                  </span>
-                  <span>
-                    {comparison.minTokens === comparison.maxTokens
-                      ? `${comparison.minTokens} tokens`
-                      : `${comparison.minTokens}-${comparison.maxTokens} tokens`}
-                  </span>
-                </div>
-                <div className="trial-variant-list">
-                  {comparison.variants.slice(0, 4).map((trial) => {
-                    const promptChain = promptChainForTrial(trial);
-                    return (
-                      <div className="trial-variant-row" key={trial.id}>
-                        <span className={`trial-verdict verdict-${trial.verdict}`}>
-                          {verdictLabels[trial.verdict]}
-                        </span>
-                        <strong>
-                          {runtimeModeLabel(trial.runtimeProfile?.runtimeMode || trial.runtimeMode)}
-                        </strong>
-                        <span>{runtimeSourceLabel(trial.runtimeProfile?.source)}</span>
-                        <span>{shortValue(trial.artifactId, 22)}</span>
-                        <span>
-                          {trial.runtimeProfile?.adapterLoaded
-                            ? shortValue(trial.runtimeProfile.adapterPath || "adapter", 32)
-                            : "no adapter"}
-                        </span>
-                        <span>{promptChainSystemLabel(promptChain)}</span>
-                        <span>Library {promptChainLibraryLabel(promptChain)}</span>
-                        <span>{trial.tokenCount} tokens</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </article>
-            ))}
+                  <div className="trial-comparison-facts">
+                    <span>{comparison.artifacts.length} Artifacts</span>
+                    <span>{comparison.sources.map(runtimeSourceLabel).join(" / ")}</span>
+                    <span>
+                      {comparison.systemPromptVariants.length === 0
+                        ? "prompt chain not recorded"
+                        : `${comparison.systemPromptVariants.length} system prompt${
+                            comparison.systemPromptVariants.length === 1 ? "" : "s"
+                          }`}
+                    </span>
+                    <span>
+                      {comparison.libraryContextVariants.length === 0
+                        ? "Library not recorded"
+                        : comparison.libraryContextVariants.length === 1
+                          ? `Library ${comparison.libraryContextVariants[0] ? "included" : "off"}`
+                          : "Library varied"}
+                    </span>
+                    <span>
+                      {comparison.minTokens === comparison.maxTokens
+                        ? `${comparison.minTokens} tokens`
+                        : `${comparison.minTokens}-${comparison.maxTokens} tokens`}
+                    </span>
+                  </div>
+                  <div className="trial-variant-list">
+                    {comparison.variants.slice(0, 4).map((trial) => {
+                      const promptChain = promptChainForTrial(trial);
+                      return (
+                        <div className="trial-variant-row" key={trial.id}>
+                          <span className={`trial-verdict verdict-${trial.verdict}`}>
+                            {verdictLabels[trial.verdict]}
+                          </span>
+                          <strong>
+                            {runtimeModeLabel(trial.runtimeProfile?.runtimeMode || trial.runtimeMode)}
+                          </strong>
+                          <span>{runtimeSourceLabel(trial.runtimeProfile?.source)}</span>
+                          <span>{shortValue(trial.artifactId, 22)}</span>
+                          <span>
+                            {trial.runtimeProfile?.adapterLoaded
+                              ? shortValue(trial.runtimeProfile.adapterPath || "adapter", 32)
+                              : "no adapter"}
+                          </span>
+                          <span>{promptChainSystemLabel(promptChain)}</span>
+                          <span>Library {promptChainLibraryLabel(promptChain)}</span>
+                          <span>{trial.tokenCount} tokens</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </section>

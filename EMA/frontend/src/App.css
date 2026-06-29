@@ -4307,6 +4307,18 @@ input[type="checkbox"] {
   padding: 0.85rem;
 }
 
+.trial-comparison-card.is-target-comparison {
+  border-color: rgba(255, 138, 0, 0.56);
+  background:
+    linear-gradient(135deg, rgba(255, 138, 0, 0.14), rgba(0, 212, 255, 0.06)),
+    rgba(13, 17, 23, 0.76);
+  box-shadow: 0 0 0 1px rgba(255, 138, 0, 0.12), 0 0 22px rgba(255, 138, 0, 0.13);
+}
+
+.trial-comparison-card.is-target-comparison .panel-kicker {
+  color: var(--forge-orange);
+}
+
 .trial-comparison-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

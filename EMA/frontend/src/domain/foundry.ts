@@ -17,6 +17,7 @@ export interface FoundryLoopFocus {
   detail: string;
   actionLabel: string;
   targetLabel: string;
+  targetPrompt?: string;
   requestedAt: number;
 }
 

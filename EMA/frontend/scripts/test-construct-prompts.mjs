@@ -11,6 +11,10 @@ const files = {
     new URL("../src/components/ConstructWorkbench.tsx", import.meta.url),
     "utf8"
   ),
+  trials: await readFile(
+    new URL("../src/components/TrialsWorkbench.tsx", import.meta.url),
+    "utf8"
+  ),
   app: await readFile(new URL("../src/App.tsx", import.meta.url), "utf8"),
   styles: await readFile(new URL("../src/App.css", import.meta.url), "utf8"),
   roadmap: await readFile(new URL("../../../docs/roadmap.md", import.meta.url), "utf8"),
@@ -30,6 +34,11 @@ assertIncludes(
   files.domain,
   "export interface ConstructPromptChain",
   "Construct domain exposes a prompt-chain contract"
+);
+assertIncludes(
+  files.domain,
+  "targetPrompt?: string",
+  "Loop focus can carry a specific prompt comparison target"
 );
 assertIncludes(
   files.domain,
@@ -123,18 +132,28 @@ assertIncludes(
 );
 assertIncludes(
   files.construct,
+  "onOpenTrialComparison?.(comparisonPrompt)",
+  "Construct comparison recipe hands its exact prompt to Trials"
+);
+assertIncludes(
+  files.construct,
   "Open Trial Comparison",
   "Construct workbench can hand prompt variants to Trials comparison"
 );
 assertIncludes(
   files.app,
-  "const handleOpenTrialComparison = useCallback(() =>",
+  "const handleOpenTrialComparison = useCallback((targetPrompt?: string) =>",
   "App owns the Construct to Trials comparison handoff"
 );
 assertIncludes(
   files.app,
   'targetLabel: "Prompt comparison"',
   "Trials handoff focuses the prompt comparison panel"
+);
+assertIncludes(
+  files.app,
+  "targetPrompt,",
+  "App preserves the handoff prompt on loop focus"
 );
 assertIncludes(
   files.styles,
@@ -153,8 +172,33 @@ assertIncludes(
 );
 assertIncludes(
   files.styles,
+  ".trial-comparison-card.is-target-comparison",
+  "Trials highlights the specific comparison group opened from Construct"
+);
+assertIncludes(
+  files.styles,
   ".user-prompt-field",
   "User prompt composer has accessible label styling"
+);
+assertIncludes(
+  files.trials,
+  "const focusedComparisonPrompt = useMemo(",
+  "Trials normalizes the handoff prompt for comparison focus"
+);
+assertIncludes(
+  files.trials,
+  "const focusedTrialComparisons = useMemo(() =>",
+  "Trials sorts the handoff comparison group to the top"
+);
+assertIncludes(
+  files.trials,
+  "is-target-comparison",
+  "Trials marks the matching comparison card"
+);
+assertIncludes(
+  files.trials,
+  "Current handoff",
+  "Trials labels the active handoff comparison card"
 );
 assertIncludes(
   files.roadmap,

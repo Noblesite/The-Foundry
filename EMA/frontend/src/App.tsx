@@ -870,7 +870,7 @@ const App: React.FC = () => {
     setActiveSection(focus.section);
   }, []);
 
-  const handleOpenTrialComparison = useCallback(() => {
+  const handleOpenTrialComparison = useCallback((targetPrompt?: string) => {
     setLoopFocus({
       id: "construct-prompt-comparison",
       section: "trials",
@@ -880,6 +880,7 @@ const App: React.FC = () => {
         "Review repeated user prompts with different system prompts, Library context, runtime modes, or Artifacts.",
       actionLabel: "Review comparison",
       targetLabel: "Prompt comparison",
+      targetPrompt,
       requestedAt: Date.now(),
     });
     refreshActiveLoopEvidence();
