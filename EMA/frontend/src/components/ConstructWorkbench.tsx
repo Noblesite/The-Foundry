@@ -48,6 +48,7 @@ import {
   type ArtifactEvidenceAction,
   type ArtifactEvidenceSummary,
 } from "../domain/artifactEvidence";
+import { buildModelLiteracyProfile } from "../domain/modelLiteracy";
 import { FoundryRepository } from "../services/foundryRepository";
 import LoopFocusCallout from "./LoopFocusCallout";
 import {
@@ -55,6 +56,7 @@ import {
   LearningCard,
   TrainingMetricExplainer,
 } from "./LearningComponents";
+import ModelLiteracyCards from "./ModelLiteracyCards";
 import { WorkspaceSettings } from "./SettingsOverlay";
 import SystemReadinessPanel from "./SystemReadinessPanel";
 
@@ -1736,6 +1738,31 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
 
   const runtimeMemory = getRuntimeMemory(runtime);
   const loadedModel = getLoadedModelSnapshot(runtime);
+  const modelLiteracyProfile = useMemo(
+    () =>
+      buildModelLiteracyProfile({
+        modelId: loadedModel.modelId || runtime?.modelId || runtimeLoadTarget || activeArtifact.baseModel,
+        contextWindow:
+          preflightResult?.contextWindow ||
+          lastInspection?.contextWindow ||
+          activeConstruct.contextWindow,
+        runtimeMode: runtime?.mode || runtimeMode,
+        cached: Boolean(runtime?.loaded || loadedModel.modelId),
+        source: "construct",
+      }),
+    [
+      activeArtifact.baseModel,
+      activeConstruct.contextWindow,
+      lastInspection?.contextWindow,
+      loadedModel.modelId,
+      preflightResult?.contextWindow,
+      runtime?.loaded,
+      runtime?.mode,
+      runtime?.modelId,
+      runtimeLoadTarget,
+      runtimeMode,
+    ]
+  );
   const smokeArchiveEntry = findSmokeModelArchiveEntry(archiveEntries);
   const smokeModelCached = isModelArchiveEntryCached(smokeArchiveEntry);
   const smokeModelPreparing =
@@ -2166,6 +2193,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
               {runtimeMemoryReleaseMessage && (
                 <p className="save-state success-state">{runtimeMemoryReleaseMessage}</p>
               )}
+              <ModelLiteracyCards compact profile={modelLiteracyProfile} />
               <div className="runtime-action-row">
                 <button
                   className="button-secondary button-compact"

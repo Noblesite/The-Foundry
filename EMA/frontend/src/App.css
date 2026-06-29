@@ -6239,6 +6239,103 @@ input[type="checkbox"] {
   color: var(--arc-blue);
 }
 
+.model-literacy-panel {
+  display: grid;
+  gap: 0.8rem;
+  border: 1px solid rgba(0, 212, 255, 0.14);
+  border-radius: 8px;
+  padding: 0.95rem;
+  background:
+    radial-gradient(circle at top left, rgba(0, 212, 255, 0.1), transparent 34%),
+    linear-gradient(135deg, rgba(24, 33, 40, 0.72), rgba(13, 17, 23, 0.58));
+}
+
+.model-literacy-panel.is-compact {
+  padding: 0.78rem;
+}
+
+.model-literacy-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.model-literacy-heading h3 {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.model-literacy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
+  gap: 0.7rem;
+}
+
+.model-literacy-panel.is-compact .model-literacy-grid {
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+}
+
+.model-literacy-card {
+  display: grid;
+  align-content: start;
+  gap: 0.55rem;
+  min-height: 13rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.72rem;
+  background: rgba(13, 17, 23, 0.5);
+}
+
+.model-literacy-card-title {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.52rem;
+  align-items: center;
+}
+
+.model-literacy-card-title span {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid rgba(0, 212, 255, 0.32);
+  border-radius: 8px;
+  color: var(--arc-blue);
+  background: rgba(0, 212, 255, 0.08);
+}
+
+.model-literacy-card h4,
+.model-literacy-card p,
+.model-literacy-card ul {
+  margin: 0;
+}
+
+.model-literacy-card h4 {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.model-literacy-card p {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.model-literacy-card ul {
+  display: grid;
+  gap: 0.34rem;
+  padding-left: 1rem;
+}
+
+.model-literacy-card li {
+  color: var(--text-secondary);
+  font-size: 0.73rem;
+  line-height: 1.42;
+}
+
 .model-actions {
   display: grid;
   gap: 0.55rem;
@@ -7695,6 +7792,7 @@ input[type="checkbox"] {
   .trial-rubric-grid,
   .weak-sample-grid,
   .modal-actions,
+  .model-literacy-heading,
   .settings-grid {
     grid-template-columns: 1fr;
   }

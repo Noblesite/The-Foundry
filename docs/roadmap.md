@@ -92,7 +92,8 @@ complexity.
   special tokens, context budgets, and wrapper orchestration. These should make
   clear that a model emits text or structured requests, while the wrapper
   decides whether to call tools, append context, route actions, or feed the next
-  prompt back into the model.
+  prompt back into the model. Done for the first Archive and Construct model
+  literacy card slice.
 
 ## Phase 7: Production Readiness
 

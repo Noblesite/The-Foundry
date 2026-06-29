@@ -21,10 +21,12 @@ import {
   ACADEMY_ACTION_IDS,
   findAcademyAction,
 } from "../domain/academyRegistry";
+import { buildModelLiteracyProfile } from "../domain/modelLiteracy";
 import { ArchiveModelPreflightDto } from "../contracts/foundryApi";
 import { FoundryRepository } from "../services/foundryRepository";
 import { AcademyActionTooltip, LearningCard } from "./LearningComponents";
 import LoopFocusCallout from "./LoopFocusCallout";
+import ModelLiteracyCards from "./ModelLiteracyCards";
 
 interface ArtifactsWorkbenchProps {
   activeArtifactId: string;
@@ -336,6 +338,23 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
       );
     },
     [archiveEntries, selectedModel]
+  );
+  const selectedModelLiteracyProfile = useMemo(
+    () =>
+      buildModelLiteracyProfile({
+        modelId: selectedModel?.repoId || selectedArchiveEntry?.repoId || defaultBaseModel,
+        libraryName: selectedModel?.libraryName || selectedArchiveEntry?.libraryName,
+        pipelineTag: selectedModel?.pipelineTag || selectedArchiveEntry?.pipelineTag,
+        tags: selectedModel?.tags,
+        parameterCount: selectedModel?.parameterCount || selectedArchiveEntry?.parameterCount,
+        contextWindow: settings.contextWindow,
+        runtimeMode: "archive selection",
+        cached:
+          selectedArchiveEntry?.status === "cached" ||
+          selectedArchiveEntry?.status === "ready",
+        source: "archive",
+      }),
+    [defaultBaseModel, selectedArchiveEntry, selectedModel, settings.contextWindow]
   );
   const canReturnCachedModelToMaterials = Boolean(
     handoff?.source === "materials" &&
@@ -1327,6 +1346,8 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
             )}
           </aside>
         </div>
+
+        <ModelLiteracyCards profile={selectedModelLiteracyProfile} />
 
         <section className="archive-jobs-panel" aria-label="Archive download jobs">
           <div className="panel-heading">

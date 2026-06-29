@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "test": "npm run test:readiness && npm run test:runtime-events && npm run test:archive-handoff && npm run test:trials-review && npm run test:construct-prompts && npm run test:artifact-evidence && npm run test:academy-concepts",
+    "test": "npm run test:readiness && npm run test:runtime-events && npm run test:archive-handoff && npm run test:trials-review && npm run test:construct-prompts && npm run test:artifact-evidence && npm run test:academy-concepts && npm run test:model-literacy",
     "test:readiness": "node scripts/test-construct-readiness.mjs",
     "test:runtime-events": "node scripts/test-construct-runtime-events.mjs",
     "test:archive-handoff": "node scripts/test-archive-handoff.mjs",
@@ -16,6 +16,7 @@
     "test:construct-prompts": "node scripts/test-construct-prompts.mjs",
     "test:artifact-evidence": "node scripts/test-artifact-evidence.mjs",
     "test:academy-concepts": "node scripts/test-academy-concepts.mjs",
+    "test:model-literacy": "node scripts/test-model-literacy.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
