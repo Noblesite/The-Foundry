@@ -5532,6 +5532,56 @@ input[type="checkbox"] {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.forge-model-readiness {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: center;
+  border: 1px solid rgba(0, 212, 255, 0.16);
+  border-radius: 8px;
+  padding: 0.72rem;
+  background: rgba(13, 17, 23, 0.5);
+}
+
+.forge-model-readiness.readiness-ready {
+  border-color: rgba(0, 212, 255, 0.26);
+}
+
+.forge-model-readiness.readiness-caution {
+  border-color: rgba(212, 160, 23, 0.32);
+  background: rgba(212, 160, 23, 0.06);
+}
+
+.forge-model-readiness.readiness-blocked {
+  border-color: rgba(255, 138, 0, 0.36);
+  background: rgba(255, 138, 0, 0.06);
+}
+
+.forge-model-readiness strong,
+.forge-model-readiness span {
+  display: block;
+}
+
+.forge-model-readiness strong {
+  color: var(--text-primary);
+  font-size: 0.82rem;
+}
+
+.forge-model-readiness span:not(.status-badge) {
+  margin-top: 0.18rem;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.forge-model-readiness-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .forge-readiness-models {
   word-break: break-word;
 }
@@ -7905,6 +7955,7 @@ input[type="checkbox"] {
   .modal-actions,
   .model-literacy-heading,
   .workshop-base-model-callout,
+  .forge-model-readiness,
   .workshop-model-search,
   .base-model-search,
   .settings-grid {
@@ -7921,6 +7972,14 @@ input[type="checkbox"] {
 
   .workshop-base-model-actions .button-primary,
   .workshop-base-model-actions .button-secondary {
+    width: 100%;
+  }
+
+  .forge-model-readiness-actions {
+    justify-content: stretch;
+  }
+
+  .forge-model-readiness-actions .button-secondary {
     width: 100%;
   }
 

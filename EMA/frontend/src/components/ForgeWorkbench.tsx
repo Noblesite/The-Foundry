@@ -9,8 +9,10 @@ import {
   Artifact,
   Construct,
   ConstructChatResponse,
+  ConstructRuntime,
   ForgeLocalTrainerPreflightResult,
   FoundryLoopFocus,
+  FoundryRuntimeStatus,
   ForgeRun,
   ForgePurpose,
   ForgeRuntime,
@@ -26,6 +28,11 @@ import {
   TrainingMethod,
   Workshop,
 } from "../domain/foundry";
+import {
+  buildSystemReadinessSummary,
+  ModelPreparationActivity,
+  SystemReadinessModelAction,
+} from "../domain/systemReadiness";
 import { FoundryRepository } from "../services/foundryRepository";
 import { WorkspaceSettings } from "./SettingsOverlay";
 import {
@@ -125,10 +132,14 @@ interface ForgeWorkbenchProps {
   summary: SectionSummary;
   workshop: Workshop;
   archiveEntries?: ModelArchiveEntry[];
+  sourceStatus?: FoundryRuntimeStatus | null;
+  runtime?: ConstructRuntime | null;
+  preparationActivity?: ModelPreparationActivity;
   forgePreset?: StartForgeRequest | null;
   academyAction?: AcademyAction;
   onConstructLoaded: (construct: Construct, artifact: Artifact) => void;
   onSearchBaseModels?: (query: string) => Promise<ModelSearchResult[]>;
+  onPrepareModel?: (action: SystemReadinessModelAction) => void;
   onOpenAcademy: () => void;
   onOpenAcademyAction: (actionId: string) => void;
   onLoopEvidenceRefresh?: () => void;
@@ -142,10 +153,14 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   summary,
   workshop,
   archiveEntries = [],
+  sourceStatus,
+  runtime,
+  preparationActivity,
   forgePreset,
   academyAction,
   onConstructLoaded,
   onSearchBaseModels,
+  onPrepareModel,
   onOpenAcademy,
   onOpenAcademyAction,
   onLoopEvidenceRefresh,
@@ -370,6 +385,33 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
     [selectedMaterial]
   );
   const selectedMaterialForgeBlocked = selectedTrainingReadiness?.forgeReady === false;
+  const selectedBaseModelReadiness = useMemo(
+    () =>
+      buildSystemReadinessSummary(
+        {
+          ...settings,
+          defaultBaseModel: draft.baseModel,
+          constructModelId: draft.baseModel,
+        },
+        sourceStatus,
+        runtime,
+        archiveEntries
+      ),
+    [archiveEntries, draft.baseModel, runtime, settings, sourceStatus]
+  );
+  const baseModelActionInProgress = Boolean(
+    preparationActivity &&
+      !["idle", "ready", "failed", "canceled"].includes(preparationActivity.state)
+  );
+  const baseModelCachedForForge =
+    selectedBaseModelReadiness.modelAction.type === "ready" ||
+    selectedBaseModelReadiness.modelAction.type === "open-construct";
+  const baseModelActionLabel =
+    selectedBaseModelReadiness.modelAction.type === "open-archive"
+      ? "Prepare in Archive"
+      : selectedBaseModelReadiness.modelAction.type === "download-model"
+        ? "Download in Archive"
+        : selectedBaseModelReadiness.modelAction.label;
   const forgeNextAction = useMemo(() => {
     if (!forgeFocusTarget) {
       return undefined;
@@ -984,6 +1026,31 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
             onChange={(modelId) => updateDraft("baseModel", modelId)}
             onSearchBaseModels={onSearchBaseModels}
           />
+          <article className={`forge-model-readiness readiness-${selectedBaseModelReadiness.state}`}>
+            <div>
+              <p className="panel-kicker">Base model readiness</p>
+              <strong>
+                {baseModelCachedForForge ? "Base model cached" : "Cache before real training"}
+              </strong>
+              <span>{selectedBaseModelReadiness.modelAction.detail}</span>
+            </div>
+            <div className="forge-model-readiness-actions">
+              <span className={`status-badge readiness-${selectedBaseModelReadiness.state}`}>
+                {selectedBaseModelReadiness.state}
+              </span>
+              {!baseModelCachedForForge && (
+                <button
+                  className="button-secondary button-compact"
+                  disabled={!onPrepareModel || baseModelActionInProgress}
+                  onClick={() => onPrepareModel?.(selectedBaseModelReadiness.modelAction)}
+                  type="button"
+                >
+                  <i className="fas fa-box-archive" aria-hidden="true" />
+                  {baseModelActionInProgress ? "Preparing" : baseModelActionLabel}
+                </button>
+              )}
+            </div>
+          </article>
 
           <div className="settings-grid">
             <div>
