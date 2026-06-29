@@ -1447,6 +1447,22 @@ async def foundry_artifacts_endpoint(workshop_id: str):
     return api_envelope(await foundry_catalog_service.list_artifacts(workshop_id))
 
 
+@app.get("/api/v1/workshops/{workshop_id}/artifacts/evidence")
+async def foundry_artifact_evidence_endpoint(workshop_id: str):
+    try:
+        return api_envelope(await foundry_catalog_service.list_artifact_evidence(workshop_id))
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+
+@app.get("/api/v1/artifacts/{artifact_id}/evidence")
+async def foundry_single_artifact_evidence_endpoint(artifact_id: str):
+    try:
+        return api_envelope(await foundry_catalog_service.get_artifact_evidence(artifact_id))
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+
 @app.post("/api/v1/workshops/{workshop_id}/constructs/load-artifact")
 async def load_foundry_artifact_into_construct_endpoint(
     workshop_id: str,

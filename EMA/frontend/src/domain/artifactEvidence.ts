@@ -1,4 +1,10 @@
-import { Artifact, ArtifactReadinessStatus, Trial } from "./foundry";
+import {
+  Artifact,
+  ArtifactReadinessStatus,
+  FoundryLoopFocus,
+  NavigationSection,
+  Trial,
+} from "./foundry";
 
 export interface ArtifactEvidenceSummary {
   artifactId: string;
@@ -13,6 +19,119 @@ export interface ArtifactEvidenceSummary {
   baseOnlyPassTrials: number;
   simulatedPassTrials: number;
 }
+
+export interface ArtifactEvidenceAction {
+  id: "open-construct" | "review-trials" | "compare-trials";
+  label: string;
+  icon: string;
+  destination: NavigationSection;
+  focus: Omit<FoundryLoopFocus, "requestedAt">;
+}
+
+export const getArtifactEvidenceAction = (
+  artifact: Artifact,
+  evidence: ArtifactEvidenceSummary
+): ArtifactEvidenceAction => {
+  if (evidence.status === "verified") {
+    return {
+      id: "compare-trials",
+      label: "Compare Trials",
+      icon: "fa-code-compare",
+      destination: "trials",
+      focus: {
+        id: `artifact-evidence-${artifact.id}-compare`,
+        section: "trials",
+        stepLabel: "Artifact Evidence",
+        title: "Compare verified Artifact behavior",
+        detail:
+          "This Artifact has adapter-backed pass evidence. Compare repeated prompts before treating it as promoted behavior.",
+        actionLabel: "Compare Trials",
+        targetLabel: "Prompt comparison",
+        artifactId: artifact.id,
+        trialFilter: "adapter-backed",
+      },
+    };
+  }
+
+  if (evidence.needsReviewTrials > 0) {
+    return {
+      id: "review-trials",
+      label: "Review Trials",
+      icon: "fa-clipboard-check",
+      destination: "trials",
+      focus: {
+        id: `artifact-evidence-${artifact.id}-review`,
+        section: "trials",
+        stepLabel: "Artifact Evidence",
+        title: "Review captured Artifact replies",
+        detail:
+          "Auto-captured Construct replies still need a human verdict before this Artifact has promotion evidence.",
+        actionLabel: "Review Trials",
+        targetLabel: "Trial list",
+        artifactId: artifact.id,
+        trialFilter: "needs-review",
+      },
+    };
+  }
+
+  if (evidence.baseOnlyPassTrials > 0) {
+    return {
+      id: "open-construct",
+      label: "Run Adapter Proof",
+      icon: "fa-play",
+      destination: "construct",
+      focus: {
+        id: `artifact-evidence-${artifact.id}-adapter-proof`,
+        section: "construct",
+        stepLabel: "Artifact Evidence",
+        title: "Run an adapter-backed proof",
+        detail:
+          "This Artifact only has base-model Trial evidence. Load the Artifact adapter in Construct and rerun the promoted prompt.",
+        actionLabel: "Run proof",
+        targetLabel: "Adapter-backed Construct",
+        artifactId: artifact.id,
+      },
+    };
+  }
+
+  if (evidence.simulatedPassTrials > 0) {
+    return {
+      id: "open-construct",
+      label: "Run Local Proof",
+      icon: "fa-play",
+      destination: "construct",
+      focus: {
+        id: `artifact-evidence-${artifact.id}-local-proof`,
+        section: "construct",
+        stepLabel: "Artifact Evidence",
+        title: "Replace simulated evidence with a local proof",
+        detail:
+          "Simulated pass Trials prove workflow shape only. Run Construct with a local model or adapter-backed Artifact before promotion.",
+        actionLabel: "Run local proof",
+        targetLabel: "Construct runtime",
+        artifactId: artifact.id,
+      },
+    };
+  }
+
+  return {
+    id: "open-construct",
+    label: "Create Trial Evidence",
+    icon: "fa-play",
+    destination: "construct",
+    focus: {
+      id: `artifact-evidence-${artifact.id}-create-trial`,
+      section: "construct",
+      stepLabel: "Artifact Evidence",
+      title: "Create Trial evidence",
+      detail:
+        "This Artifact has no promoted Trial evidence. Run Construct prompts, save verdicts, and return here when evidence exists.",
+      actionLabel: "Run Construct",
+      targetLabel: "Construct prompt",
+      artifactId: artifact.id,
+    },
+  };
+};
 
 const trialBelongsToArtifact = (artifact: Artifact, trial: Trial) =>
   trial.artifactId === artifact.id || trial.runtimeProfile?.artifactId === artifact.id;

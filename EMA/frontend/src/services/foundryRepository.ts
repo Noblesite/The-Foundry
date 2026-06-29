@@ -3,6 +3,7 @@ import {
   ApiErrorEnvelope,
   AcademyActionDto,
   AcademyConceptDto,
+  ArtifactEvidenceDto,
   ArchiveModelEvictDto,
   ArchiveModelInspectDto,
   ArchiveModelDownloadDto,
@@ -119,6 +120,10 @@ import {
 } from "../domain/foundry";
 import apiClient from "../managers/axiosConfig";
 import { defaultAcademyActions, defaultAcademyConcepts } from "../domain/academyRegistry";
+import {
+  buildArtifactEvidenceSummary,
+  type ArtifactEvidenceSummary,
+} from "../domain/artifactEvidence";
 import {
   foundryNavigationItems,
   foundrySectionSummaries,
@@ -354,6 +359,8 @@ export interface FoundryRepository {
   getForgeRuntime: () => Promise<ForgeRuntime>;
   configureForgeRuntime: (request: ConfigureForgeRuntimeRequest) => Promise<ForgeRuntime>;
   listArtifacts: (workshopId: string) => Promise<Artifact[]>;
+  listArtifactEvidence: (workshopId: string) => Promise<ArtifactEvidenceSummary[]>;
+  getArtifactEvidence: (artifactId: string) => Promise<ArtifactEvidenceSummary>;
   listTrials: (workshopId: string) => Promise<Trial[]>;
   createTrial: (workshopId: string, request: CreateTrialRequest) => Promise<Trial>;
   exportTrials: (workshopId: string, request: ExportTrialsRequest) => Promise<ExportTrialsDto>;
@@ -2547,6 +2554,25 @@ export const mockFoundryRepository: FoundryRepository = {
   },
   listArtifacts: async (_workshopId) =>
     mockArtifacts.filter((artifact) => artifact.workshopId === _workshopId),
+  listArtifactEvidence: async (_workshopId) =>
+    mockArtifacts
+      .filter((artifact) => artifact.workshopId === _workshopId)
+      .map((artifact) =>
+        buildArtifactEvidenceSummary(
+          artifact,
+          mockTrials.filter((trial) => trial.workshopId === _workshopId)
+        )
+      ),
+  getArtifactEvidence: async (artifactId) => {
+    const artifact = mockArtifacts.find((item) => item.id === artifactId);
+    if (!artifact) {
+      throw new Error("Artifact was not found.");
+    }
+    return buildArtifactEvidenceSummary(
+      artifact,
+      mockTrials.filter((trial) => trial.workshopId === artifact.workshopId)
+    );
+  },
   listTrials: async (_workshopId) =>
     mockTrials.filter((trial) => trial.workshopId === _workshopId),
   createTrial: async (_workshopId, request) => {
@@ -3521,6 +3547,18 @@ export const apiFoundryRepository: FoundryRepository = {
   listArtifacts: async (workshopId) =>
     unwrap(
       await apiClient.get<ApiEnvelope<ArtifactDto[]>>(foundryApiRoutes.artifacts(workshopId))
+    ),
+  listArtifactEvidence: async (workshopId) =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<ArtifactEvidenceDto[]>>(
+        foundryApiRoutes.artifactEvidence(workshopId)
+      )
+    ),
+  getArtifactEvidence: async (artifactId) =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<ArtifactEvidenceDto>>(
+        foundryApiRoutes.artifactEvidenceDetail(artifactId)
+      )
     ),
   listTrials: async (workshopId) =>
     unwrap(await apiClient.get<ApiEnvelope<TrialDto[]>>(foundryApiRoutes.trials(workshopId))),

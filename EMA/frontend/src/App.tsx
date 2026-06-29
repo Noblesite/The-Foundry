@@ -21,6 +21,7 @@ import {
   findAcademyAction,
 } from "./domain/academyRegistry";
 import {
+  ArtifactEvidenceAction,
   ArtifactEvidenceSummary,
   buildArtifactEvidenceSummary,
 } from "./domain/artifactEvidence";
@@ -36,7 +37,6 @@ import {
   ModelDownloadJob,
   NavigationSection,
   RuntimeMetric,
-  Trial,
   Workshop,
   resolveDefaultBaseModel,
 } from "./domain/foundry";
@@ -245,7 +245,8 @@ const App: React.FC = () => {
   const [constructRuntime, setConstructRuntime] = useState<ConstructRuntime | null>(null);
   const [foundryStatus, setFoundryStatus] = useState<FoundryRuntimeStatus | null>(null);
   const [archiveEntries, setArchiveEntries] = useState<ModelArchiveEntry[]>([]);
-  const [activeWorkshopTrials, setActiveWorkshopTrials] = useState<Trial[]>([]);
+  const [activeArtifactEvidenceSummary, setActiveArtifactEvidenceSummary] =
+    useState<ArtifactEvidenceSummary | null>(null);
   const [loopEvidenceRefreshCount, setLoopEvidenceRefreshCount] = useState(0);
   const [isRuntimeInspectorOpen, setIsRuntimeInspectorOpen] = useState(loadRuntimeInspectorOpen);
   const [workshops, setWorkshops] = useState<Workshop[]>([mockDashboardSummary.workshop]);
@@ -315,9 +316,10 @@ const App: React.FC = () => {
     const targetWorkshopId = workshopId || foundryData.dashboard.workshop.id;
     setLoopEvidenceRefreshCount((current) => current + 1);
     try {
-      const [loopEvidence, trials] = await Promise.all([
+      const activeArtifactId = foundryData.dashboard.currentArtifact.id;
+      const [loopEvidence, artifactEvidence] = await Promise.all([
         repository.getDashboardEvidence(targetWorkshopId),
-        repository.listTrials(targetWorkshopId),
+        repository.getArtifactEvidence(activeArtifactId),
       ]);
       setFoundryData((current) => ({
         ...current,
@@ -330,13 +332,13 @@ const App: React.FC = () => {
         },
       }));
       if (foundryData.dashboard.workshop.id === targetWorkshopId) {
-        setActiveWorkshopTrials(trials);
+        setActiveArtifactEvidenceSummary(artifactEvidence);
       }
       return loopEvidence;
     } finally {
       setLoopEvidenceRefreshCount((current) => Math.max(0, current - 1));
     }
-  }, [foundryData.dashboard.workshop.id, repository]);
+  }, [foundryData.dashboard.currentArtifact.id, foundryData.dashboard.workshop.id, repository]);
 
   const refreshFoundryData = async () => {
     const [bootstrap, savedWorkshops, status, modelArchiveEntries] = await Promise.all([
@@ -871,8 +873,11 @@ const App: React.FC = () => {
     [activeArtifact, activeConstruct, foundryData.dashboard]
   );
   const activeArtifactEvidence = useMemo<ArtifactEvidenceSummary>(
-    () => buildArtifactEvidenceSummary(activeArtifact, activeWorkshopTrials),
-    [activeArtifact, activeWorkshopTrials]
+    () =>
+      activeArtifactEvidenceSummary?.artifactId === activeArtifact.id
+        ? activeArtifactEvidenceSummary
+        : buildArtifactEvidenceSummary(activeArtifact, []),
+    [activeArtifact, activeArtifactEvidenceSummary]
   );
   const isLoopEvidenceRefreshing = loopEvidenceRefreshCount > 0;
 
@@ -902,6 +907,19 @@ const App: React.FC = () => {
     refreshActiveLoopEvidence();
     setActiveSection("trials");
   }, [refreshActiveLoopEvidence]);
+
+  const handleArtifactEvidenceAction = useCallback((action: ArtifactEvidenceAction) => {
+    setLoopFocus({
+      ...action.focus,
+      requestedAt: Date.now(),
+    });
+    refreshActiveLoopEvidence();
+    setActiveSection(action.destination);
+  }, [refreshActiveLoopEvidence]);
+
+  const handleClearLoopFocus = useCallback(() => {
+    setLoopFocus(null);
+  }, []);
 
   const renderMain = () => {
     if (activeSection === "settings") {
@@ -939,6 +957,7 @@ const App: React.FC = () => {
           onRuntimeChanged={handleConstructRuntimeChanged}
           onLoopEvidenceRefresh={refreshActiveLoopEvidence}
           onOpenTrialComparison={handleOpenTrialComparison}
+          onArtifactEvidenceAction={handleArtifactEvidenceAction}
           loopFocus={loopFocus}
         />
       );
@@ -954,6 +973,7 @@ const App: React.FC = () => {
           runtime={constructRuntime}
           onCreateWorkshop={openWorkshopModal}
           onRunConstruct={() => setActiveSection("construct")}
+          onArtifactEvidenceAction={handleArtifactEvidenceAction}
           onViewQueue={() => setActiveSection("forge")}
           academyAction={getAcademyAction(ACADEMY_ACTION_IDS.dashboardResumeLesson)}
           learningLoopAction={getAcademyAction(ACADEMY_ACTION_IDS.dashboardLearningLoop)}
@@ -1023,6 +1043,7 @@ const App: React.FC = () => {
           onModelDownloadJobStarted={handleArchiveDownloadJobStarted}
           onBaseModelSelected={handleBaseModelSelected}
           onOpenConstructWithModel={handleOpenConstructWithModel}
+          onArtifactEvidenceAction={handleArtifactEvidenceAction}
           onReturnToMaterialsWithModel={handleReturnToMaterialsWithModel}
           onOpenAcademy={() =>
             handleOpenAcademyAction(ACADEMY_ACTION_IDS.artifactsOpenPromotion)
@@ -1056,6 +1077,7 @@ const App: React.FC = () => {
           onOpenForgePreset={handleOpenForgePreset}
           onLoopEvidenceRefresh={refreshActiveLoopEvidence}
           loopFocus={loopFocus}
+          onClearLoopFocus={handleClearLoopFocus}
         />
       );
     }

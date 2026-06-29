@@ -7,7 +7,11 @@ import {
   FoundryLoopFocus,
   NavigationSection,
 } from "../domain/foundry";
-import { ArtifactEvidenceSummary } from "../domain/artifactEvidence";
+import {
+  ArtifactEvidenceAction,
+  ArtifactEvidenceSummary,
+  getArtifactEvidenceAction,
+} from "../domain/artifactEvidence";
 import {
   formatRuntimeMemory,
   getLoadedModelSnapshot,
@@ -27,6 +31,7 @@ interface DashboardProps {
   artifactEvidence: ArtifactEvidenceSummary;
   onCreateWorkshop: () => void;
   onRunConstruct: () => void;
+  onArtifactEvidenceAction: (action: ArtifactEvidenceAction) => void;
   onViewQueue: () => void;
   academyAction?: AcademyAction;
   learningLoopAction?: AcademyAction;
@@ -333,6 +338,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   artifactEvidence,
   onCreateWorkshop,
   onRunConstruct,
+  onArtifactEvidenceAction,
   onViewQueue,
   academyAction,
   learningLoopAction,
@@ -348,6 +354,10 @@ const Dashboard: React.FC<DashboardProps> = ({
   const runtimeMemory = getRuntimeMemory(runtime);
   const runtimeStatus = runtime?.loaded ? "Runtime loaded" : "Runtime idle";
   const loopSteps = buildLoopSteps(summary, loopEvidence, runtime);
+  const artifactEvidenceAction = useMemo(
+    () => getArtifactEvidenceAction(currentArtifact, artifactEvidence),
+    [artifactEvidence, currentArtifact]
+  );
   const tourSteps = useMemo(
     () => loopSteps.filter((step) => LOOP_TOUR_STEP_LABELS.has(step.label)),
     [loopSteps]
@@ -649,6 +659,14 @@ const Dashboard: React.FC<DashboardProps> = ({
               {artifactEvidence.status}
             </span>
             <p>{artifactEvidence.summary}</p>
+            <button
+              className="button-secondary button-compact"
+              onClick={() => onArtifactEvidenceAction(artifactEvidenceAction)}
+              type="button"
+            >
+              <i className={`fas ${artifactEvidenceAction.icon}`} aria-hidden="true" />
+              {artifactEvidenceAction.label}
+            </button>
           </div>
           <div className="dashboard-runtime-strip">
             <span className={`status-badge ${runtime?.loaded ? "is-active" : ""}`}>

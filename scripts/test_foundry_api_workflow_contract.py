@@ -894,6 +894,32 @@ def run_api_workflow(tmp_path: Path) -> None:
             assert '"mode": "transformers"' in streamed.text
             assert '"status": "loaded"' in streamed.text
             assert '"verdict": "needs-review"' in streamed.text
+            adapter_evidence = assert_response(
+                client.get(f"/api/v1/workshops/{workshop['id']}/artifacts/evidence")
+            )
+            local_artifact_evidence = next(
+                item for item in adapter_evidence if item["artifactId"] == local_artifact["id"]
+            )
+            local_artifact_evidence_detail = assert_response(
+                client.get(f"/api/v1/artifacts/{local_artifact['id']}/evidence")
+            )
+            assert (
+                local_artifact_evidence["contractVersion"]
+                == "foundry.artifact-evidence.v1"
+            )
+            for field in (
+                "artifactId",
+                "status",
+                "title",
+                "totalTrials",
+                "passTrials",
+                "needsReviewTrials",
+                "adapterBackedPassTrials",
+            ):
+                assert local_artifact_evidence_detail[field] == local_artifact_evidence[field]
+            assert local_artifact_evidence["status"] == "caution"
+            assert local_artifact_evidence["title"] == "Trials need review"
+            assert local_artifact_evidence["needsReviewTrials"] >= 1
 
             isolated_construct.set_transformers_stream_backend(None)
             assert_response(
@@ -1058,6 +1084,27 @@ def run_api_workflow(tmp_path: Path) -> None:
                 if item["id"] == artifact["id"]
             )
             assert scored_artifact["trialScore"] == 100
+            artifact_evidence = assert_response(
+                client.get(f"/api/v1/workshops/{workshop['id']}/artifacts/evidence")
+            )
+            simulated_artifact_evidence = next(
+                item for item in artifact_evidence if item["artifactId"] == artifact["id"]
+            )
+            simulated_artifact_evidence_detail = assert_response(
+                client.get(f"/api/v1/artifacts/{artifact['id']}/evidence")
+            )
+            for field in (
+                "artifactId",
+                "status",
+                "title",
+                "passTrials",
+                "simulatedPassTrials",
+            ):
+                assert simulated_artifact_evidence_detail[field] == simulated_artifact_evidence[field]
+            assert simulated_artifact_evidence["status"] == "simulated"
+            assert simulated_artifact_evidence["passTrials"] >= 1
+            assert simulated_artifact_evidence["simulatedPassTrials"] >= 1
+            assert "workflow shape" in simulated_artifact_evidence["summary"]
 
             trial_export = assert_response(
                 client.post(

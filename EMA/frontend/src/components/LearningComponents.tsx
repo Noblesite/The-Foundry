@@ -33,6 +33,13 @@ interface TokenPreviewProps {
   text: string;
 }
 
+interface LayerVisualizerProps {
+  title?: string;
+  body?: string;
+  upperLabel?: string;
+  lowerLabel?: string;
+}
+
 type TooltipPlacement = "above" | "below";
 
 interface TooltipPosition {
@@ -227,24 +234,26 @@ export const ProcessExplainer: React.FC = () => (
   </div>
 );
 
-export const LayerVisualizer: React.FC = () => (
+export const LayerVisualizer: React.FC<LayerVisualizerProps> = ({
+  title = "LoRA Layer",
+  body = "Adapter layers learn compact updates while the base model stays mostly frozen.",
+  upperLabel = "A",
+  lowerLabel = "B",
+}) => (
   <article className="layer-visualizer panel-glass">
     <div className="panel-heading compact">
       <div>
         <p className="section-eyebrow">Learn as you build</p>
-        <h2>LoRA Layer</h2>
+        <h2>{title}</h2>
       </div>
       <i className="fas fa-circle-info" aria-hidden="true" />
     </div>
     <div className="layer-stack" aria-hidden="true">
-      <div className="layer-node">A</div>
+      <div className="layer-node">{upperLabel}</div>
       <div className="layer-link" />
-      <div className="layer-node">B</div>
+      <div className="layer-node">{lowerLabel}</div>
     </div>
-    <p>
-      Adapter layers learn compact updates while the base model stays mostly
-      frozen.
-    </p>
+    <p>{body}</p>
   </article>
 );
 

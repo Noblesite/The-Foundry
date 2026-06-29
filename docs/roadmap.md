@@ -71,6 +71,9 @@ complexity.
 - Add an Artifact readiness evidence panel that reads promoted Trials and
   explains simulated-only, base-model-only, and adapter-backed evidence across
   Artifacts, Dashboard, and Construct. Done for the first five evidence slices.
+- Add exact Artifact evidence actions so Dashboard, Artifacts, and Construct can
+  route users to scoped Trial review, Trial comparison, or Construct proof work.
+  Done for the single-Artifact evidence endpoint and first scoped handoff slice.
 - Add runtime health, memory pressure, and unload behavior.
 - Teach users what context windows, sampling, and quantization settings do.
 

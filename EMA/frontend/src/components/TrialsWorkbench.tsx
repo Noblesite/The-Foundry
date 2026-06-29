@@ -27,6 +27,7 @@ interface TrialsWorkbenchProps {
   onOpenForgePreset: (preset: StartForgeRequest) => void;
   onLoopEvidenceRefresh?: () => void;
   loopFocus?: FoundryLoopFocus | null;
+  onClearLoopFocus?: () => void;
 }
 
 const verdictLabels: Record<TrialVerdict, string> = {
@@ -318,6 +319,7 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
   onOpenForgePreset,
   onLoopEvidenceRefresh,
   loopFocus,
+  onClearLoopFocus,
 }) => {
   const [trials, setTrials] = useState<Trial[]>([]);
   const [evaluationReports, setEvaluationReports] = useState<EvaluationReportSummary[]>([]);
@@ -342,6 +344,7 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
   const [isExportingReview, setIsExportingReview] = useState(false);
   const [reviewingTrialId, setReviewingTrialId] = useState<string | null>(null);
   const [activeTrialFilter, setActiveTrialFilter] = useState<TrialFilter>("all");
+  const focusedArtifactId = loopFocus?.section === "trials" ? loopFocus.artifactId : undefined;
 
   useEffect(() => {
     if (!trialsFocusTarget || loopFocus?.section !== "trials") {
@@ -360,6 +363,12 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
 
     return () => window.clearTimeout(timeoutId);
   }, [loopFocus?.requestedAt, loopFocus?.section, trialsFocusTarget]);
+  useEffect(() => {
+    if (loopFocus?.section !== "trials" || !loopFocus.trialFilter) {
+      return;
+    }
+    setActiveTrialFilter(loopFocus.trialFilter);
+  }, [loopFocus?.requestedAt, loopFocus?.section, loopFocus?.trialFilter]);
   const [exportState, setExportState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -430,36 +439,59 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
     [trials]
   );
 
+  const evidenceScopedTrials = useMemo(
+    () =>
+      trials.filter(
+        (trial) =>
+          !focusedArtifactId ||
+          trial.artifactId === focusedArtifactId ||
+          trial.runtimeProfile?.artifactId === focusedArtifactId
+      ),
+    [focusedArtifactId, trials]
+  );
+
+  useEffect(() => {
+    if (!focusedArtifactId) {
+      return;
+    }
+    setSelectedTrialIds(
+      evidenceScopedTrials
+        .filter((trial) => trial.verdict === "pass")
+        .map((trial) => trial.id)
+    );
+  }, [evidenceScopedTrials, focusedArtifactId]);
+
   const selectedTrials = useMemo(
-    () => trials.filter((trial) => selectedTrialIds.includes(trial.id)),
-    [selectedTrialIds, trials]
+    () => evidenceScopedTrials.filter((trial) => selectedTrialIds.includes(trial.id)),
+    [evidenceScopedTrials, selectedTrialIds]
   );
   const needsReviewTrials = useMemo(
-    () => trials.filter((trial) => trial.verdict === "needs-review"),
-    [trials]
+    () => evidenceScopedTrials.filter((trial) => trial.verdict === "needs-review"),
+    [evidenceScopedTrials]
   );
   const selectedHasUnreviewedTrials = selectedTrials.some(
     (trial) => trial.verdict === "needs-review"
   );
   const visibleTrials = useMemo(
-    () => trials.filter((trial) => trialMatchesFilter(trial, activeTrialFilter)),
-    [activeTrialFilter, trials]
+    () =>
+      evidenceScopedTrials.filter((trial) => trialMatchesFilter(trial, activeTrialFilter)),
+    [activeTrialFilter, evidenceScopedTrials]
   );
   const trialFilterCounts = useMemo(
     () =>
       trialFilterOrder.reduce(
         (counts, filter) => ({
           ...counts,
-          [filter]: trials.filter((trial) => trialMatchesFilter(trial, filter)).length,
+          [filter]: evidenceScopedTrials.filter((trial) => trialMatchesFilter(trial, filter)).length,
         }),
         {} as Record<TrialFilter, number>
       ),
-    [trials]
+    [evidenceScopedTrials]
   );
 
   const trialComparisons = useMemo<TrialComparison[]>(() => {
     const groups = new Map<string, Trial[]>();
-    trials.forEach((trial) => {
+    evidenceScopedTrials.forEach((trial) => {
       const key = normalizePrompt(trial.prompt);
       groups.set(key, [...(groups.get(key) || []), trial]);
     });
@@ -511,24 +543,24 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
         (left, right) =>
           Date.parse(right.latest.createdAt) - Date.parse(left.latest.createdAt)
       );
-  }, [trials]);
+  }, [evidenceScopedTrials]);
 
   const trialComparisonSummary = useMemo(() => {
     const comparedTrials = trialComparisons.reduce(
       (total, comparison) => total + comparison.variants.length,
       0
     );
-    const adapterBacked = trials.filter(
+    const adapterBacked = evidenceScopedTrials.filter(
       (trial) => trial.runtimeProfile?.source === "adapter-backed"
     ).length;
-    const liveLocal = trials.filter(
+    const liveLocal = evidenceScopedTrials.filter(
       (trial) => (trial.runtimeProfile?.runtimeMode || trial.runtimeMode) === "transformers"
     ).length;
-    const baseOnly = trials.filter((trial) => trial.runtimeProfile?.source === "base-only").length;
-    const simulated = trials.filter(
+    const baseOnly = evidenceScopedTrials.filter((trial) => trial.runtimeProfile?.source === "base-only").length;
+    const simulated = evidenceScopedTrials.filter(
       (trial) => trial.runtimeProfile?.source === "simulated" || !trial.runtimeProfile
     ).length;
-    const promptChainTrials = trials.filter((trial) => promptChainForTrial(trial)).length;
+    const promptChainTrials = evidenceScopedTrials.filter((trial) => promptChainForTrial(trial)).length;
     const promptVariantGroups = trialComparisons.filter(
       (comparison) =>
         comparison.systemPromptVariants.length > 1 ||
@@ -544,7 +576,7 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
       promptChainTrials,
       promptVariantGroups,
     };
-  }, [trialComparisons, trials]);
+  }, [evidenceScopedTrials, trialComparisons]);
 
   const focusedTrialComparisons = useMemo(() => {
     if (!focusedComparisonPrompt) {
@@ -1297,6 +1329,21 @@ const TrialsWorkbench: React.FC<TrialsWorkbenchProps> = ({
               </button>
             ))}
           </div>
+        )}
+        {focusedArtifactId && (
+          <p className="save-state artifact-evidence-filter-state">
+            Showing evidence for Artifact {focusedArtifactId}. Change filters or return to the
+            Artifact registry to inspect another output.
+            {onClearLoopFocus && (
+              <button
+                className="button-ghost button-compact"
+                onClick={onClearLoopFocus}
+                type="button"
+              >
+                Show all Workshop Trials
+              </button>
+            )}
+          </p>
         )}
         {isLoading ? (
           <article className="trial-card panel-glass">

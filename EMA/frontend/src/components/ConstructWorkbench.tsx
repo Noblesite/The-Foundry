@@ -42,7 +42,12 @@ import {
   getRuntimeMemory,
   shortModelId,
 } from "../domain/runtimeState";
-import { buildArtifactEvidenceSummary } from "../domain/artifactEvidence";
+import {
+  buildArtifactEvidenceSummary,
+  getArtifactEvidenceAction,
+  type ArtifactEvidenceAction,
+  type ArtifactEvidenceSummary,
+} from "../domain/artifactEvidence";
 import { FoundryRepository } from "../services/foundryRepository";
 import LoopFocusCallout from "./LoopFocusCallout";
 import {
@@ -359,6 +364,7 @@ interface ConstructWorkbenchProps {
   onRuntimeChanged?: (runtime: ConstructRuntime) => void;
   onLoopEvidenceRefresh?: () => void;
   onOpenTrialComparison?: (targetPrompt?: string) => void;
+  onArtifactEvidenceAction: (action: ArtifactEvidenceAction) => void;
   loopFocus?: FoundryLoopFocus | null;
 }
 
@@ -378,6 +384,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   onRuntimeChanged,
   onLoopEvidenceRefresh,
   onOpenTrialComparison,
+  onArtifactEvidenceAction,
   loopFocus,
 }) => {
   const conversationId = `construct-${construct.id}`;
@@ -474,7 +481,9 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
   const [isRunningPromptRecipe, setIsRunningPromptRecipe] = useState(false);
   const [promptRecipeMessage, setPromptRecipeMessage] = useState<string | null>(null);
   const [lastInspection, setLastInspection] = useState<ResponseInspection | null>(null);
-  const [artifactEvidenceTrials, setArtifactEvidenceTrials] = useState<Trial[]>([]);
+  const [artifactEvidenceSummary, setArtifactEvidenceSummary] = useState<ArtifactEvidenceSummary>(
+    () => buildArtifactEvidenceSummary(activeArtifact, [])
+  );
   const [trialVerdict, setTrialVerdict] = useState<TrialVerdict | null>(null);
   const [savedTrial, setSavedTrial] = useState<Trial | null>(null);
   const [isSavingTrial, setIsSavingTrial] = useState(false);
@@ -490,24 +499,18 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     previousPromptDefault.current = activePromptDefault;
   }, [activePromptDefault]);
 
+  const refreshArtifactEvidenceSummary = useCallback(async () => {
+    try {
+      const summary = await repository.getArtifactEvidence(activeArtifact.id);
+      setArtifactEvidenceSummary(summary);
+    } catch {
+      setArtifactEvidenceSummary(buildArtifactEvidenceSummary(activeArtifact, []));
+    }
+  }, [activeArtifact, repository]);
+
   useEffect(() => {
-    let isCurrent = true;
-    repository
-      .listTrials(activeArtifact.workshopId)
-      .then((trials) => {
-        if (isCurrent) {
-          setArtifactEvidenceTrials(trials);
-        }
-      })
-      .catch(() => {
-        if (isCurrent) {
-          setArtifactEvidenceTrials([]);
-        }
-      });
-    return () => {
-      isCurrent = false;
-    };
-  }, [activeArtifact.workshopId, repository]);
+    void refreshArtifactEvidenceSummary();
+  }, [refreshArtifactEvidenceSummary]);
 
   const refreshRuntimeTimeline = useCallback(async () => {
     try {
@@ -1455,11 +1458,8 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
           });
           if (event.trial) {
             setSavedTrial(event.trial);
-            setArtifactEvidenceTrials((current) => [
-              event.trial!,
-              ...current.filter((trial) => trial.id !== event.trial!.id),
-            ]);
             setTrialVerdict(event.trial.verdict);
+            void refreshArtifactEvidenceSummary();
             onLoopEvidenceRefresh?.();
           }
           if (options?.smokeTest) {
@@ -1714,10 +1714,7 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
       });
       setTrialVerdict(verdict);
       setSavedTrial(trial);
-      setArtifactEvidenceTrials((current) => [
-        trial,
-        ...current.filter((item) => item.id !== trial.id),
-      ]);
+      void refreshArtifactEvidenceSummary();
       onLoopEvidenceRefresh?.();
     } catch (saveError: unknown) {
       setTrialError(saveError instanceof Error ? saveError.message : "Could not save Trial.");
@@ -1732,10 +1729,9 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
     "Explain one thing you learned from the training Material, and be honest if the source data is missing.",
     "Give a short refusal if the question is outside your source Material.",
   ];
-
-  const artifactEvidenceSummary = useMemo(
-    () => buildArtifactEvidenceSummary(activeArtifact, artifactEvidenceTrials),
-    [activeArtifact, artifactEvidenceTrials]
+  const artifactEvidenceAction = useMemo(
+    () => getArtifactEvidenceAction(activeArtifact, artifactEvidenceSummary),
+    [activeArtifact, artifactEvidenceSummary]
   );
 
   const runtimeMemory = getRuntimeMemory(runtime);
@@ -3301,6 +3297,16 @@ const ConstructWorkbench: React.FC<ConstructWorkbenchProps> = ({
               </div>
             </div>
             <p className="artifact-readiness-copy">{artifactEvidenceSummary.nextAction}</p>
+            <div className="artifact-evidence-actions">
+              <button
+                className="button-secondary button-compact"
+                onClick={() => onArtifactEvidenceAction(artifactEvidenceAction)}
+                type="button"
+              >
+                <i className={`fas ${artifactEvidenceAction.icon}`} aria-hidden="true" />
+                {artifactEvidenceAction.label}
+              </button>
+            </div>
           </article>
 
           <article className="construct-inspector-card panel-glass">

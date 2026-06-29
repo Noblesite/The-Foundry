@@ -44,6 +44,7 @@ import {
   Workshop,
   WorkshopStatus,
 } from "../domain/foundry";
+import type { ArtifactEvidenceSummary } from "../domain/artifactEvidence";
 
 export const FOUNDRY_API_VERSION = "/api/v1";
 
@@ -100,6 +101,10 @@ export const foundryApiRoutes = {
   runQAGeneratorSmokeProof: `${FOUNDRY_API_VERSION}/assembly-line/qa-generator/smoke-proof`,
   runQAGeneratorQualityProof: `${FOUNDRY_API_VERSION}/assembly-line/qa-generator/quality-proof`,
   artifacts: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/artifacts`,
+  artifactEvidence: (workshopId: string) =>
+    `${FOUNDRY_API_VERSION}/workshops/${workshopId}/artifacts/evidence`,
+  artifactEvidenceDetail: (artifactId: string) =>
+    `${FOUNDRY_API_VERSION}/artifacts/${artifactId}/evidence`,
   artifact: (artifactId: string) => `${FOUNDRY_API_VERSION}/artifacts/${artifactId}`,
   constructs: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/constructs`,
   loadArtifactIntoConstruct: (workshopId: string) =>
@@ -390,6 +395,11 @@ export interface ArtifactDto {
   readiness?: ArtifactReadiness;
   createdAt: string;
 }
+
+export type ArtifactEvidenceDto = ArtifactEvidenceSummary & {
+  contractVersion?: "foundry.artifact-evidence.v1";
+  createdAt?: string;
+};
 
 export interface ConstructDto {
   id: string;

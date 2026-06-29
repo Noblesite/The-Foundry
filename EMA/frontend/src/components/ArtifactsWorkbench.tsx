@@ -9,11 +9,14 @@ import {
   ModelDownloadJob,
   ModelSearchResult,
   SectionSummary,
-  Trial,
   Workshop,
   WorkspaceSettings,
 } from "../domain/foundry";
-import { buildArtifactEvidenceSummary } from "../domain/artifactEvidence";
+import {
+  getArtifactEvidenceAction,
+  type ArtifactEvidenceAction,
+  type ArtifactEvidenceSummary,
+} from "../domain/artifactEvidence";
 import {
   ACADEMY_ACTION_IDS,
   findAcademyAction,
@@ -39,6 +42,7 @@ interface ArtifactsWorkbenchProps {
   onModelDownloadJobStarted?: (job: ModelDownloadJob) => void;
   onBaseModelSelected: (modelId: string) => void;
   onOpenConstructWithModel: (modelId: string, label?: string) => void;
+  onArtifactEvidenceAction: (action: ArtifactEvidenceAction) => void;
   onReturnToMaterialsWithModel?: (handoff: ArchiveModelHandoff) => void;
   onOpenAcademy: () => void;
   onOpenAcademyAction: (actionId: string) => void;
@@ -105,6 +109,7 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   onModelDownloadJobStarted,
   onBaseModelSelected,
   onOpenConstructWithModel,
+  onArtifactEvidenceAction,
   onReturnToMaterialsWithModel,
   onOpenAcademy,
   onOpenAcademyAction,
@@ -112,7 +117,9 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   loopFocus,
 }) => {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
-  const [artifactTrials, setArtifactTrials] = useState<Trial[]>([]);
+  const [artifactEvidenceSummaries, setArtifactEvidenceSummaries] = useState<
+    ArtifactEvidenceSummary[]
+  >([]);
   const [downloadJobs, setDownloadJobs] = useState<ModelDownloadJob[]>([]);
   const [modelResults, setModelResults] = useState<ModelSearchResult[]>([]);
   const [modelQuery, setModelQuery] = useState("tiny-gpt2");
@@ -164,13 +171,13 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   useEffect(() => {
     let isCurrent = true;
 
-    Promise.all([repository.listArtifacts(workshop.id), repository.listTrials(workshop.id)])
-      .then(([items, trials]) => {
+    Promise.all([repository.listArtifacts(workshop.id), repository.listArtifactEvidence(workshop.id)])
+      .then(([items, evidenceSummaries]) => {
         if (!isCurrent) {
           return;
         }
         setArtifacts(items);
-        setArtifactTrials(trials);
+        setArtifactEvidenceSummaries(evidenceSummaries);
         setSelectedArtifactId((current) => current || activeArtifactId || items[0]?.id || "");
       })
       .catch((loadError: unknown) => {
@@ -240,13 +247,48 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
     () => artifacts.find((artifact) => artifact.id === selectedArtifactId),
     [artifacts, selectedArtifactId]
   );
+
+  useEffect(() => {
+    if (!selectedArtifact) {
+      return undefined;
+    }
+
+    let isCurrent = true;
+    repository
+      .getArtifactEvidence(selectedArtifact.id)
+      .then((evidence) => {
+        if (!isCurrent) {
+          return;
+        }
+        setArtifactEvidenceSummaries((current) => [
+          evidence,
+          ...current.filter((summary) => summary.artifactId !== evidence.artifactId),
+        ]);
+      })
+      .catch(() => {
+        // The Workshop-level evidence list remains the fallback for transient detail failures.
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [repository, selectedArtifact]);
+
   const selectedArtifactReadiness = selectedArtifact?.readiness;
   const selectedArtifactEvidence = useMemo(
     () =>
       selectedArtifact
-        ? buildArtifactEvidenceSummary(selectedArtifact, artifactTrials)
+        ? artifactEvidenceSummaries.find((summary) => summary.artifactId === selectedArtifact.id) ||
+          null
         : null,
-    [artifactTrials, selectedArtifact]
+    [artifactEvidenceSummaries, selectedArtifact]
+  );
+  const selectedArtifactEvidenceAction = useMemo(
+    () =>
+      selectedArtifact && selectedArtifactEvidence
+        ? getArtifactEvidenceAction(selectedArtifact, selectedArtifactEvidence)
+        : null,
+    [selectedArtifact, selectedArtifactEvidence]
   );
   const artifactsNextAction = useMemo(() => {
     if (!artifactFocusTarget) {
@@ -995,6 +1037,21 @@ const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                     </div>
                   </div>
                   <p className="artifact-readiness-copy">{selectedArtifactEvidence.nextAction}</p>
+                  {selectedArtifactEvidenceAction && (
+                    <div className="artifact-evidence-actions">
+                      <button
+                        className="button-secondary button-compact"
+                        onClick={() => onArtifactEvidenceAction(selectedArtifactEvidenceAction)}
+                        type="button"
+                      >
+                        <i
+                          className={`fas ${selectedArtifactEvidenceAction.icon}`}
+                          aria-hidden="true"
+                        />
+                        {selectedArtifactEvidenceAction.label}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               <button

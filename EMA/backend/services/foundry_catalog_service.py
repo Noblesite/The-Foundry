@@ -1734,6 +1734,63 @@ class FoundryCatalogService:
 
         return await self._run_query(query)
 
+    async def list_artifact_evidence(self, workshop_id: str) -> List[Dict[str, Any]]:
+        def query():
+            with self._connect() as connection:
+                workshop = connection.execute(
+                    "SELECT id FROM workshops WHERE id = ?",
+                    (workshop_id,),
+                ).fetchone()
+                if workshop is None:
+                    raise ValueError(f"Workshop {workshop_id} was not found.")
+
+                artifact_rows = connection.execute(
+                    """
+                    SELECT * FROM artifacts
+                    WHERE workshop_id = ?
+                    ORDER BY
+                        CASE status WHEN 'ready' THEN 0 WHEN 'trial' THEN 1 ELSE 2 END,
+                        datetime(created_at) DESC
+                    """,
+                    (workshop_id,),
+                ).fetchall()
+                trial_rows = connection.execute(
+                    """
+                    SELECT * FROM trials
+                    WHERE workshop_id = ?
+                    ORDER BY datetime(created_at) DESC
+                    """,
+                    (workshop_id,),
+                ).fetchall()
+                return [
+                    self._artifact_evidence_summary(artifact, trial_rows)
+                    for artifact in artifact_rows
+                ]
+
+        return await self._run_query(query)
+
+    async def get_artifact_evidence(self, artifact_id: str) -> Dict[str, Any]:
+        def query():
+            with self._connect() as connection:
+                artifact = connection.execute(
+                    "SELECT * FROM artifacts WHERE id = ?",
+                    (artifact_id,),
+                ).fetchone()
+                if artifact is None:
+                    raise ValueError(f"Artifact {artifact_id} was not found.")
+
+                trial_rows = connection.execute(
+                    """
+                    SELECT * FROM trials
+                    WHERE workshop_id = ?
+                    ORDER BY datetime(created_at) DESC
+                    """,
+                    (artifact["workshop_id"],),
+                ).fetchall()
+                return self._artifact_evidence_summary(artifact, trial_rows)
+
+        return await self._run_query(query)
+
     async def create_trial(
         self,
         workshop_id: str,
@@ -5241,6 +5298,136 @@ class FoundryCatalogService:
             "generationSettings": generation_settings,
             "runtimeProfile": generation_settings.get("runtimeProfile") or {},
             "createdAt": row["created_at"],
+        }
+
+    def _trial_runtime_profile_from_row(self, row: sqlite3.Row) -> Dict[str, Any]:
+        try:
+            generation_settings = json.loads(row["generation_settings_json"])
+        except (TypeError, json.JSONDecodeError):
+            return {}
+        runtime_profile = generation_settings.get("runtimeProfile")
+        return runtime_profile if isinstance(runtime_profile, dict) else {}
+
+    def _trial_belongs_to_artifact(self, artifact_id: str, row: sqlite3.Row) -> bool:
+        if row["artifact_id"] == artifact_id:
+            return True
+        runtime_profile = self._trial_runtime_profile_from_row(row)
+        return runtime_profile.get("artifactId") == artifact_id
+
+    def _artifact_evidence_summary(
+        self,
+        artifact: sqlite3.Row,
+        trial_rows: List[sqlite3.Row],
+    ) -> Dict[str, Any]:
+        artifact_trials = [
+            row for row in trial_rows if self._trial_belongs_to_artifact(artifact["id"], row)
+        ]
+        pass_trials = [row for row in artifact_trials if row["verdict"] == "pass"]
+        needs_review_trials = [
+            row for row in artifact_trials if row["verdict"] == AUTO_TRIAL_VERDICT
+        ]
+
+        def trial_source(row: sqlite3.Row) -> str:
+            runtime_profile = self._trial_runtime_profile_from_row(row)
+            return str(runtime_profile.get("source") or "")
+
+        def adapter_loaded(row: sqlite3.Row) -> bool:
+            runtime_profile = self._trial_runtime_profile_from_row(row)
+            return bool(runtime_profile.get("adapterLoaded"))
+
+        adapter_backed_pass_trials = [
+            row for row in pass_trials
+            if trial_source(row) == "adapter-backed" or adapter_loaded(row)
+        ]
+        base_only_pass_trials = [
+            row for row in pass_trials
+            if trial_source(row) == "base-only"
+            or (row["runtime_mode"] == "transformers" and trial_source(row) != "adapter-backed")
+        ]
+        simulated_pass_trials = [
+            row for row in pass_trials
+            if trial_source(row) == "simulated" or row["runtime_mode"] == "simulated"
+        ]
+        simulated_pass_trials.extend(
+            row for row in pass_trials
+            if not self._trial_runtime_profile_from_row(row)
+            and row not in simulated_pass_trials
+        )
+
+        summary = {
+            "contractVersion": "foundry.artifact-evidence.v1",
+            "artifactId": artifact["id"],
+            "totalTrials": len(artifact_trials),
+            "passTrials": len(pass_trials),
+            "needsReviewTrials": len(needs_review_trials),
+            "adapterBackedPassTrials": len(adapter_backed_pass_trials),
+            "baseOnlyPassTrials": len(base_only_pass_trials),
+            "simulatedPassTrials": len(simulated_pass_trials),
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        }
+
+        if adapter_backed_pass_trials:
+            return {
+                **summary,
+                "status": "verified",
+                "title": "Adapter-backed Trial evidence",
+                "summary": (
+                    f"{len(adapter_backed_pass_trials)} pass Trial"
+                    f"{'' if len(adapter_backed_pass_trials) == 1 else 's'} "
+                    "streamed with Artifact adapter evidence."
+                ),
+                "nextAction": (
+                    "Use this Artifact in Construct, then keep comparing prompts before "
+                    "public promotion."
+                ),
+            }
+        if base_only_pass_trials:
+            return {
+                **summary,
+                "status": "caution",
+                "title": "Base-model Trial evidence",
+                "summary": (
+                    f"{len(base_only_pass_trials)} pass Trial"
+                    f"{'' if len(base_only_pass_trials) == 1 else 's'} ran locally, "
+                    "but adapter-backed evidence is still missing."
+                ),
+                "nextAction": (
+                    "Load the Artifact adapter and rerun the promoted prompt before "
+                    "trusting model behavior."
+                ),
+            }
+        if simulated_pass_trials:
+            return {
+                **summary,
+                "status": "simulated",
+                "title": "Simulated Trial evidence",
+                "summary": (
+                    f"{len(simulated_pass_trials)} pass Trial"
+                    f"{'' if len(simulated_pass_trials) == 1 else 's'} proves workflow "
+                    "shape, not model quality."
+                ),
+                "nextAction": "Run a local model or adapter-backed Construct Trial before promotion.",
+            }
+        if needs_review_trials:
+            return {
+                **summary,
+                "status": "caution",
+                "title": "Trials need review",
+                "summary": (
+                    f"{len(needs_review_trials)} captured Trial"
+                    f"{'' if len(needs_review_trials) == 1 else 's'} still needs a "
+                    "human verdict."
+                ),
+                "nextAction": "Review Trial replies and promote the strongest comparison variant.",
+            }
+        return {
+            **summary,
+            "status": "blocked",
+            "title": "No promoted Trial evidence",
+            "summary": "This Artifact has no pass Trials yet.",
+            "nextAction": (
+                "Run Construct prompts, compare variants in Trials, and promote the best response."
+            ),
         }
 
     def _trial_runtime_profile(

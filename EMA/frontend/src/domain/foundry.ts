@@ -18,6 +18,8 @@ export interface FoundryLoopFocus {
   actionLabel: string;
   targetLabel: string;
   targetPrompt?: string;
+  artifactId?: string;
+  trialFilter?: "all" | "live-local" | "adapter-backed" | "simulated" | "needs-review";
   requestedAt: number;
 }
 

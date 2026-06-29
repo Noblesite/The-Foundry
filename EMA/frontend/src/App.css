@@ -5921,6 +5921,33 @@ input[type="checkbox"] {
   border-color: rgba(255, 138, 0, 0.28);
 }
 
+.artifact-evidence-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.dashboard-artifact-evidence .artifact-evidence-actions,
+.dashboard-artifact-evidence .button-secondary {
+  width: fit-content;
+}
+
+.artifact-evidence-filter-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  border-color: rgba(0, 212, 255, 0.22);
+  background: rgba(0, 212, 255, 0.055);
+}
+
+.artifact-evidence-filter-state .button-ghost {
+  width: auto;
+  min-width: 0;
+  padding-inline: 0.58rem;
+}
+
 .artifact-evidence-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(5.4rem, 1fr));
