@@ -6,6 +6,11 @@ const files = {
     new URL("../src/components/WorkshopCreateModal.tsx", import.meta.url),
     "utf8"
   ),
+  baseModelSelector: await readFile(
+    new URL("../src/components/BaseModelSelector.tsx", import.meta.url),
+    "utf8"
+  ),
+  forge: await readFile(new URL("../src/components/ForgeWorkbench.tsx", import.meta.url), "utf8"),
   modelLiteracy: await readFile(
     new URL("../src/domain/modelLiteracy.ts", import.meta.url),
     "utf8"
@@ -41,23 +46,43 @@ assertIncludes(
 );
 assertIncludes(
   files.workshopCreate,
+  "<BaseModelSelector",
+  "Workshop modal renders the shared base-model selector"
+);
+assertIncludes(
+  files.baseModelSelector,
   "<optgroup label=\"Cached Archive\">",
-  "Workshop modal groups cached Archive model choices"
+  "Base-model selector groups cached Archive model choices"
 );
 assertIncludes(
-  files.workshopCreate,
+  files.baseModelSelector,
   "<optgroup label=\"Hugging Face results\">",
-  "Workshop modal groups Hugging Face search results"
+  "Base-model selector groups Hugging Face search results"
 );
 assertIncludes(
-  files.workshopCreate,
+  files.baseModelSelector,
   "Use typed ID",
-  "Workshop modal preserves a manual repo-id fallback"
+  "Base-model selector preserves a manual repo-id fallback"
 );
 assertIncludes(
-  files.workshopCreate,
+  files.baseModelSelector,
   "Search uses saved Hugging Face credentials.",
-  "Workshop modal explains authenticated search behavior"
+  "Base-model selector explains authenticated search behavior"
+);
+assertIncludes(
+  files.forge,
+  "<BaseModelSelector",
+  "Forge uses the shared base-model selector"
+);
+assertIncludes(
+  files.forge,
+  "archiveEntries?: ModelArchiveEntry[]",
+  "Forge accepts cached Archive entries for model selection"
+);
+assertIncludes(
+  files.forge,
+  "onSearchBaseModels?: (query: string) => Promise<ModelSearchResult[]>",
+  "Forge accepts the shared Hugging Face model search callback"
 );
 assertIncludes(
   files.app,
@@ -72,12 +97,12 @@ assertIncludes(
 assertIncludes(
   files.app,
   "archiveEntries={archiveEntries}",
-  "App passes cached Archive entries into Workshop creation"
+  "App passes cached Archive entries into model selectors"
 );
 assertIncludes(
   files.app,
   "onSearchBaseModels={searchWorkshopBaseModels}",
-  "App passes model search into Workshop creation"
+  "App passes model search into model selectors"
 );
 assertIncludes(
   files.foundryDomain,
@@ -111,8 +136,8 @@ assertIncludes(
 );
 assertIncludes(
   files.styles,
-  ".workshop-model-selector",
-  "Workshop model selector has dedicated styling"
+  ".base-model-selector",
+  "Shared base-model selector has dedicated styling"
 );
 assertIncludes(
   files.packageJson,

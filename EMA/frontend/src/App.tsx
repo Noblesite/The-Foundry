@@ -1067,9 +1067,11 @@ const App: React.FC = () => {
           settings={settings}
           summary={foundryData.sectionSummaries.forge}
           workshop={dashboardSummary.workshop}
+          archiveEntries={archiveEntries}
           forgePreset={forgePreset}
           academyAction={getAcademyAction(ACADEMY_ACTION_IDS.forgeOpenTraining)}
           onConstructLoaded={handleConstructLoaded}
+          onSearchBaseModels={searchWorkshopBaseModels}
           onOpenAcademy={() => handleOpenAcademyAction(ACADEMY_ACTION_IDS.forgeOpenTraining)}
           onOpenAcademyAction={handleOpenAcademyAction}
           onLoopEvidenceRefresh={refreshActiveLoopEvidence}

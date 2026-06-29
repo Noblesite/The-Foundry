@@ -2064,12 +2064,14 @@ input[type="checkbox"] {
   justify-content: flex-end;
 }
 
-.workshop-model-selector {
+.workshop-model-selector,
+.base-model-selector {
   display: grid;
   gap: 0.55rem;
 }
 
-.workshop-model-search {
+.workshop-model-search,
+.base-model-search {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.55rem;
@@ -2077,15 +2079,19 @@ input[type="checkbox"] {
 }
 
 .workshop-model-search input,
-.workshop-model-selector select {
+.base-model-search input,
+.workshop-model-selector select,
+.base-model-selector select {
   width: 100%;
 }
 
-.workshop-model-selector select {
+.workshop-model-selector select,
+.base-model-selector select {
   min-height: 3rem;
 }
 
-.workshop-model-selector-actions {
+.workshop-model-selector-actions,
+.base-model-selector-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
@@ -2093,12 +2099,14 @@ input[type="checkbox"] {
   justify-content: space-between;
 }
 
-.workshop-model-selector-actions .button-ghost {
+.workshop-model-selector-actions .button-ghost,
+.base-model-selector-actions .button-ghost {
   width: auto;
   padding: 0.38rem 0;
 }
 
-.workshop-model-selector-actions span {
+.workshop-model-selector-actions span,
+.base-model-selector-actions span {
   color: var(--text-secondary);
   font-size: 0.72rem;
   line-height: 1.4;
@@ -7898,6 +7906,7 @@ input[type="checkbox"] {
   .model-literacy-heading,
   .workshop-base-model-callout,
   .workshop-model-search,
+  .base-model-search,
   .settings-grid {
     grid-template-columns: 1fr;
   }

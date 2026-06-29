@@ -19,6 +19,8 @@ import {
   ForgeTrainingContract,
   ForgeWorkerState,
   MaterialSource,
+  ModelArchiveEntry,
+  ModelSearchResult,
   resolveDefaultBaseModel,
   SectionSummary,
   TrainingMethod,
@@ -32,6 +34,7 @@ import {
   LearningCard,
   TrainingMetricExplainer,
 } from "./LearningComponents";
+import BaseModelSelector from "./BaseModelSelector";
 import LoopFocusCallout from "./LoopFocusCallout";
 
 const FORGE_WORKER_POLL_MS = 3000;
@@ -121,9 +124,11 @@ interface ForgeWorkbenchProps {
   settings: WorkspaceSettings;
   summary: SectionSummary;
   workshop: Workshop;
+  archiveEntries?: ModelArchiveEntry[];
   forgePreset?: StartForgeRequest | null;
   academyAction?: AcademyAction;
   onConstructLoaded: (construct: Construct, artifact: Artifact) => void;
+  onSearchBaseModels?: (query: string) => Promise<ModelSearchResult[]>;
   onOpenAcademy: () => void;
   onOpenAcademyAction: (actionId: string) => void;
   onLoopEvidenceRefresh?: () => void;
@@ -136,9 +141,11 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
   settings,
   summary,
   workshop,
+  archiveEntries = [],
   forgePreset,
   academyAction,
   onConstructLoaded,
+  onSearchBaseModels,
   onOpenAcademy,
   onOpenAcademyAction,
   onLoopEvidenceRefresh,
@@ -968,12 +975,14 @@ const ForgeWorkbench: React.FC<ForgeWorkbenchProps> = ({
           <label className="field-label" htmlFor="forge-base-model">
             Base model
           </label>
-          <input
+          <BaseModelSelector
             id="forge-base-model"
-            type="text"
             value={draft.baseModel}
-            onChange={(event) => updateDraft("baseModel", event.target.value)}
-            required
+            defaultBaseModel={defaultBaseModel}
+            settings={settings}
+            archiveEntries={archiveEntries}
+            onChange={(modelId) => updateDraft("baseModel", modelId)}
+            onSearchBaseModels={onSearchBaseModels}
           />
 
           <div className="settings-grid">
