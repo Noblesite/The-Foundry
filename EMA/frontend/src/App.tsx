@@ -11,6 +11,7 @@ import MaterialsWorkbench from "./components/MaterialsWorkbench";
 import Metrics from "./components/Metrics";
 import SettingsPanel, { WorkspaceSettings } from "./components/SettingsOverlay";
 import TrialsWorkbench from "./components/TrialsWorkbench";
+import WorkshopBaseModelCallout from "./components/WorkshopBaseModelCallout";
 import WorkshopCreateModal from "./components/WorkshopCreateModal";
 import WorkshopDeleteModal from "./components/WorkshopDeleteModal";
 import WorkshopSwitcher from "./components/WorkshopSwitcher";
@@ -234,6 +235,11 @@ const App: React.FC = () => {
   const [activeModelDownloadJobId, setActiveModelDownloadJobId] = useState<string | null>(null);
   const [isWorkshopModalOpen, setIsWorkshopModalOpen] = useState(false);
   const [isCreatingWorkshop, setIsCreatingWorkshop] = useState(false);
+  const [baseModelPreparationTarget, setBaseModelPreparationTarget] = useState<{
+    workshopId: string;
+    modelId: string;
+    requestedAt: number;
+  } | null>(null);
   const [workshopPendingDeletion, setWorkshopPendingDeletion] = useState<Workshop | null>(null);
   const [deleteWorkshopError, setDeleteWorkshopError] = useState<string | null>(null);
   const [isDeletingWorkshop, setIsDeletingWorkshop] = useState(false);
@@ -576,6 +582,16 @@ const App: React.FC = () => {
           : `${action.modelId} needs Archive registration before download.`,
       progress: 20,
     });
+    if (action.type === "open-archive") {
+      setArchiveHandoff({
+        modelId: action.modelId,
+        label: "Base Model",
+        source: "settings",
+        purpose: "base-model",
+        requestedAt: Date.now(),
+        preflightOnOpen: true,
+      });
+    }
     setActiveSection("artifacts");
     setStatusToast(
       action.type === "select-model"
@@ -643,7 +659,19 @@ const App: React.FC = () => {
         ...settings,
         subjectMatter: createdWorkshop.subject,
         characterVoice: createdWorkshop.voiceTarget,
+        defaultBaseModel: request.baseModel || settings.defaultBaseModel,
+        constructModelId: request.baseModel || settings.constructModelId,
       });
+      if (request.baseModel) {
+        setBaseModelPreparationTarget({
+          workshopId: createdWorkshop.id,
+          modelId: request.baseModel,
+          requestedAt: Date.now(),
+        });
+        setStatusToast(
+          `${request.baseModel} is selected for ${createdWorkshop.name}. Prepare it before Forge or Construct needs it.`
+        );
+      }
       setActiveSection("materials");
       setIsWorkshopModalOpen(false);
     } catch (error: unknown) {
@@ -666,6 +694,9 @@ const App: React.FC = () => {
       subjectMatter: workshop.subject,
       characterVoice: workshop.voiceTarget,
     });
+    setBaseModelPreparationTarget((current) =>
+      current?.workshopId === workshop.id ? current : null
+    );
     setActiveSection("workshop");
   };
 
@@ -1202,6 +1233,19 @@ const App: React.FC = () => {
             </button>
           </div>
         </header>
+        {baseModelPreparationTarget?.workshopId === dashboardSummary.workshop.id && (
+          <WorkshopBaseModelCallout
+            workshop={dashboardSummary.workshop}
+            modelId={baseModelPreparationTarget.modelId}
+            settings={settings}
+            sourceStatus={foundryStatus}
+            runtime={constructRuntime}
+            archiveEntries={archiveEntries}
+            preparationActivity={modelPreparationActivity}
+            onPrepareModel={(action) => void handlePrepareModel(action)}
+            onDismiss={() => setBaseModelPreparationTarget(null)}
+          />
+        )}
         {renderMain()}
       </main>
 

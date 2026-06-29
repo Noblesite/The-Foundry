@@ -2001,6 +2001,69 @@ input[type="checkbox"] {
   padding: 1rem;
 }
 
+.workshop-base-model-callout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  border: 1px solid rgba(0, 212, 255, 0.18);
+  border-radius: 8px;
+  margin: 1rem 1.5rem 0;
+  padding: 0.9rem 1rem;
+  background:
+    radial-gradient(circle at top left, rgba(0, 212, 255, 0.1), transparent 36%),
+    linear-gradient(135deg, rgba(24, 33, 40, 0.78), rgba(13, 17, 23, 0.72));
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18);
+}
+
+.workshop-base-model-callout.readiness-caution {
+  border-color: rgba(212, 160, 23, 0.34);
+}
+
+.workshop-base-model-callout.readiness-blocked {
+  border-color: rgba(255, 138, 0, 0.36);
+}
+
+.workshop-base-model-copy {
+  display: grid;
+  gap: 0.38rem;
+}
+
+.workshop-base-model-copy h2,
+.workshop-base-model-copy p {
+  margin: 0;
+}
+
+.workshop-base-model-copy h2 {
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.workshop-base-model-copy p:not(.panel-kicker) {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.workshop-base-model-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.workshop-base-model-meta > span:not(.status-badge) {
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+}
+
+.workshop-base-model-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+}
+
 .workshop-model-selector {
   display: grid;
   gap: 0.55rem;
@@ -7833,9 +7896,23 @@ input[type="checkbox"] {
   .weak-sample-grid,
   .modal-actions,
   .model-literacy-heading,
+  .workshop-base-model-callout,
   .workshop-model-search,
   .settings-grid {
     grid-template-columns: 1fr;
+  }
+
+  .workshop-base-model-callout {
+    margin: 0.85rem 1rem 0;
+  }
+
+  .workshop-base-model-actions {
+    justify-content: stretch;
+  }
+
+  .workshop-base-model-actions .button-primary,
+  .workshop-base-model-actions .button-secondary {
+    width: 100%;
   }
 
   .learning-loop-evidence-popover {
