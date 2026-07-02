@@ -18,6 +18,8 @@ import {
   MaterialChunk,
   MaterialKind,
   MaterialSource,
+  ModelArchiveEntry,
+  ModelSearchResult,
   QAPair,
   QAReviewStatus,
   QAGeneratorPreflightResult,
@@ -26,19 +28,24 @@ import {
   QAGeneratorSmokeProof,
   SectionSummary,
   WebsiteMaterialPreview,
+  WorkspaceSettings,
   Workshop,
 } from "../domain/foundry";
 import { FoundryRepository } from "../services/foundryRepository";
 import { AcademyActionTooltip, LearningCard } from "./LearningComponents";
+import BaseModelSelector from "./BaseModelSelector";
 import LoopFocusCallout from "./LoopFocusCallout";
 
 interface MaterialsWorkbenchProps {
   academyActions: AcademyAction[];
   repository: FoundryRepository;
+  settings: WorkspaceSettings;
   summary: SectionSummary;
   workshop: Workshop;
+  archiveEntries?: ModelArchiveEntry[];
   academyAction?: AcademyAction;
   qaGeneratorArchiveHandoff?: ArchiveModelHandoff | null;
+  onSearchBaseModels?: (query: string) => Promise<ModelSearchResult[]>;
   onOpenArchiveModel: (modelId: string, label?: string) => void;
   onOpenAcademy: () => void;
   onOpenAcademyAction: (actionId: string) => void;
@@ -244,13 +251,37 @@ const formatCatalogDate = (value?: string): string | null => {
   return date.toLocaleDateString();
 };
 
+const isCachedArchiveEntry = (entry: ModelArchiveEntry) =>
+  Boolean(entry.localPath) && (entry.status === "cached" || entry.status === "ready");
+
+const findCachedArchiveEntryForModel = (
+  modelId: string,
+  archiveEntries: ModelArchiveEntry[]
+): ModelArchiveEntry | undefined => {
+  const normalizedModelId = modelId.trim();
+  if (!normalizedModelId) {
+    return undefined;
+  }
+  return archiveEntries.find(
+    (entry) =>
+      isCachedArchiveEntry(entry) &&
+      (entry.repoId === normalizedModelId ||
+        entry.localPath === normalizedModelId ||
+        Boolean(entry.localPath && normalizedModelId.endsWith(entry.localPath)) ||
+        Boolean(entry.localPath && entry.localPath.endsWith(normalizedModelId)))
+  );
+};
+
 const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   academyActions,
   repository,
+  settings,
   summary,
   workshop,
+  archiveEntries = [],
   academyAction,
   qaGeneratorArchiveHandoff,
+  onSearchBaseModels,
   onOpenArchiveModel,
   onOpenAcademy,
   onOpenAcademyAction,
@@ -638,6 +669,9 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
       qaProofMode &&
       !qaProofMode.simulated
   );
+  const simulatedModelBackedProofPassed = Boolean(
+    modelBackedQAProofPassed && qaProofMode?.simulated
+  );
   const assemblyIntentIsTraining = assemblyIntent === "training";
   const canStartAssemblyLine =
     !isStartingAssembly &&
@@ -651,12 +685,16 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
   const assemblyGateTitle = trainingQualityGatePassed
     ? "Training-quality QA is unlocked"
     : assemblyIntentIsTraining
-      ? "Training-quality QA is gated"
+      ? simulatedModelBackedProofPassed
+        ? "Live QA proof still required"
+        : "Training-quality QA is gated"
       : "Smoke/demo Assembly Line selected";
   const assemblyGateBody = trainingQualityGatePassed
     ? "The cached local model produced a passing proof, so new Assembly Line output can be treated as training-quality candidate data after human review."
     : assemblyIntentIsTraining
-      ? "Run a passing model-backed QA proof before generating training-quality rows. This prevents deterministic smoke output from being mistaken for real fine-tuning data."
+      ? simulatedModelBackedProofPassed
+        ? "The cached-model proof passed in simulated mock mode. Use API mode with the real local Transformers generator before creating training-quality rows."
+        : "Run a passing model-backed QA proof before generating training-quality rows. This prevents deterministic smoke output from being mistaken for real fine-tuning data."
       : "Smoke/demo runs keep the pipeline moving for rehearsals, UI checks, and first-run learning, but their JSONL exports should stay clearly marked for review.";
   const assemblyGeneratorWarning = useMemo(() => {
     if (activeQAGeneratorMode === "deterministic") {
@@ -693,6 +731,51 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
     qaGeneratorPreflight?.modelId?.trim()
     || qaGeneratorPreflight?.model?.modelId?.trim()
     || qaGeneratorDraft.modelId.trim();
+  const cachedQAGeneratorArchiveEntry = useMemo(
+    () => findCachedArchiveEntryForModel(draftedQAGeneratorModel, archiveEntries),
+    [archiveEntries, draftedQAGeneratorModel]
+  );
+  const qaGeneratorCacheReady = Boolean(
+    cachedQAGeneratorArchiveEntry ||
+      (qaGeneratorPreflight?.mode === "transformers" && qaGeneratorPreflight.model?.cached) ||
+      (qaGeneratorRuntime?.mode === "transformers" &&
+        qaGeneratorRuntime.ready &&
+        configuredQAGeneratorModel === draftedQAGeneratorModel)
+  );
+  const qaGeneratorCacheState =
+    qaGeneratorDraft.mode === "deterministic"
+      ? "caution"
+      : qaGeneratorCacheReady
+        ? "ready"
+        : qaGeneratorPreflight && qaGeneratorPreflight.mode === "transformers"
+          ? "blocked"
+          : "caution";
+  const qaGeneratorCacheTitle =
+    qaGeneratorDraft.mode === "deterministic"
+      ? "Smoke mode ready"
+      : qaGeneratorCacheReady
+        ? "QA generator cached"
+        : qaGeneratorPreflight
+          ? "Cache before training-quality QA"
+          : "Preflight before real QA";
+  const qaGeneratorCacheDetail =
+    qaGeneratorDraft.mode === "deterministic"
+      ? "Deterministic generation keeps demos and CI moving without downloads. Switch to Local Transformers and cache the model before creating training-grade QA pairs."
+      : cachedQAGeneratorArchiveEntry?.localPath
+        ? `${draftedQAGeneratorModel} is cached at ${cachedQAGeneratorArchiveEntry.localPath}. Run Configure + preflight before model-backed proof.`
+        : qaGeneratorPreflight?.model?.cached
+          ? qaGeneratorPreflight.model.message
+          : qaGeneratorPreflight?.model
+            ? qaGeneratorPreflight.model.message
+            : `${draftedQAGeneratorModel} should be checked against Archive before the Assembly Line generates training-worthy pairs.`;
+  const qaGeneratorCacheActionLabel =
+    qaGeneratorCacheReady
+      ? "Configure + preflight"
+      : qaGeneratorPreflight?.mode === "transformers" &&
+          qaGeneratorPreflight.model &&
+          !qaGeneratorPreflight.model.cached
+        ? "Prepare in Archive"
+        : "Preflight cache";
 
   const canOpenQAGeneratorInArchive =
     qaGeneratorPreflight?.mode === "transformers" &&
@@ -1259,12 +1342,17 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                 </div>
                 <div>
                   <label className="field-label" htmlFor="qa-generator-model">Generator model</label>
-                  <input
+                  <BaseModelSelector
                     id="qa-generator-model"
-                    type="text"
                     value={qaGeneratorDraft.modelId}
-                    onChange={(event) => updateQAGeneratorDraft("modelId", event.target.value)}
-                    placeholder={DEFAULT_QA_GENERATOR_MODEL_ID}
+                    defaultBaseModel={DEFAULT_QA_GENERATOR_MODEL_ID}
+                    settings={settings}
+                    archiveEntries={archiveEntries}
+                    onChange={(modelId) => updateQAGeneratorDraft("modelId", modelId)}
+                    onSearchBaseModels={onSearchBaseModels}
+                    searchAriaLabel="Search Hugging Face QA generator models"
+                    searchPlaceholder="Search QA generator models or paste repo id"
+                    defaultOptionLabel="QA default"
                   />
                   <p className="field-hint">
                     Quality proof defaults to Qwen. {SMOKE_QA_GENERATOR_MODEL_ID} stays reserved for
@@ -1272,6 +1360,36 @@ const MaterialsWorkbench: React.FC<MaterialsWorkbenchProps> = ({
                   </p>
                 </div>
               </div>
+
+              <article className={`qa-generator-cache-readiness readiness-${qaGeneratorCacheState}`}>
+                <div>
+                  <p className="panel-kicker">Generator cache readiness</p>
+                  <strong>{qaGeneratorCacheTitle}</strong>
+                  <span>{qaGeneratorCacheDetail}</span>
+                </div>
+                <div className="qa-generator-cache-actions">
+                  <span className={`status-badge readiness-${qaGeneratorCacheState}`}>
+                    {qaGeneratorCacheState}
+                  </span>
+                  {qaGeneratorDraft.mode === "transformers" && (
+                    <button
+                      className="button-secondary button-compact"
+                      disabled={isPreflightingGenerator || isConfiguringGenerator}
+                      onClick={
+                        canOpenQAGeneratorInArchive && !qaGeneratorCacheReady
+                          ? openQAGeneratorArchive
+                          : preflightQAGenerator
+                      }
+                      type="button"
+                    >
+                      <i className="fas fa-box-archive" aria-hidden="true" />
+                      {isPreflightingGenerator || isConfiguringGenerator
+                        ? "Checking"
+                        : qaGeneratorCacheActionLabel}
+                    </button>
+                  )}
+                </div>
+              </article>
 
               <div className="settings-grid">
                 <div>

@@ -109,6 +109,9 @@ From the repository root, verify the public baseline:
 make check
 ```
 
+For a deeper explanation of what each proof command covers, see
+[MVP Verification](#mvp-verification).
+
 With the backend running, prove the live MVP handoffs:
 
 ```bash
@@ -118,6 +121,54 @@ make mvp-demo
 That command imports a tiny Material, creates reviewed QA, exports JSONL,
 simulates a Forge, creates an Artifact, loads Construct, saves a Trial, and
 prints the created IDs. It does not download model weights.
+
+## MVP Verification
+
+The public MVP verification path is intentionally no-download by default. It
+separates contract readiness from optional heavy ML runtime proof so new users
+can trust what is working before they download models.
+
+Use these commands from the repository root:
+
+```bash
+make check
+```
+
+Runs the full public baseline: runtime directory setup, Python smoke checks,
+backend contract rehearsals, frontend build, frontend lint, and frontend
+sentinel tests. This should pass without model downloads or optional ML model
+weights.
+
+```bash
+make qa-generator-cache-loop
+```
+
+Proves the QA generator cache loop through FastAPI contracts:
+
+```text
+uncached QA generator -> blocked preflight -> local Archive cache -> ready preflight -> model-backed proof
+```
+
+This smoke is network-free. It creates an isolated local Archive sentinel and
+uses a tiny injected backend response, so it proves the cache/preflight/proof
+contract without downloading or loading a real model. It does not prove model
+quality.
+
+```bash
+make mvp-demo
+```
+
+Requires a running backend at `http://127.0.0.1:8000` unless
+`FOUNDRY_API_BASE_URL` is set. It proves the live handoff path against the API:
+
+```text
+Material -> QA Review -> JSONL Material -> Forge -> Artifact -> Construct -> Trial
+```
+
+By default this uses deterministic QA plus simulated Forge and Construct
+runtime paths. That is intentional for the public baseline. Real local
+Transformers inference and local LoRA/QLoRA training remain optional runtime
+proof paths after baseline setup.
 
 ## Run Locally
 
@@ -180,9 +231,11 @@ Useful variables:
 ```bash
 make setup-runtime
 make smoke
+make backend-test
 make build
 make lint
 make health
+make qa-generator-cache-loop
 make mvp-demo
 make check
 ```

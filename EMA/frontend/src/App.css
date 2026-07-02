@@ -5122,6 +5122,57 @@ input[type="checkbox"] {
   line-height: 1.45;
 }
 
+.qa-generator-cache-readiness {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  border: 1px solid rgba(0, 212, 255, 0.22);
+  border-radius: 8px;
+  padding: 0.72rem;
+  background:
+    linear-gradient(135deg, rgba(0, 212, 255, 0.08), rgba(13, 17, 23, 0.16)),
+    rgba(13, 17, 23, 0.56);
+}
+
+.qa-generator-cache-readiness.readiness-ready {
+  border-color: rgba(0, 212, 255, 0.38);
+  box-shadow: var(--shadow-blue);
+}
+
+.qa-generator-cache-readiness.readiness-caution {
+  border-color: rgba(212, 160, 23, 0.34);
+}
+
+.qa-generator-cache-readiness.readiness-blocked {
+  border-color: rgba(255, 138, 0, 0.42);
+  box-shadow: var(--shadow-orange);
+}
+
+.qa-generator-cache-readiness strong,
+.qa-generator-cache-readiness span {
+  display: block;
+}
+
+.qa-generator-cache-readiness > div > strong {
+  color: var(--text-primary);
+  font-size: 0.88rem;
+}
+
+.qa-generator-cache-readiness > div > span:not(.status-badge) {
+  margin-top: 0.24rem;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.qa-generator-cache-actions {
+  display: grid;
+  justify-items: end;
+  gap: 0.48rem;
+}
+
 .qa-model-proof-card {
   display: grid;
   gap: 0.72rem;

@@ -33,8 +33,27 @@ Expected coverage:
 - Python smoke checks.
 - Backend workflow contract rehearsals.
 - FastAPI workflow contract rehearsals.
+- QA generator cache-loop rehearsal.
 - Archive and Construct diagnostics contract checks.
 - Frontend build, lint, and sentinel tests.
+
+## QA Generator Cache-Loop Rehearsal
+
+Run the focused QA generator proof before the live MVP demo:
+
+```bash
+make qa-generator-cache-loop
+```
+
+This rehearsal must remain network-free and no-download. It should prove:
+
+- An uncached Local Transformers QA generator preflight is blocked.
+- A local Archive cache sentinel makes preflight ready.
+- The runtime can configure the cached generator.
+- The model-backed proof path returns a backend-local proof row.
+
+This proves the cache/preflight/proof contract only. It does not prove final QA
+quality or real model behavior.
 
 ## Live MVP Rehearsal
 
@@ -90,6 +109,8 @@ The public claim audit should verify:
 - Simulated Forge and Construct defaults are named plainly.
 - Deterministic QA is described as a smoke/fallback path, not quality training
   data.
+- QA generator cache-loop proof is described as a contract rehearsal, not a
+  quality guarantee.
 - `sshleifer/tiny-gpt2` is described as a compatibility proof model only.
 - Optional ML dependencies are separated from baseline setup.
 - Model downloads remain opt-in.
@@ -144,6 +165,7 @@ The branch is ready to merge when:
 
 - `make check` passes.
 - `git diff --check` passes.
+- `make qa-generator-cache-loop` passes.
 - `make mvp-demo` passes against a running backend or the reason it was skipped
   is documented in the PR.
 - Public docs agree on supported, simulated, optional, and missing behavior.

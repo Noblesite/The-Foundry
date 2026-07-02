@@ -13,6 +13,11 @@ interface BaseModelSelectorProps {
   archiveEntries?: ModelArchiveEntry[];
   onChange: (modelId: string) => void;
   onSearchBaseModels?: (query: string) => Promise<ModelSearchResult[]>;
+  searchAriaLabel?: string;
+  searchPlaceholder?: string;
+  cachedGroupLabel?: string;
+  remoteGroupLabel?: string;
+  defaultOptionLabel?: string;
 }
 
 interface BaseModelOption {
@@ -45,6 +50,11 @@ const BaseModelSelector: React.FC<BaseModelSelectorProps> = ({
   archiveEntries = [],
   onChange,
   onSearchBaseModels,
+  searchAriaLabel = "Search Hugging Face base models",
+  searchPlaceholder = "Search Hugging Face or paste repo id",
+  cachedGroupLabel = "Cached Archive",
+  remoteGroupLabel = "Hugging Face results",
+  defaultOptionLabel = "Settings default",
 }) => {
   const currentBaseModel = value.trim();
   const [modelQuery, setModelQuery] = useState(currentBaseModel || defaultBaseModel);
@@ -121,7 +131,7 @@ const BaseModelSelector: React.FC<BaseModelSelectorProps> = ({
     <div className="workshop-model-selector base-model-selector">
       <div className="workshop-model-search base-model-search">
         <input
-          aria-label="Search Hugging Face base models"
+          aria-label={searchAriaLabel}
           type="search"
           value={modelQuery}
           onChange={(event) => setModelQuery(event.target.value)}
@@ -131,7 +141,7 @@ const BaseModelSelector: React.FC<BaseModelSelectorProps> = ({
               void searchBaseModels();
             }
           }}
-          placeholder="Search Hugging Face or paste repo id"
+          placeholder={searchPlaceholder}
         />
         <button
           className="button-secondary button-compact"
@@ -153,7 +163,7 @@ const BaseModelSelector: React.FC<BaseModelSelectorProps> = ({
           <option value={currentBaseModel}>{currentBaseModel} · Current</option>
         )}
         {cachedOptions.length > 0 && (
-          <optgroup label="Cached Archive">
+          <optgroup label={cachedGroupLabel}>
             {cachedOptions.map((option) => (
               <option key={`cached-${option.id}`} value={option.id}>
                 {option.label} · {option.detail}
@@ -162,7 +172,7 @@ const BaseModelSelector: React.FC<BaseModelSelectorProps> = ({
           </optgroup>
         )}
         {remoteOptions.length > 0 && (
-          <optgroup label="Hugging Face results">
+          <optgroup label={remoteGroupLabel}>
             {remoteOptions.map((option) => (
               <option key={`remote-${option.id}`} value={option.id}>
                 {option.label} · {option.detail}
@@ -171,7 +181,7 @@ const BaseModelSelector: React.FC<BaseModelSelectorProps> = ({
           </optgroup>
         )}
         {!shouldShowCurrentOption && cachedOptions.length === 0 && remoteOptions.length === 0 && (
-          <option value={defaultBaseModel}>{defaultBaseModel} · Settings default</option>
+          <option value={defaultBaseModel}>{defaultBaseModel} · {defaultOptionLabel}</option>
         )}
       </select>
       <div className="workshop-model-selector-actions base-model-selector-actions">

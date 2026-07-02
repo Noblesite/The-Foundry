@@ -1044,10 +1044,13 @@ const App: React.FC = () => {
         <MaterialsWorkbench
           academyActions={academyActions}
           repository={repository}
+          settings={settings}
           summary={foundryData.sectionSummaries.materials}
           workshop={dashboardSummary.workshop}
+          archiveEntries={archiveEntries}
           academyAction={getAcademyAction(ACADEMY_ACTION_IDS.materialsOpenAssemblyLine)}
           qaGeneratorArchiveHandoff={materialsArchiveHandoff}
+          onSearchBaseModels={searchWorkshopBaseModels}
           onOpenArchiveModel={handleOpenArchiveWithModel}
           onOpenAcademy={() =>
             handleOpenAcademyAction(ACADEMY_ACTION_IDS.materialsOpenAssemblyLine)

@@ -1,6 +1,6 @@
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
-.PHONY: setup-runtime smoke backend-test build lint test check dev-backend dev-frontend health mvp-demo ml-proof-preflight ml-proof construct-adapter-proof
+.PHONY: setup-runtime smoke backend-test build lint test check dev-backend dev-frontend health mvp-demo qa-generator-cache-loop ml-proof-preflight ml-proof construct-adapter-proof
 
 setup-runtime:
 	sh scripts/setup_runtime_dirs.sh
@@ -13,6 +13,7 @@ backend-test:
 	$(PYTHON) scripts/test_foundry_api_workflow_contract.py
 	$(PYTHON) scripts/test_foundry_archive_api_contract.py
 	$(PYTHON) scripts/test_foundry_construct_diagnostics_api_contract.py
+	$(PYTHON) scripts/run_qa_generator_cache_loop.py
 
 build:
 	cd EMA/frontend && npm run build
@@ -36,7 +37,11 @@ health:
 
 mvp-demo:
 	$(PYTHON) scripts/health_check.py
+	$(PYTHON) scripts/run_qa_generator_cache_loop.py
 	$(PYTHON) scripts/run_mvp_manual_rehearsal.py
+
+qa-generator-cache-loop:
+	$(PYTHON) scripts/run_qa_generator_cache_loop.py
 
 ml-proof-preflight:
 	$(PYTHON) scripts/run_local_forge_smoke.py

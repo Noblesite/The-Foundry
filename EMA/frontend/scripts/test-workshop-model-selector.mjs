@@ -51,13 +51,13 @@ assertIncludes(
 );
 assertIncludes(
   files.baseModelSelector,
-  "<optgroup label=\"Cached Archive\">",
-  "Base-model selector groups cached Archive model choices"
+  "cachedGroupLabel = \"Cached Archive\"",
+  "Base-model selector defaults to cached Archive model choices"
 );
 assertIncludes(
   files.baseModelSelector,
-  "<optgroup label=\"Hugging Face results\">",
-  "Base-model selector groups Hugging Face search results"
+  "remoteGroupLabel = \"Hugging Face results\"",
+  "Base-model selector defaults to Hugging Face search results"
 );
 assertIncludes(
   files.baseModelSelector,

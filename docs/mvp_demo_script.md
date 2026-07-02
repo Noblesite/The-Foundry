@@ -36,7 +36,30 @@ Open:
 http://127.0.0.1:5173
 ```
 
-## 2. Run The Automated Proof
+## 2. Prove QA Generator Cache Readiness
+
+Before running the full MVP demo, prove the model-backed QA generator handoff
+that Materials uses when a user switches from deterministic smoke output to a
+cached local generator:
+
+```bash
+make qa-generator-cache-loop
+```
+
+Expected result:
+
+```text
+PASS: QA generator cache loop rehearsal completed.
+```
+
+This proof is network-free and does not download or load a real model. It
+creates an isolated local Archive sentinel, verifies an uncached generator is
+blocked, verifies the cached generator preflight becomes ready, configures
+Local Transformers mode, and runs a backend-local model-backed proof with an
+injected tiny QA response. It proves the cache/preflight/proof contract, not
+final model quality.
+
+## 3. Run The Automated MVP Proof
 
 With the backend running:
 
@@ -59,7 +82,7 @@ PASS: live Foundry MVP rehearsal completed.
 The command prints the Workshop, Material, Assembly Line, Forge, Artifact,
 Construct, Message, and Trial IDs it created.
 
-## 3. Walk The UI
+## 4. Walk The UI
 
 Use the generated Workshop in the left rail, then check these stations:
 
@@ -74,7 +97,7 @@ Use the generated Workshop in the left rail, then check these stations:
 6. Academy and right rail: confirm learning content explains the concepts while
    staying out of the operator flow.
 
-## 4. What Success Means
+## 5. What Success Means
 
 Success means the public MVP has a complete, reproducible, local workflow:
 
@@ -85,6 +108,8 @@ Success means the public MVP has a complete, reproducible, local workflow:
 - A Forge contract can create an Artifact record.
 - A Construct can reply from that Artifact path.
 - A Trial can save a human verdict.
+- The QA generator cache/preflight/proof contract can be rehearsed without
+  model downloads.
 
 It does not mean the model is high quality yet. Real model quality requires
 optional ML dependencies, cached model weights, better source material, and

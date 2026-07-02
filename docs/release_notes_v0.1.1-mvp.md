@@ -20,6 +20,9 @@ Workshop -> Material -> QA Review -> JSONL Material -> Forge -> Artifact -> Cons
   chunks.
 - Added contract coverage so missing source files fail loudly instead of
   producing misleading training evidence.
+- Added a no-download QA generator cache-loop rehearsal for blocked preflight,
+  local Archive cache readiness, runtime configure, and backend-local
+  model-backed proof contracts.
 - Added a public release checklist for future MVP/release candidates.
 
 ## Browser Rehearsal Evidence
@@ -37,12 +40,15 @@ A browser-backed rehearsal against the local FastAPI console validated:
 - Construct load in explicit simulated/fallback mode.
 - Construct reply capture as a Trial.
 - Trials station display with simulated runtime labeling and filters.
+- QA generator cache-loop proof using `make qa-generator-cache-loop`, with no
+  network calls or model downloads.
 
 ## Validation
 
 The release-prep pass validated:
 
 - `make check`
+- `make qa-generator-cache-loop`
 - `git diff --check`
 - Browser-backed MVP workflow rehearsal
 - Remote `foundry/development` matching the local release candidate commit
@@ -52,6 +58,8 @@ The release-prep pass validated:
 - The default Forge and Construct runtimes remain simulated.
 - Deterministic QA remains smoke/demo output, not production-quality training
   data.
+- QA generator cache-loop proof validates contracts and readiness handoffs, not
+  final model quality.
 - Optional local model streaming and tiny LoRA proof paths require
   `requirements-ml.txt`.
 - Production auth, team isolation, packaged deployment, robust crawling, video

@@ -30,7 +30,45 @@ make check
 
 This path should not download model weights or require Torch, PEFT, CUDA, MPS, or bitsandbytes.
 
-## 2. Run The App
+## 2. Prove The Public Verification Ladder
+
+After `make check`, run the focused QA generator cache-loop proof:
+
+```bash
+make qa-generator-cache-loop
+```
+
+Expected result:
+
+```text
+PASS: QA generator cache loop rehearsal completed.
+```
+
+This proof is still baseline-safe: it is network-free, does not download model
+weights, and does not load a real model. It verifies the contract path the UI
+uses before model-backed QA generation:
+
+```text
+uncached QA generator -> blocked preflight -> local Archive cache -> ready preflight -> model-backed proof
+```
+
+It proves the cache/preflight/proof handoff, not final QA quality.
+
+To rehearse the live API MVP handoffs without optional ML packages or model
+downloads, start the backend and then run:
+
+```bash
+make mvp-demo
+```
+
+This creates a timestamped Workshop, imports a tiny text Material, exports
+reviewed QA to JSONL, runs the Forge simulator until it creates an Artifact,
+loads that Artifact into Construct, saves a Trial, and prints the created IDs.
+
+By default, `make mvp-demo` uses deterministic QA plus simulated Forge and
+Construct runtime paths. That is intentional for first-run setup.
+
+## 3. Run The App
 
 Backend:
 
@@ -56,7 +94,7 @@ Backend default:
 http://127.0.0.1:8000
 ```
 
-## 3. Frontend Data Modes
+## 4. Frontend Data Modes
 
 Create local environment files when needed:
 
@@ -85,7 +123,7 @@ VITE_FOUNDRY_DATA_SOURCE=api
 
 Use this for the full FastAPI-backed workflow.
 
-## 4. Optional ML Runtime Setup
+## 5. Optional ML Runtime Setup
 
 Install this only after the baseline app passes:
 
@@ -105,7 +143,7 @@ HF_TOKEN=
 
 Do not commit real tokens.
 
-## 5. Runtime Modes
+## 6. Runtime Modes
 
 Construct defaults to simulated streaming:
 
@@ -132,7 +170,7 @@ Use local Forge only after optional ML dependencies are installed and a tiny mod
 FOUNDRY_FORGE_RUNTIME_MODE=local
 ```
 
-## 6. Tiny Local Proofs
+## 7. Tiny Local Proofs
 
 The safest model for proving the path is `sshleifer/tiny-gpt2`. It is a smoke-test model, not a quality benchmark.
 
@@ -168,7 +206,7 @@ into Construct with PEFT, streams a short reply, and saves a Trial. It is not
 part of `make check` because it exercises optional ML dependencies and a cached
 tiny model.
 
-## 7. Readiness Gate
+## 8. Readiness Gate
 
 The backend exposes one gate for the dangerous steps:
 
@@ -184,7 +222,7 @@ It normalizes Archive download, Construct load, and Forge start into:
 
 Use this gate before downloading a model, loading Construct, or starting a local Forge.
 
-## 8. MVP Manual Rehearsal
+## 9. MVP Manual Rehearsal
 
 After baseline and optional runtime setup:
 
@@ -200,13 +238,5 @@ After baseline and optional runtime setup:
 10. Stream a reply and save a Trial.
 
 The goal is not model quality yet. The goal is a clean, teachable, repeatable path from Material to Trial.
-
-To rehearse the live API handoffs without optional ML packages or model downloads:
-
-```bash
-make mvp-demo
-```
-
-This creates a timestamped Workshop, imports a tiny text Material, exports reviewed QA to JSONL, runs the Forge simulator until it creates an Artifact, loads that Artifact into Construct, saves a Trial, and prints the created IDs.
 
 For the complete UI walkthrough, see [MVP Demo Script](mvp_demo_script.md).
