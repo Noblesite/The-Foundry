@@ -193,6 +193,81 @@ def exercise_workshop_delete_contract(client: TestClient) -> None:
     assert not source_path.exists()
 
 
+def exercise_material_delete_contract(client: TestClient) -> None:
+    cleanup_workshop = assert_response(
+        client.post(
+            "/api/v1/workshops",
+            json={
+                "name": "API Material Cleanup Workshop",
+                "subject": "Cleanup",
+                "voiceTarget": "Archivist",
+                "baseModel": "sshleifer/tiny-gpt2",
+            },
+        )
+    )
+    material = assert_response(
+        client.post(
+            f"/api/v1/workshops/{cleanup_workshop['id']}/materials/import-file",
+            params={
+                "name": "API Disposable Material",
+                "kind": "text",
+                "filename": "api-disposable-material.txt",
+            },
+            content=b"API disposable Material should be removed without deleting the Workshop.",
+        )
+    )
+    source_path = catalog_module.BASE_DIR / material["sourceUri"]
+    assert source_path.exists()
+
+    assembly = assert_response(
+        client.post(
+            f"/api/v1/workshops/{cleanup_workshop['id']}/assembly-lines",
+            json={
+                "materialSourceIds": [material["id"]],
+                "chunkSizeTokens": 128,
+                "chunkOverlapTokens": 0,
+                "qaPairsPerSource": 1,
+            },
+        )
+    )
+    assert assembly["chunkCount"] == 1
+
+    wrong_confirmation = client.request(
+        "DELETE",
+        f"/api/v1/workshops/{cleanup_workshop['id']}/materials/{material['id']}",
+        json={"confirmationName": "Wrong Material"},
+    )
+    assert wrong_confirmation.status_code == 400
+    assert "exact Material name" in wrong_confirmation.text
+
+    result = assert_response(
+        client.request(
+            "DELETE",
+            f"/api/v1/workshops/{cleanup_workshop['id']}/materials/{material['id']}",
+            json={"confirmationName": material["name"]},
+        )
+    )
+    assert result["deletedMaterialId"] == material["id"]
+    assert result["deletedMaterialName"] == material["name"]
+    assert result["deletedCounts"]["materials"] == 1
+    assert result["deletedCounts"]["materialChunks"] == 1
+    assert result["deletedCounts"]["qaPairs"] >= 1
+    assert result["deletedCounts"]["assemblyLineRuns"] == 1
+    assert assembly["id"] in result["affectedAssemblyLineRunIds"]
+    assert not source_path.exists()
+    remaining_materials = assert_response(
+        client.get(f"/api/v1/workshops/{cleanup_workshop['id']}/materials")
+    )
+    assert material["id"] not in {item["id"] for item in remaining_materials}
+    assert_response(
+        client.request(
+            "DELETE",
+            f"/api/v1/workshops/{cleanup_workshop['id']}",
+            json={"confirmationName": cleanup_workshop["name"]},
+        )
+    )
+
+
 def exercise_website_material_snapshot(
     client: TestClient,
     catalog: FoundryCatalogService,
@@ -202,19 +277,45 @@ def exercise_website_material_snapshot(
     original_fetch = catalog._fetch_website_html
     try:
         catalog._validate_website_url = lambda source_url: source_url
-        catalog._fetch_website_html = lambda _source_url: """
+        website_pages = {
+            "https://example.test/marshall": """
             <html>
-              <head><title>Marshall Rescue Wiki</title></head>
+              <head>
+                <title>Marshall Rescue Wiki</title>
+                <meta name="description" content="Marshall rescue profile for Foundry testing.">
+              </head>
               <body>
                 <script>window.noisy = true;</script>
                 <main>
                   <h1>Marshall Rescue Profile</h1>
                   <p>Marshall uses a water cannon during rescue practice.</p>
                   <p>He helps Adventure Bay with ladder safety.</p>
+                  <a href="/marshall/tools">Rescue tools</a>
+                  <a href="https://outside.example/nope">External page</a>
                 </main>
               </body>
             </html>
-        """
+            """,
+            "https://example.test/marshall/tools": """
+            <html>
+              <head><title>Marshall Tool Notes</title></head>
+              <body>
+                <main>
+                  <h1>Marshall Tool Notes</h1>
+                  <p>Marshall keeps his ladder, medical kit, and fire hose ready for emergencies.</p>
+                  <a href="/marshall">Back to profile</a>
+                </main>
+              </body>
+            </html>
+            """,
+        }
+        fetched_urls: list[str] = []
+
+        def fetch_website_html(source_url: str) -> str:
+            fetched_urls.append(source_url)
+            return website_pages[source_url]
+
+        catalog._fetch_website_html = fetch_website_html
         preview = assert_response(
             client.post(
                 f"/api/v1/workshops/{workshop_id}/materials/website-preview",
@@ -224,7 +325,17 @@ def exercise_website_material_snapshot(
         assert preview["contractVersion"] == "foundry.material.website-preview.v1"
         assert preview["sourceUrl"] == "https://example.test/marshall"
         assert preview["title"] == "Marshall Rescue Wiki"
+        assert preview["description"] == "Marshall rescue profile for Foundry testing."
+        assert preview["pageCount"] == 2
+        assert preview["crawlMaxPages"] == 3
+        assert preview["crawlMaxDepth"] == 1
+        assert [page["url"] for page in preview["pages"]] == [
+            "https://example.test/marshall",
+            "https://example.test/marshall/tools",
+        ]
         assert "Marshall uses a water cannon" in preview["textPreview"]
+        assert "Marshall keeps his ladder" in preview["textPreview"]
+        assert "outside.example" not in fetched_urls
 
         material = assert_response(
             client.post(
@@ -245,12 +356,49 @@ def exercise_website_material_snapshot(
         assert scrape["sourceUrl"] == "https://example.test/marshall"
         assert scrape["storedSourceUri"] == material["sourceUri"]
         assert scrape["title"] == "Marshall Rescue Wiki"
+        assert scrape["description"] == "Marshall rescue profile for Foundry testing."
+        assert scrape["pageCount"] == 2
+        assert scrape["pages"][1]["url"] == "https://example.test/marshall/tools"
+        assert scrape["pages"][1]["depth"] == 1
         assert scrape["estimatedTokenCount"] > 0
         snapshot_path = catalog_module.BASE_DIR / material["sourceUri"]
         assert snapshot_path.exists()
         snapshot_text = snapshot_path.read_text(encoding="utf-8")
         assert "Source URL: https://example.test/marshall" in snapshot_text
+        assert "Pages Crawled: 2" in snapshot_text
         assert "window.noisy" not in snapshot_text
+        assert "Marshall Tool Notes" in snapshot_text
+
+        source_preview = assert_response(
+            client.get(
+                f"/api/v1/workshops/{workshop_id}/materials/{material['id']}/preview",
+            )
+        )
+        assert source_preview["contractVersion"] == "foundry.material.source-preview.v1"
+        assert source_preview["materialId"] == material["id"]
+        assert source_preview["kind"] == "website"
+        assert source_preview["metadata"]["scrape"]["pageCount"] == 2
+        assert "Marshall Tool Notes" in source_preview["textPreview"]
+        assert source_preview["estimatedTokenCount"] > 0
+
+        source_evaluation = assert_response(
+            client.post(
+                f"/api/v1/workshops/{workshop_id}/materials/{material['id']}/source-evaluation",
+                json={
+                    "systemPrompt": (
+                        "You are a strict source evaluator. Return JSON and flag noisy "
+                        "scrapes before QA generation."
+                    )
+                },
+            )
+        )
+        assert source_evaluation["contractVersion"] == "foundry.source-evaluator.v1"
+        assert source_evaluation["status"] in {"ready", "caution", "blocked"}
+        assert source_evaluation["prompt"]["templateVersion"] == "foundry.source-evaluator.system-prompt.v1"
+        assert source_evaluation["prompt"]["systemPrompt"].startswith("You are a strict source evaluator")
+        assert source_evaluation["material"]["name"] == "Marshall Wiki Snapshot"
+        assert source_evaluation["checks"]
+        assert source_evaluation["source"] == "deterministic-fallback"
 
         assembly = assert_response(
             client.post(
@@ -272,6 +420,7 @@ def exercise_website_material_snapshot(
         chunk_text = "\n".join(chunk["text"] for chunk in chunks)
         assert "Marshall Rescue Profile" in chunk_text
         assert "ladder safety" in chunk_text
+        assert "medical kit" in chunk_text
     finally:
         catalog._validate_website_url = original_validate
         catalog._fetch_website_html = original_fetch
@@ -359,6 +508,27 @@ def exercise_model_backed_qa_generation(
             },
         )
     )
+    latest_before = assert_response(
+        client.get(
+            f"/api/v1/workshops/{workshop['id']}/assembly-line/qa-generator/quality-proof/latest"
+        )
+    )
+    assert latest_before is None
+    remembered_quality = assert_response(
+        client.post(
+            f"/api/v1/workshops/{workshop['id']}/assembly-line/qa-generator/quality-proof/latest",
+            json={"proof": quality_proof},
+        )
+    )
+    assert remembered_quality["proofMode"]["modelId"] == generator_model_id
+    latest_after = assert_response(
+        client.get(
+            f"/api/v1/workshops/{workshop['id']}/assembly-line/qa-generator/quality-proof/latest"
+        )
+    )
+    assert latest_after["proofMode"]["modelId"] == generator_model_id
+    assert latest_after["proofMode"]["simulated"] is False
+
     material = assert_response(
         client.post(
             f"/api/v1/workshops/{workshop['id']}/materials/import-file",
@@ -448,7 +618,23 @@ def exercise_model_backed_qa_generation(
     assert preview["trainingReadiness"]["generatorModels"] == [generator_model_id]
     assert preview["trainingReadiness"]["generatorModes"] == ["transformers"]
     assert preview["trainingReadiness"]["promptVersions"] == ["foundry.qa-prompt.source-context.v3"]
+    assert preview["qaProofState"]["contractVersion"] == "foundry.qa-proof-state.v1"
+    assert preview["qaProofState"]["status"] == "ready"
+    assert preview["qaProofState"]["modelId"] == generator_model_id
+    assert preview["qaProofState"]["matchesExportGenerator"] is True
+    assert preview["trainingReadiness"]["qaProofState"]["status"] == "ready"
     assert all(check["status"] == "pass" for check in preview["trainingReadiness"]["checks"])
+    exported = assert_response(
+        client.post(
+            f"/api/v1/workshops/{workshop['id']}/qa-pairs/export",
+            json={"assemblyLineRunId": assembly["id"]},
+        )
+    )
+    assert exported["qaProofState"]["status"] == "ready"
+    assert (
+        exported["material"]["metadata"]["export"]["qaProofState"]["modelId"]
+        == generator_model_id
+    )
     assert any(item["localFilesOnly"] is True for item in captured_prompts)
 
 
@@ -485,6 +671,7 @@ def run_api_workflow(tmp_path: Path) -> None:
     try:
         with TestClient(api_server.app) as client:
             exercise_model_backed_qa_generation(client, isolated_catalog)
+            exercise_material_delete_contract(client)
 
             runtime = assert_response(
                 client.post(

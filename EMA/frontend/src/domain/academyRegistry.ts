@@ -7,10 +7,14 @@ export const ACADEMY_CONCEPT_IDS = {
   foundryLoop: "foundry-loop",
   memoryManagement: "memory-management",
   qaGeneration: "qa-generation",
+  qaProofDiagnostics: "qa-proof-diagnostics",
   qaQualityGate: "qa-quality-gate",
+  sourceOverlap: "source-overlap",
   trainingAdapters: "training-adapters",
   artifactReadiness: "artifact-readiness",
+  hallucinationRisk: "hallucination-risk",
   runtimeEvidence: "runtime-evidence",
+  sourceEvaluation: "source-evaluation",
   sourceIngestion: "source-ingestion",
   trialComparison: "trial-comparison",
   weakSampleReview: "weak-sample-review",
@@ -24,9 +28,13 @@ export const ACADEMY_ACTION_IDS = {
   constructMemoryCleanup: "construct.memory-cleanup",
   materialsOpenAssemblyLine: "materials.open-assembly-line",
   materialsSourceIngestion: "materials.source-ingestion",
+  materialsSourceEvaluation: "materials.source-evaluation",
   materialsChunking: "materials.chunking",
   materialsQAGeneration: "materials.qa-generation",
+  materialsQAProofDiagnostics: "materials.qa-proof-diagnostics",
   materialsQAQualityGate: "materials.qa-quality-gate",
+  materialsSourceOverlap: "materials.source-overlap",
+  materialsHallucinationRisk: "materials.hallucination-risk",
   forgeOpenTraining: "forge.open-training",
   forgeTrainingMethod: "forge.training-method",
   forgeAdapterBoundary: "forge.adapter-boundary",
@@ -74,6 +82,14 @@ export const defaultAcademyConcepts: AcademyConcept[] = [
     relatedStations: ["materials", "library", "forge"],
   },
   {
+    id: "acd-source-evaluation",
+    title: "Source Evaluation",
+    concept: ACADEMY_CONCEPT_IDS.sourceEvaluation,
+    shortExplanation:
+      "Source evaluation asks a model or deterministic fallback to judge whether scraped/imported text is clean, grounded, and useful before QA generation.",
+    relatedStations: ["materials", "academy", "forge"],
+  },
+  {
     id: "acd-chunking",
     title: "Chunking",
     concept: ACADEMY_CONCEPT_IDS.chunking,
@@ -96,6 +112,30 @@ export const defaultAcademyConcepts: AcademyConcept[] = [
     shortExplanation:
       "The QA quality gate checks grounding, confidence, triviality, and source coverage before rows become Forge-ready JSONL.",
     relatedStations: ["materials", "forge", "trials"],
+  },
+  {
+    id: "acd-qa-proof-diagnostics",
+    title: "QA Proof Diagnostics",
+    concept: ACADEMY_CONCEPT_IDS.qaProofDiagnostics,
+    shortExplanation:
+      "QA proof diagnostics explain why a cached generator model is available, passing, or blocked before it creates training-worthy rows.",
+    relatedStations: ["materials", "academy", "archive"],
+  },
+  {
+    id: "acd-source-overlap",
+    title: "Source Overlap",
+    concept: ACADEMY_CONCEPT_IDS.sourceOverlap,
+    shortExplanation:
+      "Source overlap estimates whether an answer shares enough grounded language with the source chunk to be trusted for review.",
+    relatedStations: ["materials", "library", "forge"],
+  },
+  {
+    id: "acd-hallucination-risk",
+    title: "Hallucination Risk",
+    concept: ACADEMY_CONCEPT_IDS.hallucinationRisk,
+    shortExplanation:
+      "Hallucination risk flags answers that appear unsupported by the source evidence and should not become training rows.",
+    relatedStations: ["materials", "construct", "trials"],
   },
   {
     id: "acd-training-adapters",
@@ -189,6 +229,16 @@ export const defaultAcademyActions: AcademyAction[] = [
       "The Foundry stores a controlled copy or website snapshot so every chunk, QA row, and exported JSONL line can point back to stable source evidence.",
   },
   {
+    id: ACADEMY_ACTION_IDS.materialsSourceEvaluation,
+    station: "materials",
+    action: "explain-source-evaluation",
+    label: "Learn source evaluation",
+    conceptId: ACADEMY_CONCEPT_IDS.sourceEvaluation,
+    tooltipTitle: "What does the evaluator system prompt do?",
+    tooltipBody:
+      "The evaluator system prompt defines the model's role, quality criteria, and required JSON output before QA generation. It should tell the model to inspect source quality, not invent new facts or write training rows yet.",
+  },
+  {
     id: ACADEMY_ACTION_IDS.materialsChunking,
     station: "materials",
     action: "explain-chunking",
@@ -217,6 +267,36 @@ export const defaultAcademyActions: AcademyAction[] = [
     tooltipTitle: "Why can QA rows be blocked?",
     tooltipBody:
       "The quality gate blocks rows with weak grounding, low confidence, trivial questions, unsupported QA types, or deterministic fallback output before they reach Forge.",
+  },
+  {
+    id: ACADEMY_ACTION_IDS.materialsQAProofDiagnostics,
+    station: "materials",
+    action: "explain-qa-proof-diagnostics",
+    label: "Learn proof diagnostics",
+    conceptId: ACADEMY_CONCEPT_IDS.qaProofDiagnostics,
+    tooltipTitle: "Why did proof fail?",
+    tooltipBody:
+      "Proof diagnostics compare the cached model row against quality metrics like score, confidence, source overlap, fallback use, and hallucination risk.",
+  },
+  {
+    id: ACADEMY_ACTION_IDS.materialsSourceOverlap,
+    station: "materials",
+    action: "explain-source-overlap",
+    label: "Learn source overlap",
+    conceptId: ACADEMY_CONCEPT_IDS.sourceOverlap,
+    tooltipTitle: "What is source overlap?",
+    tooltipBody:
+      "Source overlap estimates whether the answer uses language and facts from the chunk. It is a grounding clue, not a replacement for human review.",
+  },
+  {
+    id: ACADEMY_ACTION_IDS.materialsHallucinationRisk,
+    station: "materials",
+    action: "explain-hallucination-risk",
+    label: "Learn hallucination risk",
+    conceptId: ACADEMY_CONCEPT_IDS.hallucinationRisk,
+    tooltipTitle: "What is hallucination risk?",
+    tooltipBody:
+      "Hallucination risk means the answer may contain unsupported claims. The Foundry blocks that row so weak evidence does not teach the Artifact the wrong behavior.",
   },
   {
     id: ACADEMY_ACTION_IDS.constructRuntimeLoading,

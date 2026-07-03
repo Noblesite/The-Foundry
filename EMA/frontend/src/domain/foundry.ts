@@ -153,6 +153,34 @@ export interface WebsiteMaterialPreview {
   textLength: number;
   estimatedTokenCount: number;
   fetchLimitBytes: number;
+  crawlMaxPages?: number;
+  crawlMaxDepth?: number;
+  pageCount?: number;
+  pages?: Array<{
+    url: string;
+    title?: string;
+    description?: string;
+    depth?: number;
+    textLength?: number;
+    estimatedTokenCount?: number;
+    fingerprint?: string;
+    pageNumber?: number;
+  }>;
+  createdAt: string;
+}
+
+export interface MaterialSourcePreview {
+  contractVersion: "foundry.material.source-preview.v1";
+  materialId: string;
+  name: string;
+  kind: MaterialKind;
+  status: MaterialStatus;
+  sourceUri: string;
+  metadata?: Record<string, unknown>;
+  textPreview: string;
+  textLength: number;
+  estimatedTokenCount: number;
+  truncated: boolean;
   createdAt: string;
 }
 
@@ -237,6 +265,47 @@ export interface QAGeneratorRuntime {
   };
   platform?: ModelPlatformProfile;
   selection?: QAGeneratorSelectionPlan;
+  sourceEvaluator?: {
+    contractVersion: "foundry.source-evaluator.v1";
+    systemPromptTemplateVersion: "foundry.source-evaluator.system-prompt.v1";
+    defaultSystemPrompt: string;
+    mode: QAGeneratorMode | string;
+    modelId: string;
+  };
+}
+
+export interface SourceEvaluationCheck {
+  id: string;
+  label: string;
+  status: "pass" | "warn" | "fail" | string;
+  detail: string;
+}
+
+export interface MaterialSourceEvaluation {
+  contractVersion: "foundry.source-evaluator.v1";
+  status: "ready" | "caution" | "blocked" | string;
+  score: number;
+  summary: string;
+  checks: SourceEvaluationCheck[];
+  risks: string[];
+  recommendations: string[];
+  mode: QAGeneratorMode | string;
+  modelId: string;
+  source: "backend-local-model" | "deterministic-fallback" | string;
+  fallbackReason?: string | null;
+  material: {
+    name: string;
+    kind: string;
+    tokenEstimate: number;
+    metadataFingerprint: string;
+  };
+  prompt: {
+    systemPrompt: string;
+    templateVersion: "foundry.source-evaluator.system-prompt.v1";
+    fingerprint: string;
+    lesson: string;
+  };
+  createdAt: string;
 }
 
 export interface QAGeneratorTierPlan {

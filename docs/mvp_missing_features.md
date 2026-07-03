@@ -34,6 +34,8 @@ This is the short steering list. If a task does not support one of these items, 
 ### Guardrails
 
 - [ ] Keep simulated/fallback states unmistakable anywhere a user can export, train, load, infer, or evaluate.
+- [x] Show QA proof freshness and selected-generator mismatch warnings before JSONL export.
+- [x] Carry compact `qaProofState` metadata into JSONL preview/export and exported Material metadata.
 - [x] Keep the official proof path tiny and repeatable; larger models stay post-MVP.
 - [x] Keep backend contract rehearsals green and isolated from local runtime data.
 - [x] Keep setup and first-run docs strong enough for a new technical user to reproduce the demo.
@@ -81,6 +83,8 @@ MVP-critical work now covered:
 
 - One repeatable Material -> QA -> JSONL -> Forge -> Artifact -> Construct -> Trial path is proven by isolated tests and `make mvp-demo`.
 - The official proof path stays tiny and does not require model downloads.
+- The QA generator cache loop is explicit in the UI: uncached Local Transformers preflight routes to Archive, a completed Archive cache returns to Materials, and the returned card points users through Configure + preflight and model-backed QA proof.
+- The Materials review/export area now shows whether JSONL has live proof evidence, simulated proof only, stale proof from another generator, or no remembered model-backed proof.
 - QA quality checks stay lightweight enough for local tests; model-judge ensembles are post-MVP.
 - Setup, health checks, first-run docs, and demo docs are strong enough for another developer to reproduce the demo without tribal knowledge.
 
@@ -103,7 +107,7 @@ Do not add before MVP unless one of the items above is blocked:
 
 Status: covered for MVP file types; still limited by explicit MVP constraints.
 
-The Materials flow can import controlled local files, copy them into runtime storage, and extract text from text/markdown, CSV, JSONL/NDJSON, and text-based PDFs. Website and non-text video inputs remain represented by kind and estimated chunks, not real extraction.
+The Materials flow can import controlled local files, copy them into runtime storage, and extract text from text/markdown, CSV, JSONL/NDJSON, text-based PDFs, and bounded same-origin website crawls. A Material detail drawer lets users inspect staged source previews, crawl metadata, model-assisted source evaluation, and generated chunks before QA review. Non-text video inputs remain represented by kind and estimated chunks, not real extraction.
 
 MVP needs:
 
@@ -111,7 +115,8 @@ MVP needs:
 - Keep controlled runtime Materials directory copies, not user-entered paths only.
 - Keep real text extraction for `.txt`, `.md`, `.csv`, `.jsonl`, `.ndjson`, and text-based `.pdf`.
 - Keep the explicit unsupported state for scanned/image-only PDFs.
-- Website ingestion should be either a real single-page fetcher or explicitly deferred from MVP.
+- Keep the bounded website crawler conservative and visible: same-origin only, explicit page/depth limits, stored snapshot metadata, and clear unsupported states for JavaScript/login-heavy sites.
+- Keep the source-evaluator system prompt visible and editable so users learn how evaluator agents are instructed before QA generation.
 - Clear per-source status: staged, extracting, extracted, failed, unsupported.
 - User-visible errors when a source cannot be read.
 
@@ -127,12 +132,15 @@ MVP can defer:
 
 Status: contract covered; quality tuning remains.
 
-The Assembly Line can chunk simple text and produce draft QA pairs with durable review/export states. It now has a model-backed QA generation boundary, runtime configuration, smoke proofing, source-aware prompt-template metadata, and row-level provenance: generator model, confidence, and `foundry.qa-generation.v1` metadata. The repeatable `make qa-generator-cache-loop` proof now covers the no-download cache/preflight/proof contract from blocked Local Transformers selection to cached backend-local proof. The remaining MVP risk is generation quality, not the contract path: the deterministic fallback is useful for offline smoke tests, and the cache-loop proof validates handoffs, but real training data still needs a configured local generator model that can produce useful instruction/output rows and keep humans in the review loop.
+The Assembly Line can chunk simple text and produce draft QA pairs with durable review/export states. It now has a model-backed QA generation boundary, runtime configuration, smoke proofing, source-aware prompt-template metadata, a training-quality source-evaluation gate, and row-level provenance: generator model, confidence, and `foundry.qa-generation.v1` metadata. The repeatable `make qa-generator-cache-loop` proof now covers the no-download cache/preflight/proof contract from blocked Local Transformers selection to cached backend-local proof. The remaining MVP risk is generation quality, not the contract path: the deterministic fallback is useful for offline smoke tests, and the cache-loop proof validates handoffs, but real training data still needs a configured local generator model that can produce useful instruction/output rows and keep humans in the review loop.
+
+The frontend and backend catalog also remember the latest QA quality proof per Workshop, warn when a remembered proof belongs to a different selected generator, and carry compact `qaProofState` metadata into JSONL preview/export and exported Material metadata. A full proof-history browser remains a hardening task rather than an MVP blocker.
 
 MVP needs:
 
 - Keep model-backed QA generation using a local or configured generator model.
 - Keep the repeatable QA generator cache-loop proof and add manual quality notes for the recommended local model.
+- Keep source evaluation required for training-quality Assembly Lines, with smoke/demo runs clearly allowed as fallback rehearsals.
 - Keep prompt templates that preserve source context, persona/subject, and answer constraints.
 - Keep confidence/quality metadata per QA row, including source chunk references.
 - Export only reviewed/accepted rows by default, with an explicit override for draft rows.

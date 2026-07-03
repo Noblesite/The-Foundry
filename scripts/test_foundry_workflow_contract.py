@@ -267,6 +267,16 @@ async def exercise_model_backed_qa_generation(
     assert model_proof["proofSource"] == "backend-local-model"
     assert model_proof["localFilesOnly"] is True
     assert model_proof["preflightStatus"] == "ready"
+    assert await catalog.get_last_qa_generator_quality_proof(workshop_id) is None
+    remembered_quality = await catalog.remember_qa_generator_quality_proof(
+        workshop_id,
+        qa_quality,
+    )
+    assert remembered_quality["proofMode"]["modelId"] == generator_model_id
+    latest_quality = await catalog.get_last_qa_generator_quality_proof(workshop_id)
+    assert latest_quality is not None
+    assert latest_quality["proofMode"]["modelId"] == generator_model_id
+    assert latest_quality["proofMode"]["simulated"] is False
 
     material = await catalog.import_material_file(
         workshop_id=workshop_id,
@@ -343,7 +353,21 @@ async def exercise_model_backed_qa_generation(
     assert preview["trainingReadiness"]["generatorModels"] == [generator_model_id]
     assert preview["trainingReadiness"]["generatorModes"] == ["transformers"]
     assert preview["trainingReadiness"]["promptVersions"] == ["foundry.qa-prompt.source-context.v3"]
+    assert preview["qaProofState"]["contractVersion"] == "foundry.qa-proof-state.v1"
+    assert preview["qaProofState"]["status"] == "ready"
+    assert preview["qaProofState"]["modelId"] == generator_model_id
+    assert preview["qaProofState"]["matchesExportGenerator"] is True
+    assert preview["trainingReadiness"]["qaProofState"]["status"] == "ready"
     assert all(check["status"] == "pass" for check in preview["trainingReadiness"]["checks"])
+    exported = await catalog.export_qa_pairs_to_material(
+        workshop_id=workshop_id,
+        assembly_line_run_id=assembly["id"],
+    )
+    assert exported["qaProofState"]["status"] == "ready"
+    assert (
+        exported["material"]["metadata"]["export"]["qaProofState"]["modelId"]
+        == generator_model_id
+    )
 
 
 async def exercise_workshop_cleanup(catalog: FoundryCatalogService) -> None:
@@ -422,6 +446,64 @@ async def exercise_workshop_cleanup(catalog: FoundryCatalogService) -> None:
     assert not source_path.exists()
     remaining_ids = {item["id"] for item in await catalog.list_workshops()}
     assert workshop["id"] not in remaining_ids
+
+
+async def exercise_material_cleanup(catalog: FoundryCatalogService) -> None:
+    workshop = await catalog.create_workshop(
+        name="Material Cleanup Workshop",
+        subject="Cleanup",
+        voice_target="Archivist",
+        base_model="sshleifer/tiny-gpt2",
+    )
+    material = await catalog.import_material_file(
+        workshop_id=workshop["id"],
+        name="Disposable Material Notes",
+        kind="text",
+        filename="disposable-material-notes.txt",
+        content=b"Disposable Material notes should be removable without deleting the Workshop.",
+    )
+    source_path = catalog_module.BASE_DIR / material["sourceUri"]
+    assert source_path.exists()
+
+    assembly = await catalog.start_assembly_line(
+        workshop_id=workshop["id"],
+        material_source_ids=[material["id"]],
+        chunk_size_tokens=128,
+        chunk_overlap_tokens=0,
+        qa_pairs_per_source=1,
+    )
+    assert assembly["chunkCount"] == 1
+
+    try:
+        await catalog.delete_material(
+            workshop_id=workshop["id"],
+            material_id=material["id"],
+            confirmation_name="Wrong Material",
+        )
+    except ValueError as error:
+        assert "exact Material name" in str(error)
+    else:
+        raise AssertionError("Material deletion should require exact-name confirmation.")
+
+    result = await catalog.delete_material(
+        workshop_id=workshop["id"],
+        material_id=material["id"],
+        confirmation_name=material["name"],
+    )
+    assert result["deletedMaterialId"] == material["id"]
+    assert result["deletedMaterialName"] == material["name"]
+    assert result["deletedCounts"]["materials"] == 1
+    assert result["deletedCounts"]["materialChunks"] == 1
+    assert result["deletedCounts"]["qaPairs"] >= 1
+    assert result["deletedCounts"]["assemblyLineRuns"] == 1
+    assert assembly["id"] in result["affectedAssemblyLineRunIds"]
+    assert not source_path.exists()
+    remaining_material_ids = {
+        item["id"] for item in await catalog.list_materials(workshop["id"])
+    }
+    assert material["id"] not in remaining_material_ids
+    assert await catalog.list_material_chunks(workshop["id"], assembly["id"]) == []
+    assert await catalog.list_qa_pairs(workshop["id"], assembly["id"]) == []
 
 
 async def exercise_workflow(tmp_path: Path) -> None:
@@ -510,6 +592,7 @@ async def _exercise_workflow(tmp_path: Path) -> None:
     await exercise_website_material_snapshot(catalog, workshop["id"])
     await exercise_missing_material_source_blocks_assembly(catalog, workshop["id"])
     await exercise_model_backed_qa_generation(catalog, workshop["id"])
+    await exercise_material_cleanup(catalog)
     catalog.qa_generator.configure(
         mode="deterministic",
         model_id="sshleifer/tiny-gpt2",

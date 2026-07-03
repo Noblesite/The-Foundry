@@ -19,6 +19,8 @@ from .qa_quality_service import QAQualityEvaluator
 
 QA_GENERATION_CONTRACT_VERSION = "foundry.qa-generation.v1"
 QA_PROMPT_TEMPLATE_VERSION = "foundry.qa-prompt.source-context.v3"
+SOURCE_EVALUATOR_CONTRACT_VERSION = "foundry.source-evaluator.v1"
+SOURCE_EVALUATOR_PROMPT_VERSION = "foundry.source-evaluator.system-prompt.v1"
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_QA_MODEL_ARCHIVE_DIR = BASE_DIR / "runtime" / "models" / "huggingface"
 SMOKE_QA_GENERATOR_MODEL_ID = "sshleifer/tiny-gpt2"
@@ -40,6 +42,13 @@ QA_TYPE_GUIDANCE = {
     "correction": "Ask for a misconception the source can correct without inventing new facts.",
     "safety-boundary": "Ask what boundary, constraint, or uncertainty the model should preserve.",
 }
+DEFAULT_SOURCE_EVALUATOR_SYSTEM_PROMPT = (
+    "You are The Foundry Source Evaluator. Inspect scraped or imported source "
+    "material before QA generation. Decide whether the source is grounded, "
+    "useful, sufficiently specific, low-noise, and ready to become training QA. "
+    "Return only JSON with status, score, summary, checks, risks, and "
+    "recommendations. Do not invent facts beyond the source preview."
+)
 
 
 @dataclass(frozen=True)
@@ -86,6 +95,13 @@ class QAGenerationService:
             },
             "platform": selection["platform"],
             "selection": selection,
+            "sourceEvaluator": {
+                "contractVersion": SOURCE_EVALUATOR_CONTRACT_VERSION,
+                "systemPromptTemplateVersion": SOURCE_EVALUATOR_PROMPT_VERSION,
+                "defaultSystemPrompt": DEFAULT_SOURCE_EVALUATOR_SYSTEM_PROMPT,
+                "mode": self.mode,
+                "modelId": self.model_id,
+            },
             "contractVersion": "foundry.qa-generator.runtime.v1",
         }
 
@@ -488,6 +504,67 @@ class QAGenerationService:
             "createdAt": datetime.now(timezone.utc).isoformat(),
         }
 
+    def default_source_evaluator_system_prompt(self) -> str:
+        return DEFAULT_SOURCE_EVALUATOR_SYSTEM_PROMPT
+
+    def evaluate_source_material(
+        self,
+        *,
+        material_name: str,
+        material_kind: str,
+        source_text: str,
+        source_metadata: Dict[str, Any],
+        system_prompt: str | None = None,
+    ) -> Dict[str, Any]:
+        evaluator_prompt = (system_prompt or DEFAULT_SOURCE_EVALUATOR_SYSTEM_PROMPT).strip()
+        compact_text = " ".join(source_text.split())
+        prompt = self._source_evaluator_prompt(
+            material_name=material_name,
+            material_kind=material_kind,
+            source_text=compact_text,
+            source_metadata=source_metadata,
+            system_prompt=evaluator_prompt,
+        )
+        fallback_reason = ""
+        model_payload: Dict[str, Any] | None = None
+        if self.mode in {"transformers", "local"}:
+            preflight = self.preflight(
+                mode="transformers",
+                model_id=self.model_id,
+                max_new_tokens=min(self.max_new_tokens, 320),
+                temperature=self.temperature,
+            )
+            if preflight["ok"]:
+                try:
+                    output = self._generate_model_text(prompt, local_files_only=True)
+                    parsed = self._parse_model_object(output)
+                    if parsed:
+                        model_payload = parsed
+                    else:
+                        fallback_reason = "Model response was not parseable source-evaluation JSON."
+                except Exception as error:
+                    fallback_reason = f"{type(error).__name__}: {error}"
+            else:
+                fallback_reason = f"Local model preflight blocked: {preflight['summary']}"
+
+        if model_payload is None:
+            model_payload = self._deterministic_source_evaluation(
+                source_text=compact_text,
+                source_metadata=source_metadata,
+            )
+
+        normalized = self._normalize_source_evaluation_payload(
+            payload=model_payload,
+            fallback_reason=fallback_reason,
+            material_name=material_name,
+            material_kind=material_kind,
+            source_text=compact_text,
+            source_metadata=source_metadata,
+            system_prompt=evaluator_prompt,
+            prompt=prompt,
+        )
+        return normalized
+
     def generate(self, request: QAGenerationRequest) -> List[Dict[str, Any]]:
         if self.mode in {"transformers", "local"}:
             try:
@@ -799,6 +876,210 @@ class QAGenerationService:
             if isinstance(parsed, dict):
                 return [parsed]
         return []
+
+    def _parse_model_object(self, value: str) -> Dict[str, Any]:
+        stripped = value.strip()
+        candidates = [stripped]
+        object_match = re.search(r"(\{[\s\S]*\})", stripped)
+        array_match = re.search(r"(\[[\s\S]*\])", stripped)
+        if object_match:
+            candidates.insert(0, object_match.group(1))
+        if array_match:
+            candidates.append(array_match.group(1))
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+            if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+                return parsed[0]
+        return {}
+
+    def _source_evaluator_prompt(
+        self,
+        *,
+        material_name: str,
+        material_kind: str,
+        source_text: str,
+        source_metadata: Dict[str, Any],
+        system_prompt: str,
+    ) -> str:
+        metadata_preview = json.dumps(source_metadata, sort_keys=True)[:2000]
+        return (
+            f"{system_prompt}\n\n"
+            f"Prompt template: {SOURCE_EVALUATOR_PROMPT_VERSION}\n"
+            f"Material: {material_name}\n"
+            f"Material kind: {material_kind}\n"
+            f"Source metadata: {metadata_preview}\n\n"
+            "Evaluate for: factual density, domain relevance, boilerplate/noise, "
+            "duplicate pages, scrape artifacts, missing context, questionable claims, "
+            "and whether this source is ready for QA generation.\n\n"
+            "Return JSON only with fields: status ('ready', 'caution', or 'blocked'), "
+            "score (0 to 1), summary, checks [{id,label,status,detail}], risks [], "
+            "recommendations [].\n\n"
+            f"Source preview:\n{source_text[:5000]}\n"
+        )
+
+    def _deterministic_source_evaluation(
+        self,
+        *,
+        source_text: str,
+        source_metadata: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        token_count = len(source_text.split())
+        lower_text = source_text.lower()
+        scrape_metadata = (
+            source_metadata.get("scrape")
+            if isinstance(source_metadata.get("scrape"), dict)
+            else {}
+        )
+        page_count = int(scrape_metadata.get("pageCount") or 0)
+        boilerplate_hits = [
+            marker
+            for marker in ("cookie", "privacy policy", "subscribe", "advertisement", "javascript")
+            if marker in lower_text
+        ]
+        checks = [
+            {
+                "id": "source-length",
+                "label": "Source length",
+                "status": "pass" if token_count >= 40 else "warn" if token_count >= 12 else "fail",
+                "detail": f"Source preview contains about {token_count} whitespace tokens.",
+            },
+            {
+                "id": "crawl-coverage",
+                "label": "Crawl coverage",
+                "status": "pass" if page_count != 1 else "warn",
+                "detail": (
+                    f"Website crawl captured {page_count} page(s)."
+                    if page_count
+                    else "Non-website or uncrawled source will rely on imported text only."
+                ),
+            },
+            {
+                "id": "boilerplate-noise",
+                "label": "Boilerplate noise",
+                "status": "warn" if boilerplate_hits else "pass",
+                "detail": (
+                    "Potential boilerplate markers: " + ", ".join(boilerplate_hits)
+                    if boilerplate_hits
+                    else "No obvious cookie, subscription, ad, or script boilerplate markers found."
+                ),
+            },
+        ]
+        failed = [check for check in checks if check["status"] == "fail"]
+        warned = [check for check in checks if check["status"] == "warn"]
+        status = "blocked" if failed else "caution" if warned else "ready"
+        score = 0.86
+        if failed:
+            score = 0.34
+        elif warned:
+            score = 0.68
+        return {
+            "status": status,
+            "score": score,
+            "summary": (
+                "Source looks ready for QA generation."
+                if status == "ready"
+                else "Source can be used, but review the cautions before training-quality QA."
+                if status == "caution"
+                else "Source is too weak or noisy for reliable QA generation."
+            ),
+            "checks": checks,
+            "risks": [
+                check["detail"]
+                for check in checks
+                if check["status"] in {"warn", "fail"}
+            ],
+            "recommendations": (
+                ["Proceed to chunking, then inspect generated QA for source grounding."]
+                if status == "ready"
+                else ["Inspect the source preview and consider adding cleaner or more specific source material."]
+            ),
+        }
+
+    def _normalize_source_evaluation_payload(
+        self,
+        *,
+        payload: Dict[str, Any],
+        fallback_reason: str,
+        material_name: str,
+        material_kind: str,
+        source_text: str,
+        source_metadata: Dict[str, Any],
+        system_prompt: str,
+        prompt: str,
+    ) -> Dict[str, Any]:
+        status = str(payload.get("status") or "caution").strip().lower()
+        if status not in {"ready", "caution", "blocked"}:
+            status = "caution"
+        try:
+            score = float(payload.get("score", 0.5))
+        except (TypeError, ValueError):
+            score = 0.5
+        checks = payload.get("checks") if isinstance(payload.get("checks"), list) else []
+        normalized_checks = []
+        for index, check in enumerate(checks[:12]):
+            if not isinstance(check, dict):
+                continue
+            check_status = str(check.get("status") or "warn").strip().lower()
+            if check_status not in {"pass", "warn", "fail"}:
+                check_status = "warn"
+            normalized_checks.append(
+                {
+                    "id": str(check.get("id") or f"source-check-{index + 1}"),
+                    "label": str(check.get("label") or f"Source check {index + 1}"),
+                    "status": check_status,
+                    "detail": str(check.get("detail") or "No detail provided."),
+                }
+            )
+        if not normalized_checks:
+            normalized_checks = self._deterministic_source_evaluation(
+                source_text=source_text,
+                source_metadata=source_metadata,
+            )["checks"]
+
+        risks = payload.get("risks") if isinstance(payload.get("risks"), list) else []
+        recommendations = (
+            payload.get("recommendations")
+            if isinstance(payload.get("recommendations"), list)
+            else []
+        )
+        source = "deterministic-fallback" if fallback_reason or self.mode == "deterministic" else "backend-local-model"
+        return {
+            "contractVersion": SOURCE_EVALUATOR_CONTRACT_VERSION,
+            "status": status,
+            "score": round(max(0.0, min(1.0, score)), 2),
+            "summary": str(payload.get("summary") or "Source evaluation completed."),
+            "checks": normalized_checks,
+            "risks": [str(risk) for risk in risks[:12]],
+            "recommendations": [str(item) for item in recommendations[:12]],
+            "mode": self.mode,
+            "modelId": self.model_id if source == "backend-local-model" else "deterministic-source-evaluator",
+            "source": source,
+            "fallbackReason": fallback_reason or None,
+            "material": {
+                "name": material_name,
+                "kind": material_kind,
+                "tokenEstimate": len(source_text.split()),
+                "metadataFingerprint": sha256(
+                    json.dumps(source_metadata, sort_keys=True).encode("utf-8")
+                ).hexdigest()[:16],
+            },
+            "prompt": {
+                "systemPrompt": system_prompt,
+                "templateVersion": SOURCE_EVALUATOR_PROMPT_VERSION,
+                "fingerprint": sha256(prompt.encode("utf-8")).hexdigest()[:16],
+                "lesson": (
+                    "A source-evaluator system prompt defines the evaluator's job, "
+                    "the quality criteria, and the JSON shape it must return before "
+                    "QA generation starts."
+                ),
+            },
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        }
 
     def _sentences(self, text: str) -> List[str]:
         sentences = [

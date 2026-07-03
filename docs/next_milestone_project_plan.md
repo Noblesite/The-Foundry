@@ -19,7 +19,7 @@ What currently works:
 - The frontend has Foundry-branded workbenches for Workshop, Materials, Forge, Artifacts/Archive, Construct, Trials, Academy, and Settings. Evidence: `EMA/frontend/src/components/*.tsx`, `EMA/frontend/src/domain/foundry.ts`.
 - Material file import works for text, Markdown, CSV, JSONL/NDJSON, and text-based PDF. Single-page website fetch/snapshot now exists with source metadata. Evidence: `FoundryCatalogService._import_material_file_sync`, `_read_text_source`, `_read_pdf_source`, `_snapshot_website_source`; tests in `scripts/test_foundry_workflow_contract.py` and `scripts/test_foundry_api_workflow_contract.py`.
 - Assembly Line supports text-like sources and creates QA rows. Evidence: `FoundryCatalogService._start_assembly_line_sync`, `_build_text_chunks`, `_build_qa_pairs`.
-- QA review/edit/accept/reject exists in backend and frontend, and export creates JSONL Materials with quality metadata. Evidence: `update_qa_pair_review`, `export_qa_pairs_to_material`, `MaterialsWorkbench.tsx`.
+- QA review/edit/accept/reject exists in backend and frontend, and export creates JSONL Materials with quality metadata. The Materials UI and backend catalog now show and persist latest QA proof freshness plus selected-generator mismatch warnings before JSONL export, and JSONL preview/export carries compact `qaProofState` metadata for Forge handoff. Evidence: `update_qa_pair_review`, `export_qa_pairs_to_material`, `remember_qa_generator_quality_proof`, `MaterialsWorkbench.tsx`.
 - Forge creates durable training contracts and worker event/metrics files, validates JSONL, can simulate progress, and can run an explicit local tiny LoRA trainer path when optional ML dependencies and cached model files are present. Evidence: `ForgeTrainingService`, `scripts/run_forge_contract_worker.py`, `LocalForgeSmokeService`.
 - Completed training Forges create Artifact records automatically, and Artifact readiness distinguishes verified, caution, simulated, and blocked output paths. Evidence: `_ensure_artifact_for_forge`, `_artifact_readiness`.
 - Construct has simulated and local Transformers streaming modes, preflight/load/probe/unload/release-memory actions, SSE streaming, runtime events, validation history, diagnostics bundle export, and memory cleanup hooks for Python, CUDA, and MPS. Evidence: `ConstructInferenceService`, `stream_foundry_construct_chat_endpoint`, `ConstructWorkbench.tsx`.
@@ -39,7 +39,7 @@ What is partially implemented:
 - QA quality gating is lightweight and term-overlap based; it is useful as a guardrail but not sufficient for training-worthy data. Evidence: `QAQualityEvaluator`.
 - Local Forge can train a tiny LoRA adapter, but QLoRA and larger training flows remain guarded. Evidence: `ForgeTrainingService.preflight_local_training`, `_run_lora_training`.
 - Construct can stream a cached local model and can apply a LoRA adapter Artifact through PEFT when adapter metadata is provided. Evidence: `ConstructInferenceService._load_transformers_model_sync` loads `AutoModelForCausalLM` and wraps adapter-backed Artifacts with `PeftModel`.
-- Website ingestion fetches one page and extracts text; it is not yet a dynamic crawler. Evidence: `_snapshot_website_source`, `_fetch_website_html`, `_extract_website_text`.
+- Website ingestion now uses a bounded same-origin crawler with page/depth limits, readable-text extraction, dedupe, and stored scrape metadata. Evidence: `_scrape_website_source`, `_snapshot_website_source`, `_fetch_website_html`, `_extract_website_text`.
 - Academy exists as contextual cards/tooltips, a lesson workbench, and an actionable Dashboard progress map for the Material -> Assembly Line -> QA Review -> JSONL -> Forge -> Artifact -> Construct -> Trial loop. Dashboard step states now use catalog evidence from Materials, Assembly Line runs, QA reviews, JSONL Materials, Forge runs, Artifact readiness, Construct runtime state, and Trials instead of progress-percentage heuristics. Users can open each loop step directly from the Dashboard, destination stations show a Dashboard focus callout explaining the intended panel/action, active stations deep-link to source controls, Assembly Line runs, QA review, JSONL export controls, Forge contract/queue, Artifact catalog/detail, Construct runtime loading, or saved Trial evidence as appropriate, and each focused station now surfaces a local "Next required action" based on current state. Materials/Assembly Line explains source ingestion, chunking, QA generation mode, and QA quality gates; Forge explains method choice, adapter boundaries, and tiny proof mode; Artifacts explains readiness and promotion gates; Trials include live-loop guidance for runtime sources and repeated-prompt comparison; Construct explains runtime loading, adapter evidence, and memory cleanup states. Real layer/token visualizations remain future work. Evidence: `App.tsx`, `Dashboard.tsx`, `LoopFocusCallout.tsx`, `LearningComponents.tsx`, `MaterialsWorkbench.tsx`, `ForgeWorkbench.tsx`, `ArtifactsWorkbench.tsx`, `TrialsWorkbench.tsx`, `ConstructWorkbench.tsx`, `AcademyWorkbench.tsx`, `academyRegistry.ts`.
 
 What is missing:
@@ -138,10 +138,10 @@ Scripts and Makefile targets:
 | Stage | Status | Evidence | Notes |
 | --- | --- | --- | --- |
 | Workshop | Supported | `create_workshop`, `/api/v1/workshops`, `WorkshopCreateModal.tsx`, `WorkshopSwitcher.tsx` | Creates Workshop plus draft Artifact/Construct seed records. |
-| Material | Supported | `register_material`, `import_material_file`, `preview_website_material`, `MaterialsWorkbench.tsx` | Text/Markdown/CSV/JSONL/PDF upload and single-page website snapshot exist. Deep crawler/video/OCR missing. |
-| Assembly Line | Partially Supported | `_start_assembly_line_sync`, `_build_text_chunks`, `_build_qa_pairs` | Synchronous chunk/generate/write path works. Needs source-location metadata and stronger generation orchestration. |
+| Material | Supported | `register_material`, `import_material_file`, `preview_website_material`, `preview_material_source`, `evaluate_material_source`, `MaterialsWorkbench.tsx` | Text/Markdown/CSV/JSONL/PDF upload, bounded same-origin website snapshots, Material detail source/chunk inspection, and source-evaluator prompt/result review exist. Sitemap/JS/login-heavy crawling, video, and OCR are still missing. |
+| Assembly Line | Partially Supported | `_start_assembly_line_sync`, `_build_text_chunks`, `_build_qa_pairs`, `MaterialsWorkbench.tsx` | Synchronous chunk/generate/write path works. Training-quality UI now gates selected Materials on source-evaluation results while smoke/demo runs remain available. Needs source-location metadata hardening and stronger generation orchestration. |
 | QA Review | Supported | `update_qa_pair_review`, `MaterialsWorkbench.tsx` review cards | Edit, accept, reject, save, quality badges, blocked export guard exist. |
-| JSONL Material | Supported | `export_qa_pairs_to_material`, `validate_dataset` | Exports valid JSONL with instruction/output and metadata. Needs stronger preview/validator UX. |
+| JSONL Material | Supported | `export_qa_pairs_to_material`, `validate_dataset`, `remember_qa_generator_quality_proof`, `MaterialsWorkbench.tsx` | Exports valid JSONL with instruction/output and metadata. Review/export now shows live/simulated/stale/missing QA proof state before export, reloads latest proof evidence from the catalog, and stores compact `qaProofState` metadata on the exported Material. A full proof-history browser remains future hardening. |
 | Forge | Partially Supported | `ForgeTrainingService`, `ForgeWorkbench.tsx`, `scripts/run_forge_contract_worker.py` | Contract, simulator, local LoRA proof path exist. QLoRA and full training are not production-ready. |
 | Artifact | Partially Supported | `_ensure_artifact_for_forge`, `_artifact_readiness`, `ArtifactsWorkbench.tsx` | Simulated and verified output readiness exist. Adapter/full-checkpoint/metadata-only semantics are visible. |
 | Construct | Partially Supported | `ConstructInferenceService`, SSE route, `ConstructWorkbench.tsx` | Simulated and cached Transformers streaming exist. LoRA adapter application now exists for PEFT-compatible local Artifacts; broader runtime adapters and quality proof remain future work. |
@@ -187,13 +187,13 @@ Supported source types today:
 - CSV through `csv.DictReader` or plain rows.
 - JSONL/NDJSON through instruction/output or generic key-value row rendering.
 - Text-based PDF through `pypdf.PdfReader.extract_text`.
-- Single-page website snapshots through `requests` + `_FoundryHTMLTextExtractor`.
+- Bounded same-origin website snapshots through `requests` + `_FoundryHTMLTextExtractor`, with max page/depth controls and per-page scrape metadata.
 - Transcript/video-transcript as text-like uploads.
 
 Missing source ingestion types:
 
 - Scanned/image-only PDFs and OCR.
-- Dynamic website crawling with depth, domain policy, sitemap support, robots handling, dedupe, retries, and per-page provenance.
+- Production-grade website crawling with sitemap support, robots handling, retries, JavaScript rendering, login/session support, and richer per-page source-location provenance.
 - Video/audio transcription.
 - Rich document layout, tables beyond simple CSV, slide decks, docx, subtitles with timestamp preservation.
 - Multi-file directory upload from UI.
@@ -575,7 +575,7 @@ Additional milestone-specific acceptance:
 - Backend tasks: Add explicit `runtimeMode`, `simulationStatus`, or `fallbackReason` fields where missing in QA/Forge/Construct responses.
 - Frontend tasks: Surface those fields consistently in Materials, Forge, Artifacts, Construct, and Trials.
 - Tests: Contract shape assertions in workflow/API rehearsals; frontend sentinel for visible labels.
-- Acceptance criteria: Export/train/load/evaluate surfaces show deterministic/model-backed/simulated/fallback state.
+- Acceptance criteria: Export/train/load/evaluate surfaces show deterministic/model-backed/simulated/fallback state, including JSONL proof freshness and selected-generator mismatch warnings.
 - Risks/notes: Keep changes additive to avoid breaking existing mocks.
 
 ### Slice 2: Material ingestion and catalog hardening

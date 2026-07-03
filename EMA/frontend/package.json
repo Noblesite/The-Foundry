@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "test": "npm run test:readiness && npm run test:runtime-events && npm run test:archive-handoff && npm run test:trials-review && npm run test:construct-prompts && npm run test:artifact-evidence && npm run test:academy-concepts && npm run test:model-literacy && npm run test:workshop-model-selector && npm run test:workshop-base-model-prep && npm run test:forge-model-readiness && npm run test:materials-qa-generator-readiness",
+    "test": "npm run test:readiness && npm run test:runtime-events && npm run test:archive-handoff && npm run test:trials-review && npm run test:construct-prompts && npm run test:artifact-evidence && npm run test:academy-concepts && npm run test:model-literacy && npm run test:workshop-model-selector && npm run test:workshop-base-model-prep && npm run test:forge-model-readiness && npm run test:materials-qa-generator-readiness && npm run test:material-detail-drawer",
     "test:readiness": "node scripts/test-construct-readiness.mjs",
     "test:runtime-events": "node scripts/test-construct-runtime-events.mjs",
     "test:archive-handoff": "node scripts/test-archive-handoff.mjs",
@@ -21,6 +21,7 @@
     "test:workshop-base-model-prep": "node scripts/test-workshop-base-model-prep.mjs",
     "test:forge-model-readiness": "node scripts/test-forge-model-readiness.mjs",
     "test:materials-qa-generator-readiness": "node scripts/test-materials-qa-generator-readiness.mjs",
+    "test:material-detail-drawer": "node scripts/test-material-detail-drawer.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

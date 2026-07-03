@@ -17,6 +17,10 @@ transparent about what is real, what is simulated, and what still needs hardenin
 - The deterministic QA generator is for smoke tests, not production datasets.
 - Model-backed QA generation exists behind a runtime boundary, but useful QA
   quality depends on the selected local model and human review.
+- The Materials UI and backend catalog remember the latest QA quality proof per
+  Workshop, show proof freshness before JSONL export, and attach a compact
+  `qaProofState` summary to JSONL preview/export metadata. A full proof-history
+  browser with audit/export controls is still a post-MVP hardening item.
 - `sshleifer/tiny-gpt2` is a compatibility smoke model, not a recommended
   assistant, training base, or quality benchmark.
 
@@ -24,8 +28,10 @@ transparent about what is real, what is simulated, and what still needs hardenin
 
 - Text, Markdown, CSV, JSONL/NDJSON, and text-based PDF paths are covered for
   the MVP proof.
-- Scanned PDFs, robust website crawling, video processing, and multi-document
-  extraction workers are post-MVP hardening areas.
+- Website ingestion uses a bounded same-origin crawler for MVP context capture.
+  Sitemap crawling, robots-policy handling, login flows, JavaScript rendering,
+  scanned PDFs, video processing, and multi-document extraction workers are
+  post-MVP hardening areas.
 - Uploaded or generated files stay local and should remain out of Git.
 
 ## Local Machine Fit

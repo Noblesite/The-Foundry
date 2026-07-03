@@ -37,6 +37,11 @@ assertIncludes(
 );
 assertIncludes(
   materials,
+  "data-testid=\"qa-generator-cache-action\"",
+  "Materials exposes a stable cache/preflight action for browser smoke tests"
+);
+assertIncludes(
+  materials,
   "onClick={openQAGeneratorArchive}",
   "Materials handoff uses normal button click activation for route changes"
 );
@@ -57,8 +62,33 @@ assertIncludes(
 );
 assertIncludes(
   materials,
-  "const canRunModelBackedQAProof = Boolean(",
+  "Returned from Archive",
+  "Materials shows a returned-from-Archive handoff card"
+);
+assertIncludes(
+  materials,
+  "data-testid=\"qa-generator-configure-returned-model\"",
+  "Materials exposes a stable Configure + preflight action after Archive return"
+);
+assertIncludes(
+  materials,
+  "Run the model-backed QA proof before training-quality Assembly Lines.",
+  "Materials tells users the next proof step after configuring the cached QA generator"
+);
+assertIncludes(
+  materials,
+  "data-testid=\"qa-generator-run-model-proof\"",
+  "Materials exposes a stable model-backed proof action for browser smoke tests"
+);
+assertIncludes(
+  materials,
+  "const qaGeneratorRuntimeConfigured = Boolean(",
   "Materials gates model-backed QA proof on a configured local Transformers runtime"
+);
+assertIncludes(
+  materials,
+  "const canRunModelBackedQAProof = qaGeneratorRuntimeConfigured;",
+  "Materials reuses the configured-runtime gate for model-backed proof"
 );
 assertIncludes(
   materials,
@@ -92,8 +122,13 @@ assertIncludes(
 );
 assertIncludes(
   materials,
-  "(!assemblyIntentIsTraining || trainingQualityGatePassed)",
-  "Materials keeps smoke runs available while gating training-quality runs"
+  "(!assemblyIntentIsTraining || (trainingQualityGatePassed && sourceEvaluationGate.canProceed))",
+  "Materials keeps smoke runs available while gating training-quality runs on model proof and source evaluation"
+);
+assertIncludes(
+  materials,
+  "aria-label=\"Assembly Line source-evaluation gate\"",
+  "Materials exposes the Assembly Line source-evaluation gate in the UI"
 );
 assertIncludes(
   materials,
@@ -146,6 +181,16 @@ assertIncludes(
   app,
   "const handleReturnToMaterialsWithModel = (handoff: ArchiveModelHandoff) =>",
   "App owns the Archive-to-Materials return handoff"
+);
+assertIncludes(
+  app,
+  "setMaterialsArchiveHandoff({\n              ...archiveHandoff,",
+  "App turns completed QA generator Archive jobs into a Materials handoff"
+);
+assertIncludes(
+  app,
+  "setActiveSection(\"materials\");\n            setStatusToast(\n              `${job.archiveEntry.repoId} cached. Returning to Materials for QA generator preflight.`",
+  "App automatically routes back to Materials after the QA generator model is cached"
 );
 assertIncludes(
   app,

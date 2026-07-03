@@ -35,6 +35,16 @@ assertIncludes(
 );
 assertIncludes(
   files.forge,
+  "qaProofState",
+  "Forge reads exported JSONL QA proof-state metadata"
+);
+assertIncludes(
+  files.forge,
+  "data-testid=\"forge-material-proof-state\"",
+  "Forge renders selected Material proof-state evidence"
+);
+assertIncludes(
+  files.forge,
   "Cache before real training",
   "Forge warns when the base model should be cached before training"
 );
@@ -72,6 +82,11 @@ assertIncludes(
   files.styles,
   ".forge-model-readiness",
   "Forge model readiness strip has dedicated styling"
+);
+assertIncludes(
+  files.styles,
+  ".forge-material-proof-state",
+  "Forge selected Material proof-state evidence has dedicated styling"
 );
 assertIncludes(
   files.packageJson,

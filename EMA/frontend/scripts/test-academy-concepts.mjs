@@ -33,9 +33,12 @@ const requiredConceptIds = [
   "foundry-loop",
   "memory-management",
   "qa-generation",
+  "qa-proof-diagnostics",
   "qa-quality-gate",
+  "source-overlap",
   "training-adapters",
   "artifact-readiness",
+  "hallucination-risk",
   "runtime-evidence",
   "source-ingestion",
   "trial-comparison",
@@ -79,6 +82,36 @@ assertIncludes(
   files.learningComponents,
   "lowerLabel = \"B\"",
   "LayerVisualizer preserves existing lower default label"
+);
+assertIncludes(
+  files.academyRegistry,
+  "materialsQAProofDiagnostics",
+  "Academy registry includes Materials QA proof diagnostics action"
+);
+assertIncludes(
+  files.academyRegistry,
+  "materialsSourceOverlap",
+  "Academy registry includes Materials source overlap action"
+);
+assertIncludes(
+  files.academyRegistry,
+  "materialsHallucinationRisk",
+  "Academy registry includes Materials hallucination risk action"
+);
+assertIncludes(
+  files.academyWorkbench,
+  "Availability is not quality",
+  "Academy teaches cached model availability versus proof quality"
+);
+assertIncludes(
+  files.academyWorkbench,
+  "Grounding starts with evidence",
+  "Academy teaches source overlap as grounding evidence"
+);
+assertIncludes(
+  files.academyWorkbench,
+  "Do not train on guesses",
+  "Academy teaches hallucination risk as a training-data blocker"
 );
 
 if (conceptIds.length < requiredConceptIds.length) {

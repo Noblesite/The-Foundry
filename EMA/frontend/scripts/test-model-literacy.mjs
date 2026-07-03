@@ -55,6 +55,16 @@ assertIncludes(
 );
 assertIncludes(
   files.modelLiteracy,
+  "QA generator fit",
+  "Model literacy teaches that cached models still need QA-generation suitability checks"
+);
+assertIncludes(
+  files.modelLiteracy,
+  "Run proof diagnostics before treating model-backed QA as training-quality evidence.",
+  "Model literacy connects QA generator selection to proof diagnostics"
+);
+assertIncludes(
+  files.modelLiteracy,
   "context window",
   "Model literacy explains context budget"
 );

@@ -28,6 +28,8 @@ import {
   ArtifactReadiness,
   FoundryReadinessGate,
   MaterialSource,
+  MaterialSourcePreview,
+  MaterialSourceEvaluation,
   MaterialKind,
   MaterialStatus,
   QAReviewStatus,
@@ -61,8 +63,14 @@ export const foundryApiRoutes = {
   workshops: `${FOUNDRY_API_VERSION}/workshops`,
   workshop: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}`,
   materials: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/materials`,
+  material: (workshopId: string, materialId: string) =>
+    `${FOUNDRY_API_VERSION}/workshops/${workshopId}/materials/${materialId}`,
   previewWebsiteMaterial: (workshopId: string) =>
     `${FOUNDRY_API_VERSION}/workshops/${workshopId}/materials/website-preview`,
+  previewMaterialSource: (workshopId: string, materialId: string) =>
+    `${FOUNDRY_API_VERSION}/workshops/${workshopId}/materials/${materialId}/preview`,
+  evaluateMaterialSource: (workshopId: string, materialId: string) =>
+    `${FOUNDRY_API_VERSION}/workshops/${workshopId}/materials/${materialId}/source-evaluation`,
   importMaterialFile: (workshopId: string) =>
     `${FOUNDRY_API_VERSION}/workshops/${workshopId}/materials/import-file`,
   assemblyLines: (workshopId: string) =>
@@ -100,6 +108,8 @@ export const foundryApiRoutes = {
   preflightQAGenerator: `${FOUNDRY_API_VERSION}/assembly-line/qa-generator/preflight`,
   runQAGeneratorSmokeProof: `${FOUNDRY_API_VERSION}/assembly-line/qa-generator/smoke-proof`,
   runQAGeneratorQualityProof: `${FOUNDRY_API_VERSION}/assembly-line/qa-generator/quality-proof`,
+  latestQAGeneratorQualityProof: (workshopId: string) =>
+    `${FOUNDRY_API_VERSION}/workshops/${workshopId}/assembly-line/qa-generator/quality-proof/latest`,
   artifacts: (workshopId: string) => `${FOUNDRY_API_VERSION}/workshops/${workshopId}/artifacts`,
   artifactEvidence: (workshopId: string) =>
     `${FOUNDRY_API_VERSION}/workshops/${workshopId}/artifacts/evidence`,
@@ -263,7 +273,22 @@ export interface ExportQAPairsDto {
     confidenceThreshold: number;
     override: boolean;
   };
+  qaProofState?: QAProofStateDto;
   trainingReadiness?: QATrainingReadinessDto;
+}
+
+export interface QAProofStateDto {
+  contractVersion: "foundry.qa-proof-state.v1";
+  status: "ready" | "missing" | "simulated" | "stale" | "blocked" | string;
+  label: string;
+  detail: string;
+  modelId?: string | null;
+  proofSource?: string | null;
+  proofStatus?: string | null;
+  simulated: boolean;
+  matchesExportGenerator: boolean;
+  generatorModels: string[];
+  createdAt?: string | null;
 }
 
 export interface QATrainingReadinessDto {
@@ -281,6 +306,7 @@ export interface QATrainingReadinessDto {
   generatorModels: string[];
   generatorModes: string[];
   promptVersions: string[];
+  qaProofState?: QAProofStateDto;
   checks: Array<{
     id: string;
     label: string;
@@ -319,6 +345,7 @@ export interface ExportQAPairsPreviewDto {
     confidenceThreshold: number;
     override: boolean;
   };
+  qaProofState?: QAProofStateDto;
   trainingReadiness?: QATrainingReadinessDto;
   options: {
     includeDrafts: boolean;
@@ -375,7 +402,16 @@ export type QAGeneratorRuntimeDto = QAGeneratorRuntime;
 export type QAGeneratorPreflightDto = QAGeneratorPreflightResult;
 export type QAGeneratorSmokeProofDto = QAGeneratorSmokeProof;
 export type QAGeneratorQualityProofDto = QAGeneratorQualityProof;
+export interface RememberQAGeneratorQualityProofRequest {
+  proof: QAGeneratorQualityProof;
+}
 export type WebsiteMaterialPreviewDto = WebsiteMaterialPreview;
+export type MaterialSourcePreviewDto = MaterialSourcePreview;
+export type MaterialSourceEvaluationDto = MaterialSourceEvaluation;
+
+export interface EvaluateMaterialSourceRequest {
+  systemPrompt?: string;
+}
 
 export interface ForgeSmokeProofRequest {
   runTraining: boolean;
@@ -450,6 +486,18 @@ export interface DeleteWorkshopResult {
   deletedCounts: Record<string, number>;
   removedRuntimePaths: string[];
   nextWorkshop?: Workshop | null;
+}
+
+export interface DeleteMaterialRequest {
+  confirmationName: string;
+}
+
+export interface DeleteMaterialResult {
+  deletedMaterialId: string;
+  deletedMaterialName: string;
+  deletedCounts: Record<string, number>;
+  affectedAssemblyLineRunIds: string[];
+  removedRuntimePaths: string[];
 }
 
 export interface IngestMaterialRequest {

@@ -165,6 +165,66 @@ const conceptLessons: Record<
     learningBody:
       "A clean gate keeps demos honest and helps users understand why more data is not automatically better data.",
   },
+  "qa-proof-diagnostics": {
+    icon: "fa-vial-circle-check",
+    principle:
+      "QA proof diagnostics separate model availability from model quality. A cached model can load successfully and still fail to create grounded training-worthy examples.",
+    buildAction:
+      "Run the model-backed QA proof, open the diagnostics drawer, and compare the cached model score against the deterministic baseline before starting a training Assembly Line.",
+    explainers: [
+      "Cached means the files are local; it does not guarantee the generated row is useful.",
+      "Proof score combines confidence, source overlap, fallback use, and hallucination-risk signals.",
+      "The right recovery is either a better cached generator, a revised source chunk, or smoke mode when you only need a demo.",
+    ],
+    tokenPreview: "Cached model proof score source overlap risk",
+    visualTitle: "Proof Checks",
+    visualBody:
+      "A proof row is inspected before it can unlock training-quality QA generation.",
+    visualLabels: ["LOAD", "PROOF"],
+    learningTitle: "Availability is not quality",
+    learningBody:
+      "A model being present in Archive is only the first gate. The proof explains whether that model produced data worth reviewing for training.",
+  },
+  "source-overlap": {
+    icon: "fa-link",
+    principle:
+      "Source overlap estimates how much the generated answer shares meaningful language with the source chunk. It is a grounding clue, not a perfect truth detector.",
+    buildAction:
+      "When a proof fails, compare the generated answer to the source preview and decide whether the answer is actually supported.",
+    explainers: [
+      "High overlap often means the answer stayed close to the source.",
+      "Low overlap can mean hallucination, paraphrase, or a source chunk that lacks the needed evidence.",
+      "Human review still matters because overlap checks words, not full understanding.",
+    ],
+    tokenPreview: "Answer terms source terms overlap grounding",
+    visualTitle: "Grounding Link",
+    visualBody:
+      "Overlap is the bridge between generated text and the evidence chunk that should support it.",
+    visualLabels: ["ANS", "SRC"],
+    learningTitle: "Grounding starts with evidence",
+    learningBody:
+      "Training rows should teach from source-backed facts, not from answers the generator invented because they sounded plausible.",
+  },
+  "hallucination-risk": {
+    icon: "fa-triangle-exclamation",
+    principle:
+      "Hallucination risk marks an answer that may contain unsupported claims. In training data, unsupported claims can teach the Artifact the wrong behavior.",
+    buildAction:
+      "Treat hallucination risk as a stop sign: inspect the source, edit the row, reject it, or use a stronger generator before exporting JSONL.",
+    explainers: [
+      "A hallucination is not just a strange answer; it is an unsupported answer presented as if it were true.",
+      "Fine-tuning on hallucinated rows reinforces the mistake.",
+      "The safest workflow blocks risky rows until a human accepts, edits, or rejects them.",
+    ],
+    tokenPreview: "Unsupported claim blocked row human review",
+    visualTitle: "Risk Gate",
+    visualBody:
+      "Hallucination-risk checks keep unsupported generated claims out of Forge-ready data.",
+    visualLabels: ["CLAIM", "EVID"],
+    learningTitle: "Do not train on guesses",
+    learningBody:
+      "The Foundry should make uncertainty visible so users learn to improve data instead of blindly trusting generated rows.",
+  },
   "training-adapters": {
     icon: "fa-screwdriver-wrench",
     principle:

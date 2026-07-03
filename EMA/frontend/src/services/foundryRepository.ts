@@ -26,6 +26,8 @@ import {
   ConstructRuntimeProbeDto,
   CreateTrialRequest,
   CreateWorkshopRequest,
+  DeleteMaterialRequest,
+  DeleteMaterialResult,
   DeleteWorkshopRequest,
   DeleteWorkshopResult,
   ExportEvaluationSamplesDto,
@@ -37,6 +39,7 @@ import {
   ExportQAPairsRequest,
   ExportTrialsDto,
   ExportTrialsRequest,
+  EvaluateMaterialSourceRequest,
   ForgeLocalTrainerPreflightDto,
   FoundryReadinessGateDto,
   FoundryReadinessGateRequest,
@@ -53,6 +56,8 @@ import {
   LoadConstructRuntimeRequest,
   ModelDownloadJobDto,
   MaterialChunkDto,
+  MaterialSourceEvaluationDto,
+  MaterialSourcePreviewDto,
   PreviewWebsiteMaterialRequest,
   QAPairDto,
   QAGeneratorPreflightDto,
@@ -102,6 +107,8 @@ import {
   FoundryReadinessGate,
   FoundryRuntimeStatus,
   MaterialChunk,
+  MaterialSourceEvaluation,
+  MaterialSourcePreview,
   MaterialSource,
   ModelArchiveEntry,
   ModelDownloadJob,
@@ -132,6 +139,8 @@ import {
 
 const DEFAULT_QA_GENERATOR_MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct";
 const SMOKE_QA_GENERATOR_MODEL_ID = "sshleifer/tiny-gpt2";
+const DEFAULT_SOURCE_EVALUATOR_SYSTEM_PROMPT =
+  "You are The Foundry Source Evaluator. Inspect scraped or imported source material before QA generation. Decide whether the source is grounded, useful, sufficiently specific, low-noise, and ready to become training QA. Return only JSON with status, score, summary, checks, risks, and recommendations. Do not invent facts beyond the source preview.";
 
 type SectionSummaryMap = Record<
   Exclude<NavigationSection, "workshop" | "settings" | "construct">,
@@ -310,10 +319,24 @@ export interface FoundryRepository {
     workshopId: string,
     request: IngestMaterialRequest
   ) => Promise<MaterialSource>;
+  deleteMaterial: (
+    workshopId: string,
+    materialId: string,
+    request: DeleteMaterialRequest
+  ) => Promise<DeleteMaterialResult>;
   previewWebsiteMaterial: (
     workshopId: string,
     request: PreviewWebsiteMaterialRequest
   ) => Promise<WebsiteMaterialPreview>;
+  previewMaterialSource: (
+    workshopId: string,
+    materialId: string
+  ) => Promise<MaterialSourcePreview>;
+  evaluateMaterialSource: (
+    workshopId: string,
+    materialId: string,
+    request: EvaluateMaterialSourceRequest
+  ) => Promise<MaterialSourceEvaluation>;
   importMaterialFile: (
     workshopId: string,
     request: ImportMaterialFileRequest
@@ -328,6 +351,11 @@ export interface FoundryRepository {
   ) => Promise<QAGeneratorPreflightResult>;
   runQAGeneratorSmokeProof: () => Promise<QAGeneratorSmokeProof>;
   runQAGeneratorQualityProof: () => Promise<QAGeneratorQualityProof>;
+  getLastQAGeneratorQualityProof: (workshopId: string) => Promise<QAGeneratorQualityProof | null>;
+  rememberQAGeneratorQualityProof: (
+    workshopId: string,
+    proof: QAGeneratorQualityProof
+  ) => Promise<QAGeneratorQualityProof>;
   startAssemblyLine: (
     workshopId: string,
     request: StartAssemblyLineRequest
@@ -507,6 +535,13 @@ let mockQAGeneratorRuntime: QAGeneratorRuntime = {
   dependencies: {
     transformers: false,
   },
+  sourceEvaluator: {
+    contractVersion: "foundry.source-evaluator.v1",
+    systemPromptTemplateVersion: "foundry.source-evaluator.system-prompt.v1",
+    defaultSystemPrompt: DEFAULT_SOURCE_EVALUATOR_SYSTEM_PROMPT,
+    mode: "deterministic",
+    modelId: "deterministic-source-evaluator",
+  },
 };
 const mockForgeRuns: ForgeRun[] = [...mockDashboardSummary.forgeQueue];
 const mockArtifacts: Artifact[] = [mockDashboardSummary.currentArtifact];
@@ -514,6 +549,7 @@ const mockTrials: Trial[] = [];
 const mockForgeWorkerStates: Record<string, ForgeWorkerState> = {};
 const MOCK_ARCHIVE_ENTRIES_STORAGE_KEY = "foundry.mock.modelArchiveEntries";
 const MOCK_DOWNLOAD_JOBS_STORAGE_KEY = "foundry.mock.modelDownloadJobs";
+const MOCK_QA_QUALITY_PROOF_STORAGE_KEY = "foundry.mock.lastQAGeneratorQualityProofByWorkshop";
 const mockPlatformProfile: ModelPlatformProfile = {
   os: "Darwin",
   machine: "arm64",
@@ -830,6 +866,11 @@ const mockModelArchiveEntries: ModelArchiveEntry[] = readMockStorage<ModelArchiv
 const mockModelDownloadJobs: Record<string, ModelDownloadJob> = readMockStorage<
   Record<string, ModelDownloadJob>
 >(MOCK_DOWNLOAD_JOBS_STORAGE_KEY, {});
+const mockLastQAGeneratorQualityProofByWorkshop: Record<string, QAGeneratorQualityProof> =
+  readMockStorage<Record<string, QAGeneratorQualityProof>>(
+    MOCK_QA_QUALITY_PROOF_STORAGE_KEY,
+    {}
+  );
 
 const persistMockArchiveEntries = () => {
   writeMockStorage(MOCK_ARCHIVE_ENTRIES_STORAGE_KEY, mockModelArchiveEntries);
@@ -837,6 +878,70 @@ const persistMockArchiveEntries = () => {
 
 const persistMockDownloadJobs = () => {
   writeMockStorage(MOCK_DOWNLOAD_JOBS_STORAGE_KEY, mockModelDownloadJobs);
+};
+
+const persistMockQAGeneratorQualityProofs = () => {
+  writeMockStorage(MOCK_QA_QUALITY_PROOF_STORAGE_KEY, mockLastQAGeneratorQualityProofByWorkshop);
+};
+
+const mockQAProofState = (workshopId: string, generatorModels: string[]) => {
+  const proof = mockLastQAGeneratorQualityProofByWorkshop[workshopId];
+  if (!proof) {
+    return {
+      contractVersion: "foundry.qa-proof-state.v1" as const,
+      status: "missing",
+      label: "No model-backed proof remembered",
+      detail: "Run and remember a model-backed QA proof before treating JSONL as default training-safe.",
+      modelId: null,
+      proofSource: null,
+      proofStatus: null,
+      simulated: false,
+      matchesExportGenerator: false,
+      generatorModels,
+      createdAt: null,
+    };
+  }
+  const modelResult = proof.results.find((result) => result.label === "Cached local model");
+  const proofModelId = proof.proofMode?.modelId || modelResult?.rows[0]?.generatorModel || "";
+  const matchesExportGenerator = Boolean(proofModelId && generatorModels.includes(proofModelId));
+  const simulated = proof.proofMode?.simulated === true;
+  const proofStatus = modelResult?.status || "";
+  const status = !matchesExportGenerator
+    ? "stale"
+    : simulated
+      ? "simulated"
+      : proofStatus !== "passed"
+        ? "blocked"
+        : "ready";
+  const label =
+    status === "ready"
+      ? "Live proof matches JSONL"
+      : status === "simulated"
+        ? "Simulated proof only"
+        : status === "blocked"
+          ? "Proof did not pass"
+          : "Proof belongs to another generator";
+  const detail =
+    status === "ready"
+      ? "The latest non-simulated model-backed proof matches the generator used by these JSONL rows."
+      : status === "simulated"
+        ? "The latest matching proof is simulated; run API mode with a cached local model before default training."
+        : status === "blocked"
+          ? "The latest matching model-backed proof did not pass quality diagnostics."
+          : `Latest proof was for ${proofModelId || "another generator"}, but JSONL rows use ${generatorModels.join(", ") || "unknown generators"}.`;
+  return {
+    contractVersion: "foundry.qa-proof-state.v1" as const,
+    status,
+    label,
+    detail,
+    modelId: proofModelId || null,
+    proofSource: proof.proofMode?.source || modelResult?.proofSource || null,
+    proofStatus: proofStatus || null,
+    simulated,
+    matchesExportGenerator,
+    generatorModels,
+    createdAt: proof.createdAt || null,
+  };
 };
 
 const findMockCachedArchiveEntry = (modelId: string): ModelArchiveEntry | undefined =>
@@ -1357,6 +1462,66 @@ export const mockFoundryRepository: FoundryRepository = {
     mockMaterialSources.unshift(material);
     return material;
   },
+  deleteMaterial: async (_workshopId, materialId, request) => {
+    const materialIndex = mockMaterialSources.findIndex((material) => material.id === materialId);
+    if (materialIndex < 0) {
+      throw new Error("Material was not found for this Workshop.");
+    }
+    const material = mockMaterialSources[materialIndex];
+    if (material.name !== request.confirmationName) {
+      throw new Error("Type the exact Material name to confirm deletion.");
+    }
+
+    mockMaterialSources.splice(materialIndex, 1);
+    const affectedRunIds = new Set<string>();
+    let deletedChunkCount = 0;
+    let deletedQAPairCount = 0;
+
+    for (let index = mockMaterialChunks.length - 1; index >= 0; index -= 1) {
+      if (mockMaterialChunks[index].materialId === materialId) {
+        affectedRunIds.add(mockMaterialChunks[index].assemblyLineRunId);
+        mockMaterialChunks.splice(index, 1);
+        deletedChunkCount += 1;
+      }
+    }
+    for (let index = mockQAPairs.length - 1; index >= 0; index -= 1) {
+      if (mockQAPairs[index].materialId === materialId) {
+        affectedRunIds.add(mockQAPairs[index].assemblyLineRunId);
+        mockQAPairs.splice(index, 1);
+        deletedQAPairCount += 1;
+      }
+    }
+    for (let index = mockAssemblyLineRuns.length - 1; index >= 0; index -= 1) {
+      const run = mockAssemblyLineRuns[index];
+      if (!run.materialSourceIds.includes(materialId)) {
+        continue;
+      }
+      affectedRunIds.add(run.id);
+      run.materialSourceIds = run.materialSourceIds.filter((id) => id !== materialId);
+      if (run.materialSourceIds.length === 0) {
+        mockAssemblyLineRuns.splice(index, 1);
+      } else {
+        run.chunkCount = mockMaterialChunks.filter((chunk) => chunk.assemblyLineRunId === run.id).length;
+        run.qaPairCount = mockQAPairs.filter((qaPair) => qaPair.assemblyLineRunId === run.id).length;
+      }
+    }
+
+    return {
+      deletedMaterialId: material.id,
+      deletedMaterialName: material.name,
+      deletedCounts: {
+        materials: 1,
+        materialChunks: deletedChunkCount,
+        qaPairs: deletedQAPairCount,
+        assemblyLineRuns: Array.from(affectedRunIds).filter(
+          (runId) => !mockAssemblyLineRuns.some((run) => run.id === runId)
+        ).length,
+        forgeRunsUnlinked: 0,
+      },
+      affectedAssemblyLineRunIds: Array.from(affectedRunIds),
+      removedRuntimePaths: [],
+    };
+  },
   previewWebsiteMaterial: async (_workshopId, request) => ({
     contractVersion: "foundry.material.website-preview.v1",
     sourceUrl: request.sourceUri,
@@ -1367,8 +1532,100 @@ export const mockFoundryRepository: FoundryRepository = {
     textLength: 103,
     estimatedTokenCount: 16,
     fetchLimitBytes: 2 * 1024 * 1024,
+    crawlMaxPages: 3,
+    crawlMaxDepth: 1,
+    pageCount: 1,
+    pages: [
+      {
+        url: request.sourceUri,
+        title: "Mock website snapshot",
+        depth: 0,
+        textLength: 103,
+        estimatedTokenCount: 16,
+        fingerprint: "mock-scrape",
+        pageNumber: 1,
+      },
+    ],
     createdAt: new Date().toISOString(),
   }),
+  previewMaterialSource: async (_workshopId, materialId) => {
+    const material = mockMaterialSources.find((item) => item.id === materialId);
+    if (!material) {
+      throw new Error("Material was not found.");
+    }
+    return {
+      contractVersion: "foundry.material.source-preview.v1",
+      materialId: material.id,
+      name: material.name,
+      kind: material.kind,
+      status: material.status,
+      sourceUri: material.sourceUri,
+      metadata: material.metadata,
+      textPreview:
+        "Mock source preview shows the extracted text that will become chunks before QA generation.",
+      textLength: 82,
+      estimatedTokenCount: 13,
+      truncated: false,
+      createdAt: new Date().toISOString(),
+    };
+  },
+  evaluateMaterialSource: async (_workshopId, materialId, request) => {
+    const material = mockMaterialSources.find((item) => item.id === materialId);
+    if (!material) {
+      throw new Error("Material was not found.");
+    }
+    const systemPrompt = request.systemPrompt?.trim() || DEFAULT_SOURCE_EVALUATOR_SYSTEM_PROMPT;
+    return {
+      contractVersion: "foundry.source-evaluator.v1",
+      status: "caution",
+      score: 0.72,
+      summary:
+        "Mock source evaluator found enough context for QA generation, but recommends checking source specificity before training-quality export.",
+      checks: [
+        {
+          id: "source-length",
+          label: "Source length",
+          status: "pass",
+          detail: "Mock source contains enough text for a QA-generation rehearsal.",
+        },
+        {
+          id: "source-grounding",
+          label: "Grounding potential",
+          status: "warn",
+          detail: "Use a real local evaluator model before treating this as training-quality review.",
+        },
+      ],
+      risks: ["Mock evaluator output is not a substitute for a real local model-backed source review."],
+      recommendations: ["Run a local source evaluation after caching the QA generator model."],
+      mode: mockQAGeneratorRuntime.mode,
+      modelId:
+        mockQAGeneratorRuntime.mode === "deterministic"
+          ? "deterministic-source-evaluator"
+          : mockQAGeneratorRuntime.modelId,
+      source:
+        mockQAGeneratorRuntime.mode === "deterministic"
+          ? "deterministic-fallback"
+          : "backend-local-model",
+      fallbackReason:
+        mockQAGeneratorRuntime.mode === "deterministic"
+          ? "Frontend mock repository uses deterministic source evaluation."
+          : null,
+      material: {
+        name: material.name,
+        kind: material.kind,
+        tokenEstimate: 13,
+        metadataFingerprint: "mock-source-meta",
+      },
+      prompt: {
+        systemPrompt,
+        templateVersion: "foundry.source-evaluator.system-prompt.v1",
+        fingerprint: "mock-prompt",
+        lesson:
+          "A source-evaluator system prompt defines the evaluator's job, quality criteria, and JSON output before QA generation starts.",
+      },
+      createdAt: new Date().toISOString(),
+    };
+  },
   importMaterialFile: async (_workshopId, request) => {
     const material: MaterialSource = {
       id: `mat-${request.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
@@ -1413,6 +1670,13 @@ export const mockFoundryRepository: FoundryRepository = {
         request.maxNewTokens,
         Boolean(cachedArchiveEntry)
       ),
+      sourceEvaluator: {
+        contractVersion: "foundry.source-evaluator.v1",
+        systemPromptTemplateVersion: "foundry.source-evaluator.system-prompt.v1",
+        defaultSystemPrompt: DEFAULT_SOURCE_EVALUATOR_SYSTEM_PROMPT,
+        mode: request.mode,
+        modelId: isDeterministic ? "deterministic-source-evaluator" : modelId,
+      },
     };
     return mockQAGeneratorRuntime;
   },
@@ -1662,6 +1926,13 @@ export const mockFoundryRepository: FoundryRepository = {
       createdAt: new Date().toISOString(),
     };
   },
+  getLastQAGeneratorQualityProof: async (workshopId) =>
+    mockLastQAGeneratorQualityProofByWorkshop[workshopId] || null,
+  rememberQAGeneratorQualityProof: async (workshopId, proof) => {
+    mockLastQAGeneratorQualityProofByWorkshop[workshopId] = proof;
+    persistMockQAGeneratorQualityProofs();
+    return proof;
+  },
   startAssemblyLine: async (_workshopId, request) => {
     const selectedMaterials = mockMaterialSources.filter((material) =>
       request.materialSourceIds.includes(material.id)
@@ -1805,6 +2076,13 @@ export const mockFoundryRepository: FoundryRepository = {
     } else if (blockedRows.length > 0) {
       warnings.push(`${blockedRows.length} quality-blocked row(s) are included by override.`);
     }
+    const generatorModels = Array.from(
+      new Set(qaPairs.map((qaPair) => qaPair.generatorModel || "mock-generator"))
+    );
+    const qaProofState = mockQAProofState(_workshopId, generatorModels);
+    if (qaProofState.status !== "ready") {
+      warnings.push(qaProofState.detail);
+    }
     const status = errors.length ? "blocked" : warnings.length ? "caution" : "ready";
     return {
       contractVersion: "foundry.qa-jsonl.preview.v1",
@@ -1846,6 +2124,7 @@ export const mockFoundryRepository: FoundryRepository = {
         confidenceThreshold: 0.6,
         override: Boolean(request.includeLowQuality),
       },
+      qaProofState,
       options: {
         includeDrafts: Boolean(request.includeDrafts),
         includeLowQuality: Boolean(request.includeLowQuality),
@@ -1878,11 +2157,16 @@ export const mockFoundryRepository: FoundryRepository = {
       confidenceThreshold: 0.6,
       override: Boolean(request.includeLowQuality),
     };
+    const generatorModels = Array.from(
+      new Set(qaPairs.map((qaPair) => qaPair.generatorModel || "mock-generator"))
+    );
+    const qaProofState = mockQAProofState(_workshopId, generatorModels);
     const trainingReadiness = {
       contractVersion: "foundry.qa-training-readiness.v1" as const,
-      status: blockedRows.length > 0 ? "caution" : "ready",
+      status: blockedRows.length > 0 || qaProofState.status !== "ready" ? "caution" : "ready",
       forgeReady: true,
-      defaultTrainingSafe: blockedRows.length === 0 && !request.includeLowQuality,
+      defaultTrainingSafe:
+        blockedRows.length === 0 && !request.includeLowQuality && qaProofState.status === "ready",
       rowCount: qaPairs.length,
       reviewedRows: qaPairs.filter(
         (qaPair) => qaPair.reviewStatus === "accepted" || qaPair.reviewStatus === "edited"
@@ -1892,11 +2176,10 @@ export const mockFoundryRepository: FoundryRepository = {
       qualityBlockedRows: blockedRows.length,
       deterministicRows: 0,
       fallbackRows: 0,
-      generatorModels: Array.from(
-        new Set(qaPairs.map((qaPair) => qaPair.generatorModel || "mock-generator"))
-      ),
+      generatorModels,
       generatorModes: ["mock"],
       promptVersions: ["mock"],
+      qaProofState,
       checks: [
         {
           id: "qa-quality",
@@ -1906,6 +2189,12 @@ export const mockFoundryRepository: FoundryRepository = {
             blockedRows.length > 0
               ? "Quality-blocked rows are included by override; review before real training."
               : "Every row passed the QA quality gate.",
+        },
+        {
+          id: "qa-proof-state",
+          label: "QA generator proof",
+          status: qaProofState.status === "ready" ? "pass" : "warn",
+          detail: qaProofState.detail,
         },
       ],
       recommendation:
@@ -1929,6 +2218,7 @@ export const mockFoundryRepository: FoundryRepository = {
           format: "jsonl",
           rowCount: qaPairs.length,
           qualityGate,
+          qaProofState,
           trainingReadiness,
           options: {
             includeDrafts: Boolean(request.includeDrafts),
@@ -1954,6 +2244,7 @@ export const mockFoundryRepository: FoundryRepository = {
       qaPairCount: qaPairs.length,
       assemblyLineRunId: request.assemblyLineRunId,
       qualityGate,
+      qaProofState,
       trainingReadiness,
     };
   },
@@ -3241,8 +3532,12 @@ export const mockFoundryRepository: FoundryRepository = {
     Object.keys(mockModelDownloadJobs).forEach((jobId) => {
       delete mockModelDownloadJobs[jobId];
     });
+    Object.keys(mockLastQAGeneratorQualityProofByWorkshop).forEach((workshopId) => {
+      delete mockLastQAGeneratorQualityProofByWorkshop[workshopId];
+    });
     removeMockStorage(MOCK_ARCHIVE_ENTRIES_STORAGE_KEY);
     removeMockStorage(MOCK_DOWNLOAD_JOBS_STORAGE_KEY);
+    removeMockStorage(MOCK_QA_QUALITY_PROOF_STORAGE_KEY);
     return {
       archiveEntries: [],
       downloadJobs: [],
@@ -3378,10 +3673,30 @@ export const apiFoundryRepository: FoundryRepository = {
         request
       )
     ),
+  deleteMaterial: async (workshopId, materialId, request) =>
+    unwrap(
+      await apiClient.delete<ApiEnvelope<DeleteMaterialResult>>(
+        foundryApiRoutes.material(workshopId, materialId),
+        { data: request }
+      )
+    ),
   previewWebsiteMaterial: async (workshopId, request) =>
     unwrap(
       await apiClient.post<ApiEnvelope<WebsiteMaterialPreview>>(
         foundryApiRoutes.previewWebsiteMaterial(workshopId),
+        request
+      )
+    ),
+  previewMaterialSource: async (workshopId, materialId) =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<MaterialSourcePreviewDto>>(
+        foundryApiRoutes.previewMaterialSource(workshopId, materialId)
+      )
+    ),
+  evaluateMaterialSource: async (workshopId, materialId, request) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<MaterialSourceEvaluationDto>>(
+        foundryApiRoutes.evaluateMaterialSource(workshopId, materialId),
         request
       )
     ),
@@ -3439,6 +3754,19 @@ export const apiFoundryRepository: FoundryRepository = {
     unwrap(
       await apiClient.post<ApiEnvelope<QAGeneratorQualityProofDto>>(
         foundryApiRoutes.runQAGeneratorQualityProof
+      )
+    ),
+  getLastQAGeneratorQualityProof: async (workshopId) =>
+    unwrap(
+      await apiClient.get<ApiEnvelope<QAGeneratorQualityProofDto | null>>(
+        foundryApiRoutes.latestQAGeneratorQualityProof(workshopId)
+      )
+    ),
+  rememberQAGeneratorQualityProof: async (workshopId, proof) =>
+    unwrap(
+      await apiClient.post<ApiEnvelope<QAGeneratorQualityProofDto>>(
+        foundryApiRoutes.latestQAGeneratorQualityProof(workshopId),
+        { proof }
       )
     ),
   startAssemblyLine: async (workshopId, request) =>
@@ -3940,6 +4268,8 @@ const constructApiOverrides: Pick<
   | "preflightQAGenerator"
   | "runQAGeneratorSmokeProof"
   | "runQAGeneratorQualityProof"
+  | "getLastQAGeneratorQualityProof"
+  | "rememberQAGeneratorQualityProof"
   | "configureConstructRuntime"
   | "loadConstructRuntime"
   | "preflightConstructRuntime"
@@ -3977,6 +4307,8 @@ const constructApiOverrides: Pick<
   preflightQAGenerator: apiFoundryRepository.preflightQAGenerator,
   runQAGeneratorSmokeProof: apiFoundryRepository.runQAGeneratorSmokeProof,
   runQAGeneratorQualityProof: apiFoundryRepository.runQAGeneratorQualityProof,
+  getLastQAGeneratorQualityProof: apiFoundryRepository.getLastQAGeneratorQualityProof,
+  rememberQAGeneratorQualityProof: apiFoundryRepository.rememberQAGeneratorQualityProof,
   configureConstructRuntime: apiFoundryRepository.configureConstructRuntime,
   loadConstructRuntime: apiFoundryRepository.loadConstructRuntime,
   preflightConstructRuntime: apiFoundryRepository.preflightConstructRuntime,

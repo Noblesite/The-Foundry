@@ -54,6 +54,9 @@ class CreateWorkshopInput(BaseModel):
 class DeleteWorkshopInput(BaseModel):
     confirmationName: str
 
+class DeleteMaterialInput(BaseModel):
+    confirmationName: str
+
 class RegisterMaterialInput(BaseModel):
     name: str
     kind: Literal["csv", "pdf", "website", "transcript", "video-transcript", "text", "jsonl"]
@@ -61,6 +64,9 @@ class RegisterMaterialInput(BaseModel):
 
 class WebsiteMaterialPreviewInput(BaseModel):
     sourceUri: str
+
+class SourceEvaluationInput(BaseModel):
+    systemPrompt: str | None = None
 
 class StartAssemblyLineInput(BaseModel):
     materialSourceIds: list[str]
@@ -73,6 +79,9 @@ class QAGeneratorRuntimeInput(BaseModel):
     modelId: str = DEFAULT_QA_GENERATOR_MODEL_ID
     maxNewTokens: int = 320
     temperature: float = 0.2
+
+class QAGeneratorQualityProofInput(BaseModel):
+    proof: dict[str, Any]
 
 class ExportQAPairsInput(BaseModel):
     assemblyLineRunId: str
@@ -1063,6 +1072,26 @@ async def foundry_materials_endpoint(workshop_id: str):
     return api_envelope(await foundry_catalog_service.list_materials(workshop_id))
 
 
+@app.delete("/api/v1/workshops/{workshop_id}/materials/{material_id}")
+async def delete_foundry_material_endpoint(
+    workshop_id: str,
+    material_id: str,
+    data: DeleteMaterialInput,
+):
+    confirmation_name = data.confirmationName.strip()
+    if not confirmation_name:
+        raise HTTPException(status_code=400, detail="Material confirmation name cannot be empty.")
+    try:
+        result = await foundry_catalog_service.delete_material(
+            workshop_id=workshop_id,
+            material_id=material_id,
+            confirmation_name=confirmation_name,
+        )
+        return api_envelope(result)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 @app.post("/api/v1/workshops/{workshop_id}/materials")
 async def register_foundry_material_endpoint(workshop_id: str, data: RegisterMaterialInput):
     name = data.name.strip()
@@ -1093,6 +1122,37 @@ async def preview_foundry_website_material_endpoint(workshop_id: str, data: Webs
     try:
         return api_envelope(
             await foundry_catalog_service.preview_website_material(source_url=source_uri)
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get("/api/v1/workshops/{workshop_id}/materials/{material_id}/preview")
+async def preview_foundry_material_source_endpoint(workshop_id: str, material_id: str):
+    try:
+        return api_envelope(
+            await foundry_catalog_service.preview_material_source(
+                workshop_id=workshop_id,
+                material_id=material_id,
+            )
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+
+@app.post("/api/v1/workshops/{workshop_id}/materials/{material_id}/source-evaluation")
+async def evaluate_foundry_material_source_endpoint(
+    workshop_id: str,
+    material_id: str,
+    data: SourceEvaluationInput,
+):
+    try:
+        return api_envelope(
+            await foundry_catalog_service.evaluate_material_source(
+                workshop_id=workshop_id,
+                material_id=material_id,
+                system_prompt=data.systemPrompt,
+            )
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
@@ -1175,6 +1235,28 @@ async def smoke_proof_foundry_qa_generator_endpoint():
 @app.post("/api/v1/assembly-line/qa-generator/quality-proof")
 async def quality_proof_foundry_qa_generator_endpoint():
     return api_envelope(await asyncio.to_thread(foundry_catalog_service.qa_generator.quality_proof))
+
+
+@app.get("/api/v1/workshops/{workshop_id}/assembly-line/qa-generator/quality-proof/latest")
+async def latest_foundry_qa_generator_quality_proof_endpoint(workshop_id: str):
+    return api_envelope(
+        await foundry_catalog_service.get_last_qa_generator_quality_proof(workshop_id)
+    )
+
+
+@app.post("/api/v1/workshops/{workshop_id}/assembly-line/qa-generator/quality-proof/latest")
+async def remember_foundry_qa_generator_quality_proof_endpoint(
+    workshop_id: str,
+    data: QAGeneratorQualityProofInput,
+):
+    try:
+        proof = await foundry_catalog_service.remember_qa_generator_quality_proof(
+            workshop_id=workshop_id,
+            proof=data.proof,
+        )
+        return api_envelope(proof)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.post("/api/v1/workshops/{workshop_id}/assembly-lines")

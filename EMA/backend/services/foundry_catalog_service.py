@@ -16,7 +16,7 @@ from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
+from urllib.parse import urldefrag, urljoin, urlparse
 from uuid import uuid4
 
 import requests
@@ -31,6 +31,8 @@ DEFAULT_EXPORT_DIR = BASE_DIR / "runtime" / "materials" / "exports"
 DEFAULT_SOURCE_DIR = BASE_DIR / "runtime" / "materials" / "sources"
 DEFAULT_MATERIAL_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
 DEFAULT_WEBSITE_FETCH_MAX_BYTES = 2 * 1024 * 1024
+DEFAULT_WEBSITE_CRAWL_MAX_PAGES = 3
+DEFAULT_WEBSITE_CRAWL_MAX_DEPTH = 1
 REVIEWED_TRIAL_VERDICTS = {"pass", "needs-work", "fail"}
 AUTO_TRIAL_VERDICT = "needs-review"
 VALID_TRIAL_VERDICTS = REVIEWED_TRIAL_VERDICTS | {AUTO_TRIAL_VERDICT}
@@ -93,6 +95,7 @@ class _FoundryHTMLTextExtractor(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.parts: List[str] = []
         self.title_parts: List[str] = []
+        self.links: List[str] = []
         self.description = ""
         self._ignored_depth = 0
         self._in_title = False
@@ -110,6 +113,11 @@ class _FoundryHTMLTextExtractor(HTMLParser):
             attributes = {key.lower(): value or "" for key, value in attrs}
             if attributes.get("name", "").lower() == "description":
                 self.description = attributes.get("content", "").strip()
+        if normalized_tag in {"a", "area"}:
+            attributes = {key.lower(): value or "" for key, value in attrs}
+            href = attributes.get("href", "").strip()
+            if href:
+                self.links.append(href)
         if normalized_tag in self.BLOCK_TAGS:
             self.parts.append("\n")
 
@@ -284,6 +292,19 @@ class FoundryCatalogService:
                 FOREIGN KEY(assembly_line_run_id) REFERENCES assembly_line_runs(id)
             );
 
+            CREATE TABLE IF NOT EXISTS qa_generator_quality_proofs (
+                id TEXT PRIMARY KEY,
+                workshop_id TEXT NOT NULL,
+                proof_json TEXT NOT NULL,
+                model_id TEXT NOT NULL DEFAULT '',
+                proof_source TEXT NOT NULL DEFAULT '',
+                proof_status TEXT NOT NULL DEFAULT '',
+                simulated INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(workshop_id) REFERENCES workshops(id)
+            );
+
             CREATE TABLE IF NOT EXISTS artifacts (
                 id TEXT PRIMARY KEY,
                 workshop_id TEXT NOT NULL,
@@ -449,6 +470,8 @@ class FoundryCatalogService:
                 ON material_chunks(material_id, assembly_line_run_id);
             CREATE INDEX IF NOT EXISTS idx_qa_pairs_material_run
                 ON qa_pairs(material_id, assembly_line_run_id);
+            CREATE INDEX IF NOT EXISTS idx_qa_generator_quality_proofs_workshop_updated
+                ON qa_generator_quality_proofs(workshop_id, updated_at DESC);
             CREATE INDEX IF NOT EXISTS idx_artifacts_workshop_status_version
                 ON artifacts(workshop_id, status, version);
             CREATE INDEX IF NOT EXISTS idx_constructs_workshop_artifact
@@ -825,6 +848,27 @@ class FoundryCatalogService:
                 json.dumps(["materials", "forge", "trials"]),
             ),
             (
+                "acd-qa-proof-diagnostics",
+                "QA Proof Diagnostics",
+                "qa-proof-diagnostics",
+                "QA proof diagnostics explain why a cached generator model is available, passing, or blocked before it creates training-worthy rows.",
+                json.dumps(["materials", "academy", "archive"]),
+            ),
+            (
+                "acd-source-overlap",
+                "Source Overlap",
+                "source-overlap",
+                "Source overlap estimates whether an answer shares enough grounded language with the source chunk to be trusted for review.",
+                json.dumps(["materials", "library", "forge"]),
+            ),
+            (
+                "acd-hallucination-risk",
+                "Hallucination Risk",
+                "hallucination-risk",
+                "Hallucination risk flags answers that appear unsupported by the source evidence and should not become training rows.",
+                json.dumps(["materials", "construct", "trials"]),
+            ),
+            (
                 "acd-training-adapters",
                 "Training Adapters",
                 "training-adapters",
@@ -941,6 +985,33 @@ class FoundryCatalogService:
                 "qa-quality-gate",
                 "Why can QA rows be blocked?",
                 "The quality gate blocks rows with weak grounding, low confidence, trivial questions, unsupported QA types, or deterministic fallback output before they reach Forge.",
+            ),
+            (
+                "materials.qa-proof-diagnostics",
+                "materials",
+                "explain-qa-proof-diagnostics",
+                "Learn proof diagnostics",
+                "qa-proof-diagnostics",
+                "Why did proof fail?",
+                "Proof diagnostics compare the cached model row against quality metrics like score, confidence, source overlap, fallback use, and hallucination risk.",
+            ),
+            (
+                "materials.source-overlap",
+                "materials",
+                "explain-source-overlap",
+                "Learn source overlap",
+                "source-overlap",
+                "What is source overlap?",
+                "Source overlap estimates whether the answer uses language and facts from the chunk. It is a grounding clue, not a replacement for human review.",
+            ),
+            (
+                "materials.hallucination-risk",
+                "materials",
+                "explain-hallucination-risk",
+                "Learn hallucination risk",
+                "hallucination-risk",
+                "What is hallucination risk?",
+                "Hallucination risk means the answer may contain unsupported claims. The Foundry blocks that row so weak evidence does not teach the Artifact the wrong behavior.",
             ),
             (
                 "forge.open-training",
@@ -1274,6 +1345,107 @@ class FoundryCatalogService:
             "reviewedAt": row["reviewed_at"],
         }
 
+    def _summarize_quality_proof(self, proof: Dict[str, Any]) -> Dict[str, Any]:
+        proof_mode = proof.get("proofMode") if isinstance(proof.get("proofMode"), dict) else {}
+        results = proof.get("results") if isinstance(proof.get("results"), list) else []
+        model_result = next(
+            (
+                result
+                for result in results
+                if isinstance(result, dict)
+                and str(result.get("label", "")).lower() == "cached local model"
+            ),
+            {},
+        )
+        return {
+            "modelId": str(proof_mode.get("modelId") or ""),
+            "proofSource": str(proof_mode.get("source") or model_result.get("proofSource") or ""),
+            "proofStatus": str(model_result.get("status") or ""),
+            "simulated": bool(proof_mode.get("simulated")),
+        }
+
+    async def get_last_qa_generator_quality_proof(
+        self,
+        workshop_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        def query():
+            with self._connect() as connection:
+                row = connection.execute(
+                    """
+                    SELECT proof_json
+                    FROM qa_generator_quality_proofs
+                    WHERE workshop_id = ?
+                    ORDER BY datetime(updated_at) DESC
+                    LIMIT 1
+                    """,
+                    (workshop_id,),
+                ).fetchone()
+                if row is None:
+                    return None
+                return self._decode_json_object(row["proof_json"])
+
+        return await self._run_query(query)
+
+    async def remember_qa_generator_quality_proof(
+        self,
+        workshop_id: str,
+        proof: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        async with self._write_lock:
+            return await self._run_query(
+                lambda: self._remember_qa_generator_quality_proof_sync(workshop_id, proof)
+            )
+
+    def _remember_qa_generator_quality_proof_sync(
+        self,
+        workshop_id: str,
+        proof: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if not isinstance(proof, dict):
+            raise ValueError("QA generator proof must be an object.")
+        if proof.get("contractVersion") != "foundry.qa-generator.quality-proof.v1":
+            raise ValueError("Unsupported QA generator proof contract.")
+
+        with self._connect() as connection:
+            workshop = connection.execute(
+                "SELECT id FROM workshops WHERE id = ?",
+                (workshop_id,),
+            ).fetchone()
+            if workshop is None:
+                raise ValueError(f"Workshop {workshop_id} was not found.")
+
+            summary = self._summarize_quality_proof(proof)
+            now = datetime.now(timezone.utc).isoformat()
+            proof_id = f"qaprf-{uuid4().hex[:12]}"
+            connection.execute(
+                """
+                INSERT INTO qa_generator_quality_proofs (
+                    id,
+                    workshop_id,
+                    proof_json,
+                    model_id,
+                    proof_source,
+                    proof_status,
+                    simulated,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    proof_id,
+                    workshop_id,
+                    json.dumps(proof, sort_keys=True),
+                    summary["modelId"],
+                    summary["proofSource"],
+                    summary["proofStatus"],
+                    1 if summary["simulated"] else 0,
+                    now,
+                    now,
+                ),
+            )
+            return proof
+
     async def list_workshops(self) -> List[Dict[str, Any]]:
         def query():
             with self._connect() as connection:
@@ -1458,6 +1630,7 @@ class FoundryCatalogService:
                 ("constructs", "constructs"),
                 ("artifacts", "artifacts"),
                 ("forge_runs", "forgeRuns"),
+                ("qa_generator_quality_proofs", "qaGeneratorQualityProofs"),
                 ("qa_pairs", "qaPairs"),
                 ("material_chunks", "materialChunks"),
                 ("assembly_line_runs", "assemblyLineRuns"),
@@ -1540,6 +1713,34 @@ class FoundryCatalogService:
                 continue
         return removed_paths
 
+    def _cleanup_material_runtime_paths(self, material_source_uris: List[str]) -> List[str]:
+        candidates = [
+            self._resolve_catalog_runtime_path(source_uri)
+            for source_uri in material_source_uris
+            if source_uri and not self._looks_like_remote_uri(source_uri)
+        ]
+
+        removed_paths: List[str] = []
+        seen_paths: set[str] = set()
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            resolved_key = str(resolved)
+            if resolved_key in seen_paths or not self._is_runtime_cleanup_path(resolved):
+                continue
+            seen_paths.add(resolved_key)
+
+            if not resolved.exists():
+                continue
+            try:
+                if resolved.is_dir():
+                    shutil.rmtree(resolved)
+                else:
+                    resolved.unlink()
+                removed_paths.append(self._runtime_uri(resolved))
+            except OSError:
+                continue
+        return removed_paths
+
     def _is_runtime_cleanup_path(self, path: Path) -> bool:
         allowed_roots = [
             DEFAULT_SOURCE_DIR.resolve(),
@@ -1590,6 +1791,154 @@ class FoundryCatalogService:
                 return self._material_from_row(row)
 
         return await self._run_query(query)
+
+    async def delete_material(
+        self,
+        workshop_id: str,
+        material_id: str,
+        confirmation_name: str,
+    ) -> Dict[str, Any]:
+        async with self._write_lock:
+            return await self._run_query(
+                lambda: self._delete_material_sync(workshop_id, material_id, confirmation_name)
+            )
+
+    def _delete_material_sync(
+        self,
+        workshop_id: str,
+        material_id: str,
+        confirmation_name: str,
+    ) -> Dict[str, Any]:
+        with self._connect() as connection:
+            material = connection.execute(
+                """
+                SELECT * FROM materials
+                WHERE id = ? AND workshop_id = ?
+                """,
+                (material_id, workshop_id),
+            ).fetchone()
+            if material is None:
+                raise ValueError("Material was not found for this Workshop.")
+
+            if material["name"] != confirmation_name:
+                raise ValueError("Type the exact Material name to confirm deletion.")
+
+            affected_run_ids = {
+                row["assembly_line_run_id"]
+                for row in connection.execute(
+                    """
+                    SELECT DISTINCT assembly_line_run_id
+                    FROM material_chunks
+                    WHERE workshop_id = ? AND material_id = ?
+                    """,
+                    (workshop_id, material_id),
+                ).fetchall()
+            }
+            affected_run_ids.update(
+                row["assembly_line_run_id"]
+                for row in connection.execute(
+                    """
+                    SELECT DISTINCT assembly_line_run_id
+                    FROM qa_pairs
+                    WHERE workshop_id = ? AND material_id = ?
+                    """,
+                    (workshop_id, material_id),
+                ).fetchall()
+            )
+
+            deleted_counts: Dict[str, int] = {}
+            deleted_counts["qaPairs"] = connection.execute(
+                """
+                DELETE FROM qa_pairs
+                WHERE workshop_id = ? AND material_id = ?
+                """,
+                (workshop_id, material_id),
+            ).rowcount
+            deleted_counts["materialChunks"] = connection.execute(
+                """
+                DELETE FROM material_chunks
+                WHERE workshop_id = ? AND material_id = ?
+                """,
+                (workshop_id, material_id),
+            ).rowcount
+            deleted_counts["forgeRunsUnlinked"] = connection.execute(
+                """
+                UPDATE forge_runs
+                SET material_id = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE workshop_id = ? AND material_id = ?
+                """,
+                (workshop_id, material_id),
+            ).rowcount
+            deleted_counts["materials"] = connection.execute(
+                """
+                DELETE FROM materials
+                WHERE workshop_id = ? AND id = ?
+                """,
+                (workshop_id, material_id),
+            ).rowcount
+
+            run_rows = connection.execute(
+                """
+                SELECT * FROM assembly_line_runs
+                WHERE workshop_id = ?
+                """,
+                (workshop_id,),
+            ).fetchall()
+            for run in run_rows:
+                try:
+                    material_ids = json.loads(run["material_source_ids_json"])
+                except json.JSONDecodeError:
+                    material_ids = []
+                if not isinstance(material_ids, list) or material_id not in material_ids:
+                    continue
+                affected_run_ids.add(run["id"])
+                remaining_ids = [item for item in material_ids if item != material_id]
+                if not remaining_ids:
+                    deleted_counts["assemblyLineRuns"] = deleted_counts.get("assemblyLineRuns", 0) + connection.execute(
+                        """
+                        DELETE FROM assembly_line_runs
+                        WHERE workshop_id = ? AND id = ?
+                        """,
+                        (workshop_id, run["id"]),
+                    ).rowcount
+                    continue
+
+                chunk_count = connection.execute(
+                    """
+                    SELECT COUNT(*) FROM material_chunks
+                    WHERE workshop_id = ? AND assembly_line_run_id = ?
+                    """,
+                    (workshop_id, run["id"]),
+                ).fetchone()[0]
+                qa_pair_count = connection.execute(
+                    """
+                    SELECT COUNT(*) FROM qa_pairs
+                    WHERE workshop_id = ? AND assembly_line_run_id = ?
+                    """,
+                    (workshop_id, run["id"]),
+                ).fetchone()[0]
+                connection.execute(
+                    """
+                    UPDATE assembly_line_runs
+                    SET material_source_ids_json = ?,
+                        chunk_count = ?,
+                        qa_pair_count = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE workshop_id = ? AND id = ?
+                    """,
+                    (json.dumps(remaining_ids), chunk_count, qa_pair_count, workshop_id, run["id"]),
+                )
+            deleted_counts.setdefault("assemblyLineRuns", 0)
+
+        removed_paths = self._cleanup_material_runtime_paths([material["source_uri"]])
+
+        return {
+            "deletedMaterialId": material_id,
+            "deletedMaterialName": material["name"],
+            "deletedCounts": deleted_counts,
+            "affectedAssemblyLineRunIds": sorted(affected_run_ids),
+            "removedRuntimePaths": removed_paths,
+        }
 
     async def list_artifacts(self, workshop_id: str) -> List[Dict[str, Any]]:
         def query():
@@ -2703,24 +3052,115 @@ class FoundryCatalogService:
     ) -> Dict[str, Any]:
         return await self._run_query(lambda: self._preview_website_material_sync(source_url))
 
+    async def preview_material_source(
+        self,
+        workshop_id: str,
+        material_id: str,
+    ) -> Dict[str, Any]:
+        return await self._run_query(
+            lambda: self._preview_material_source_sync(workshop_id, material_id)
+        )
+
+    def _preview_material_source_sync(
+        self,
+        workshop_id: str,
+        material_id: str,
+    ) -> Dict[str, Any]:
+        with self._connect() as connection:
+            material = connection.execute(
+                """
+                SELECT * FROM materials
+                WHERE workshop_id = ? AND id = ?
+                """,
+                (workshop_id, material_id),
+            ).fetchone()
+            if material is None:
+                raise ValueError(f"Material {material_id} was not found for this Workshop.")
+
+            text = self._read_text_source(material["source_uri"]).strip()
+            preview_text = text[:5000].rstrip()
+            return {
+                "contractVersion": "foundry.material.source-preview.v1",
+                "materialId": material["id"],
+                "name": material["name"],
+                "kind": material["kind"],
+                "status": material["status"],
+                "sourceUri": material["source_uri"],
+                "metadata": self._decode_json_object(
+                    material["metadata_json"] if "metadata_json" in material.keys() else None
+                ),
+                "textPreview": preview_text,
+                "textLength": len(text),
+                "estimatedTokenCount": len(text.split()),
+                "truncated": len(text) > len(preview_text),
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+            }
+
+    async def evaluate_material_source(
+        self,
+        workshop_id: str,
+        material_id: str,
+        system_prompt: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return await self._run_query(
+            lambda: self._evaluate_material_source_sync(
+                workshop_id,
+                material_id,
+                system_prompt,
+            )
+        )
+
+    def _evaluate_material_source_sync(
+        self,
+        workshop_id: str,
+        material_id: str,
+        system_prompt: Optional[str],
+    ) -> Dict[str, Any]:
+        with self._connect() as connection:
+            material = connection.execute(
+                """
+                SELECT * FROM materials
+                WHERE workshop_id = ? AND id = ?
+                """,
+                (workshop_id, material_id),
+            ).fetchone()
+            if material is None:
+                raise ValueError(f"Material {material_id} was not found for this Workshop.")
+
+            metadata = self._decode_json_object(
+                material["metadata_json"] if "metadata_json" in material.keys() else None
+            )
+            source_text = self._read_text_source(material["source_uri"]).strip()
+            if not source_text:
+                raise ValueError("Material source preview is empty and cannot be evaluated.")
+            return self.qa_generator.evaluate_source_material(
+                material_name=material["name"],
+                material_kind=material["kind"],
+                source_text=source_text,
+                source_metadata=metadata,
+                system_prompt=system_prompt,
+            )
+
     def _preview_website_material_sync(self, source_url: str) -> Dict[str, Any]:
-        safe_url = self._validate_website_url(source_url)
-        html = self._fetch_website_html(safe_url)
-        extracted = self._extract_website_text(html)
-        text = extracted["text"].strip()
+        scraped = self._scrape_website_source(source_url)
+        text = scraped["text"].strip()
         if not text:
             raise ValueError("Website did not contain readable text for the Assembly Line.")
         preview_text = text[:1600].rstrip()
         return {
             "contractVersion": "foundry.material.website-preview.v1",
-            "sourceUrl": safe_url,
-            "title": extracted["title"],
-            "description": extracted["description"],
+            "sourceUrl": scraped["sourceUrl"],
+            "title": scraped["title"],
+            "description": scraped["description"],
             "textPreview": preview_text,
             "textLength": len(text),
             "estimatedTokenCount": len(text.split()),
             "fetchLimitBytes": self._website_fetch_max_bytes(),
-            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "crawlMaxPages": scraped["crawlMaxPages"],
+            "crawlMaxDepth": scraped["crawlMaxDepth"],
+            "pageCount": scraped["pageCount"],
+            "pages": scraped["pages"],
+            "createdAt": scraped["createdAt"],
         }
 
     async def import_material_file(
@@ -3092,12 +3532,18 @@ class FoundryCatalogService:
                 blocked_gates=blocked_gates,
                 include_low_quality=include_low_quality,
             )
+            qa_proof_state = self._qa_export_proof_state(
+                connection=connection,
+                workshop_id=workshop_id,
+                generator_models=self._qa_payload_generator_models(payloads),
+            )
             training_readiness = self._qa_training_readiness(
                 payloads=payloads,
                 validation=validation,
                 blocked_gates=blocked_gates,
                 include_drafts=include_drafts,
                 include_low_quality=include_low_quality,
+                qa_proof_state=qa_proof_state,
             )
             safe_sample_limit = max(1, min(25, sample_limit))
             return {
@@ -3119,6 +3565,7 @@ class FoundryCatalogService:
                     "confidenceThreshold": QA_QUALITY_CONFIDENCE_THRESHOLD,
                     "override": include_low_quality,
                 },
+                "qaProofState": qa_proof_state,
                 "trainingReadiness": training_readiness,
                 "options": {
                     "includeDrafts": include_drafts,
@@ -3179,7 +3626,13 @@ class FoundryCatalogService:
                 blocked_gates=blocked_gates,
                 include_drafts=include_drafts,
                 include_low_quality=include_low_quality,
+                qa_proof_state=self._qa_export_proof_state(
+                    connection=connection,
+                    workshop_id=workshop_id,
+                    generator_models=self._qa_payload_generator_models(payloads),
+                ),
             )
+            qa_proof_state = training_readiness["qaProofState"]
 
             export_uri = str(export_path.relative_to(BASE_DIR))
             material_name = name or f"{workshop['name']} QA Dataset"
@@ -3196,6 +3649,7 @@ class FoundryCatalogService:
                         "confidenceThreshold": QA_QUALITY_CONFIDENCE_THRESHOLD,
                         "override": include_low_quality,
                     },
+                    "qaProofState": qa_proof_state,
                     "trainingReadiness": training_readiness,
                     "options": {
                         "includeDrafts": include_drafts,
@@ -3297,6 +3751,7 @@ class FoundryCatalogService:
                     "confidenceThreshold": QA_QUALITY_CONFIDENCE_THRESHOLD,
                     "override": include_low_quality,
                 },
+                "qaProofState": qa_proof_state,
                 "trainingReadiness": training_readiness,
             }
 
@@ -3536,6 +3991,89 @@ class FoundryCatalogService:
             "duplicateInstructionCount": duplicate_instructions,
         }
 
+    def _qa_payload_generator_models(self, payloads: list[Dict[str, Any]]) -> list[str]:
+        return sorted(
+            {
+                str(payload.get("metadata", {}).get("generatorModel"))
+                for payload in payloads
+                if payload.get("metadata", {}).get("generatorModel")
+            }
+        )
+
+    def _qa_export_proof_state(
+        self,
+        *,
+        connection: sqlite3.Connection,
+        workshop_id: str,
+        generator_models: list[str],
+    ) -> Dict[str, Any]:
+        row = connection.execute(
+            """
+            SELECT proof_json, model_id, proof_source, proof_status, simulated, updated_at
+            FROM qa_generator_quality_proofs
+            WHERE workshop_id = ?
+            ORDER BY datetime(updated_at) DESC
+            LIMIT 1
+            """,
+            (workshop_id,),
+        ).fetchone()
+        if row is None:
+            return {
+                "contractVersion": "foundry.qa-proof-state.v1",
+                "status": "missing",
+                "label": "No model-backed proof remembered",
+                "detail": "Run and remember a model-backed QA proof before treating JSONL as default training-safe.",
+                "modelId": None,
+                "proofSource": None,
+                "proofStatus": None,
+                "simulated": False,
+                "matchesExportGenerator": False,
+                "generatorModels": generator_models,
+                "createdAt": None,
+            }
+
+        proof = self._decode_json_object(row["proof_json"])
+        proof_mode = proof.get("proofMode") if isinstance(proof.get("proofMode"), dict) else {}
+        proof_model_id = str(proof_mode.get("modelId") or row["model_id"] or "")
+        proof_status = str(row["proof_status"] or "")
+        simulated = bool(row["simulated"])
+        matches_export_generator = bool(proof_model_id and proof_model_id in generator_models)
+        created_at = str(proof.get("createdAt") or row["updated_at"])
+
+        if not matches_export_generator:
+            status = "stale"
+            label = "Proof belongs to another generator"
+            detail = (
+                f"Latest proof was for {proof_model_id or 'another generator'}, "
+                f"but JSONL rows use {', '.join(generator_models) or 'unknown generators'}."
+            )
+        elif simulated:
+            status = "simulated"
+            label = "Simulated proof only"
+            detail = "The latest matching proof is simulated; run API mode with a cached local model before default training."
+        elif proof_status != "passed":
+            status = "blocked"
+            label = "Proof did not pass"
+            detail = "The latest matching model-backed proof did not pass quality diagnostics."
+        else:
+            status = "ready"
+            label = "Live proof matches JSONL"
+            detail = "The latest non-simulated model-backed proof matches the generator used by these JSONL rows."
+
+        return {
+            "contractVersion": "foundry.qa-proof-state.v1",
+            "status": status,
+            "label": label,
+            "detail": detail,
+            "modelId": proof_model_id or None,
+            "proofSource": str(row["proof_source"] or proof_mode.get("source") or "") or None,
+            "proofStatus": proof_status or None,
+            "simulated": simulated,
+            "matchesExportGenerator": matches_export_generator,
+            "generatorModels": generator_models,
+            "createdAt": created_at,
+        }
+
     def _qa_training_readiness(
         self,
         *,
@@ -3544,6 +4082,7 @@ class FoundryCatalogService:
         blocked_gates: list[Dict[str, Any]],
         include_drafts: bool,
         include_low_quality: bool,
+        qa_proof_state: Dict[str, Any],
     ) -> Dict[str, Any]:
         row_count = len(payloads)
         reviewed_rows = [
@@ -3633,6 +4172,16 @@ class FoundryCatalogService:
                 if not deterministic_rows and not fallback_rows
                 else "Some rows came from deterministic or fallback generation and should be treated as smoke data.",
             ),
+            self._jsonl_validation_check(
+                "qa-proof-state",
+                "QA generator proof",
+                "pass"
+                if qa_proof_state["status"] == "ready"
+                else "warn"
+                if qa_proof_state["status"] in {"missing", "simulated", "stale"}
+                else "fail",
+                qa_proof_state["detail"],
+            ),
         ]
         failed = [check for check in checks if check["status"] == "fail"]
         warned = [check for check in checks if check["status"] == "warn"]
@@ -3643,6 +4192,7 @@ class FoundryCatalogService:
             and not include_low_quality
             and not fallback_rows
             and not deterministic_rows
+            and qa_proof_state["status"] == "ready"
         )
         return {
             "contractVersion": "foundry.qa-training-readiness.v1",
@@ -3659,6 +4209,7 @@ class FoundryCatalogService:
             "generatorModels": generator_models,
             "generatorModes": generator_modes,
             "promptVersions": prompt_versions,
+            "qaProofState": qa_proof_state,
             "checks": checks,
             "recommendation": self._qa_training_readiness_recommendation(
                 status=status,
@@ -4598,10 +5149,9 @@ class FoundryCatalogService:
         material_name: str,
         source_url: str,
     ) -> Dict[str, Any]:
-        safe_url = self._validate_website_url(source_url)
-        html = self._fetch_website_html(safe_url)
-        extracted = self._extract_website_text(html)
-        text = extracted["text"].strip()
+        scraped = self._scrape_website_source(source_url)
+        safe_url = scraped["sourceUrl"]
+        text = scraped["text"].strip()
         if not text:
             raise ValueError("Website did not contain readable text for the Assembly Line.")
 
@@ -4609,14 +5159,15 @@ class FoundryCatalogService:
         destination_dir.mkdir(parents=True, exist_ok=True)
         safe_name = self._safe_source_filename(f"{material_name or material_id}.website.txt")
         destination_path = destination_dir / f"{material_id}-{safe_name}"
-        fetched_at = datetime.now(timezone.utc).isoformat()
-        title_line = extracted["title"] or material_name or safe_url
-        description = extracted["description"]
+        fetched_at = scraped["createdAt"]
+        title_line = scraped["title"] or material_name or safe_url
+        description = scraped["description"]
         header = [
             "Foundry Website Snapshot",
             f"Source URL: {safe_url}",
             f"Fetched At: {fetched_at}",
             f"Title: {title_line}",
+            f"Pages Crawled: {scraped['pageCount']}",
         ]
         if description:
             header.append(f"Description: {description}")
@@ -4630,15 +5181,141 @@ class FoundryCatalogService:
                 "status": "snapshot-ready",
                 "sourceUrl": safe_url,
                 "storedSourceUri": source_uri,
-                "title": extracted["title"],
+                "title": scraped["title"],
                 "description": description,
                 "fetchedAt": fetched_at,
                 "textLength": len(text),
                 "estimatedTokenCount": len(text.split()),
                 "fetchLimitBytes": self._website_fetch_max_bytes(),
+                "crawlMaxPages": scraped["crawlMaxPages"],
+                "crawlMaxDepth": scraped["crawlMaxDepth"],
+                "pageCount": scraped["pageCount"],
+                "pages": scraped["pages"],
                 "extractor": "foundry-html-text-extractor",
             },
         }
+
+    def _scrape_website_source(self, source_url: str) -> Dict[str, Any]:
+        start_url = self._validate_website_url(source_url)
+        max_pages = self._website_crawl_max_pages()
+        max_depth = self._website_crawl_max_depth()
+        created_at = datetime.now(timezone.utc).isoformat()
+        origin = self._website_origin(start_url)
+        queue: List[tuple[str, int]] = [(start_url, 0)]
+        queued_urls = {start_url}
+        visited_urls: set[str] = set()
+        text_fingerprints: set[str] = set()
+        pages: List[Dict[str, Any]] = []
+
+        while queue and len(pages) < max_pages:
+            current_url, depth = queue.pop(0)
+            queued_urls.discard(current_url)
+            if current_url in visited_urls:
+                continue
+            visited_urls.add(current_url)
+
+            safe_url = self._validate_website_url(current_url)
+            html = self._fetch_website_html(safe_url)
+            extracted = self._extract_website_text(html)
+            text = extracted["text"].strip()
+            if not text:
+                continue
+
+            fingerprint = sha256(" ".join(text.split()).encode("utf-8")).hexdigest()[:16]
+            if fingerprint in text_fingerprints:
+                continue
+            text_fingerprints.add(fingerprint)
+            page_number = len(pages) + 1
+            pages.append(
+                {
+                    "url": safe_url,
+                    "title": extracted["title"],
+                    "description": extracted["description"],
+                    "depth": depth,
+                    "text": text,
+                    "textLength": len(text),
+                    "estimatedTokenCount": len(text.split()),
+                    "fingerprint": fingerprint,
+                    "pageNumber": page_number,
+                }
+            )
+
+            if depth >= max_depth or len(pages) >= max_pages:
+                continue
+
+            for href in extracted.get("links", []):
+                candidate = self._normalize_website_link(safe_url, str(href))
+                if not candidate:
+                    continue
+                if candidate in visited_urls or candidate in queued_urls:
+                    continue
+                if self._website_origin(candidate) != origin:
+                    continue
+                queue.append((candidate, depth + 1))
+                queued_urls.add(candidate)
+
+        if not pages:
+            raise ValueError("Website did not contain readable text for the Assembly Line.")
+
+        page_sections = []
+        for page in pages:
+            heading = [
+                f"Page {page['pageNumber']}: {page['title'] or page['url']}",
+                f"URL: {page['url']}",
+                "",
+                page["text"],
+            ]
+            page_sections.append("\n".join(heading).strip())
+
+        title = pages[0]["title"]
+        description = pages[0]["description"]
+        text = "\n\n--- Page Break ---\n\n".join(page_sections)
+        return {
+            "sourceUrl": start_url,
+            "title": title,
+            "description": description,
+            "text": text,
+            "pageCount": len(pages),
+            "pages": [
+                {
+                    "url": page["url"],
+                    "title": page["title"],
+                    "description": page["description"],
+                    "depth": page["depth"],
+                    "textLength": page["textLength"],
+                    "estimatedTokenCount": page["estimatedTokenCount"],
+                    "fingerprint": page["fingerprint"],
+                    "pageNumber": page["pageNumber"],
+                }
+                for page in pages
+            ],
+            "crawlMaxPages": max_pages,
+            "crawlMaxDepth": max_depth,
+            "createdAt": created_at,
+        }
+
+    def _normalize_website_link(self, base_url: str, href: str) -> str:
+        if not href:
+            return ""
+        lowered = href.strip().lower()
+        if lowered.startswith(("mailto:", "tel:", "javascript:", "data:")):
+            return ""
+        joined_url, _fragment = urldefrag(urljoin(base_url, href.strip()))
+        parsed = urlparse(joined_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return ""
+        if parsed.username or parsed.password:
+            return ""
+        return joined_url
+
+    def _website_origin(self, source_url: str) -> str:
+        parsed = urlparse(source_url)
+        scheme = parsed.scheme.lower()
+        hostname = (parsed.hostname or "").lower()
+        port = parsed.port
+        if port is None:
+            port = 443 if scheme == "https" else 80
+        return f"{scheme}://{hostname}:{port}"
 
     def _validate_website_url(self, source_url: str) -> str:
         parsed = urlparse(source_url.strip())
@@ -4706,7 +5383,7 @@ class FoundryCatalogService:
         encoding = response.encoding or response.apparent_encoding or "utf-8"
         return b"".join(chunks).decode(encoding, errors="ignore")
 
-    def _extract_website_text(self, html: str) -> Dict[str, str]:
+    def _extract_website_text(self, html: str) -> Dict[str, Any]:
         extractor = _FoundryHTMLTextExtractor()
         extractor.feed(html)
         extractor.close()
@@ -4714,6 +5391,7 @@ class FoundryCatalogService:
             "title": extractor.title(),
             "description": re.sub(r"\s+", " ", extractor.description).strip(),
             "text": extractor.readable_text(),
+            "links": extractor.links,
         }
 
     def _website_fetch_max_bytes(self) -> int:
@@ -4724,6 +5402,24 @@ class FoundryCatalogService:
             return max(128 * 1024, int(raw_limit))
         except ValueError:
             return DEFAULT_WEBSITE_FETCH_MAX_BYTES
+
+    def _website_crawl_max_pages(self) -> int:
+        raw_limit = os.getenv("FOUNDRY_WEBSITE_CRAWL_MAX_PAGES", "").strip()
+        if not raw_limit:
+            return DEFAULT_WEBSITE_CRAWL_MAX_PAGES
+        try:
+            return max(1, min(25, int(raw_limit)))
+        except ValueError:
+            return DEFAULT_WEBSITE_CRAWL_MAX_PAGES
+
+    def _website_crawl_max_depth(self) -> int:
+        raw_limit = os.getenv("FOUNDRY_WEBSITE_CRAWL_MAX_DEPTH", "").strip()
+        if not raw_limit:
+            return DEFAULT_WEBSITE_CRAWL_MAX_DEPTH
+        try:
+            return max(0, min(3, int(raw_limit)))
+        except ValueError:
+            return DEFAULT_WEBSITE_CRAWL_MAX_DEPTH
 
     def _build_qa_pairs(
         self,

@@ -251,6 +251,18 @@ export const buildModelLiteracyProfile = (
           "For agents or tools, the wrapper validates structured output before running any external action.",
         ],
       },
+      {
+        id: "qa-generator-fit",
+        title: "QA generator fit",
+        icon: "fa-vial-circle-check",
+        body:
+          "A cached model can load successfully and still be a poor generator for training QA. Fit depends on instruction following, context handling, and grounded output quality.",
+        bullets: [
+          "Use tiny random or tiny GPT-style models for smoke and load proofs, not final dataset generation.",
+          "Prefer instruction-tuned models when asking for structured, source-grounded question and answer rows.",
+          "Run proof diagnostics before treating model-backed QA as training-quality evidence.",
+        ],
+      },
     ],
   };
 };
